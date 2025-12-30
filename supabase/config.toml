@@ -1,0 +1,4 @@
+project_id = "nqbagdwufarytluhaaas"
+
+[functions.zyon-chat]
+verify_jwt = false
