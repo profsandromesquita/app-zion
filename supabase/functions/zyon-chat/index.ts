@@ -1,11 +1,12 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.89.0";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const SYSTEM_PROMPT = `Você é Zyon, um conselheiro espiritual cristão acolhedor e empático. Seu papel é oferecer apoio emocional e espiritual baseado nos ensinamentos bíblicos.
+const BASE_SYSTEM_PROMPT = `Você é Zyon, um conselheiro espiritual cristão acolhedor e empático. Seu papel é oferecer apoio emocional e espiritual baseado nos ensinamentos bíblicos.
 
 DIRETRIZES IMPORTANTES:
 1. ACOLHIMENTO PRIMEIRO: Sempre valide os sentimentos da pessoa antes de oferecer qualquer orientação.
@@ -29,7 +30,7 @@ serve(async (req) => {
   }
 
   try {
-    const { message, history = [] } = await req.json();
+    const { message, history = [], userId } = await req.json();
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) {
@@ -38,8 +39,56 @@ serve(async (req) => {
 
     console.log("Processing message:", message.substring(0, 50) + "...");
 
+    // Build personalized context from diary if user is authenticated
+    let diaryContext = "";
+    if (userId) {
+      try {
+        const supabaseUrl = Deno.env.get("SUPABASE_URL");
+        const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+        
+        if (supabaseUrl && supabaseServiceKey) {
+          const supabase = createClient(supabaseUrl, supabaseServiceKey);
+          
+          const { data: diaryEntries, error } = await supabase
+            .from("diary_entries")
+            .select("content, created_at")
+            .eq("user_id", userId)
+            .order("created_at", { ascending: false })
+            .limit(5);
+
+          if (!error && diaryEntries && diaryEntries.length > 0) {
+            const entriesSummary = diaryEntries.map((entry) => {
+              const date = new Date(entry.created_at).toLocaleDateString("pt-BR");
+              // Limitar cada entrada a 200 caracteres para não sobrecarregar o contexto
+              const contentPreview = entry.content.length > 200 
+                ? entry.content.substring(0, 200) + "..." 
+                : entry.content;
+              return `- ${date}: "${contentPreview}"`;
+            }).join("\n");
+
+            diaryContext = `
+
+CONTEXTO PESSOAL DO USUÁRIO:
+Este usuário compartilhou recentemente em seu diário espiritual:
+${entriesSummary}
+
+Use estas informações para oferecer apoio mais personalizado e contextualizado. 
+Não mencione diretamente o diário a menos que seja naturalmente relevante para a conversa.
+Se o usuário mencionou dificuldades específicas no diário, mostre sensibilidade a esses temas.`;
+            
+            console.log("Diary context loaded for user:", userId);
+          }
+        }
+      } catch (diaryError) {
+        console.error("Error fetching diary entries:", diaryError);
+        // Continue without diary context
+      }
+    }
+
+    const systemPrompt = BASE_SYSTEM_PROMPT + diaryContext;
+
     const messages = [
-      { role: "system", content: SYSTEM_PROMPT },
+      { role: "system", content: systemPrompt },
       ...history,
       { role: "user", content: message },
     ];
