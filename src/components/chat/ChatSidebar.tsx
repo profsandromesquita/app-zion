@@ -204,20 +204,21 @@ export function ChatSidebar({
   };
 
   const renderSessionItem = (session: ChatSession) => (
-    <SidebarMenuItem key={session.id}>
+    <SidebarMenuItem key={session.id} className="flex items-center w-full min-w-0">
       <SidebarMenuButton
         onClick={() => onSelectSession(session.id)}
         isActive={session.id === activeSessionId}
         tooltip={collapsed ? session.title : undefined}
+        className="flex-1 min-w-0 pr-0"
       >
-        <div className="flex items-center gap-2 overflow-hidden flex-1 pr-6">
+        <div className="flex items-center gap-2 overflow-hidden flex-1 min-w-0">
           <ColorDot color={session.color_tag as ColorTag} />
-          <div className="flex flex-col items-start overflow-hidden min-w-0">
+          <div className="flex flex-col items-start overflow-hidden min-w-0 flex-1">
             <span className="truncate w-full text-sm">
               {session.title || "Nova Conversa"}
             </span>
             {!collapsed && (
-              <span className="text-xs text-muted-foreground">
+              <span className="text-xs text-muted-foreground truncate w-full">
                 {formatDate(session.updated_at)}
               </span>
             )}
@@ -299,7 +300,7 @@ export function ChatSidebar({
         {favoriteSessions.length > 0 && <Separator className="my-2" />}
 
         {/* Regular Conversations Section */}
-        <SidebarGroup className="w-1/2">
+        <SidebarGroup className="w-full overflow-hidden">
           {!collapsed && <SidebarGroupLabel>Conversas</SidebarGroupLabel>}
           <SidebarGroupContent>
             <ScrollArea className="h-[calc(100vh-420px)]">
