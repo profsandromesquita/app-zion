@@ -203,7 +203,7 @@ export function ChatSidebar({
   };
 
   const renderSessionItem = (session: ChatSession) => (
-    <SidebarMenuItem key={session.id} className="group">
+    <SidebarMenuItem key={session.id}>
       <SidebarMenuButton
         onClick={() => onSelectSession(session.id)}
         isActive={session.id === activeSessionId}
