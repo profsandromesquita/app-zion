@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Star, Palette, Pencil, Trash2 } from "lucide-react";
+import { Star, Palette, Pencil, Trash2, MoreHorizontal } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -10,8 +10,7 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Button } from "@/components/ui/button";
-import { MoreHorizontal } from "lucide-react";
+import { SidebarMenuAction } from "@/components/ui/sidebar";
 import { ColorTagPicker, type ColorTag } from "./ColorTagPicker";
 import { RenameSessionDialog } from "./RenameSessionDialog";
 import { DeleteSessionDialog } from "./DeleteSessionDialog";
@@ -46,14 +45,9 @@ export function ChatSessionContextMenu({
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-6 w-6 shrink-0 opacity-0 group-hover/menu-item:opacity-100 transition-opacity"
-            onClick={(e) => e.stopPropagation()}
-          >
+          <SidebarMenuAction showOnHover onClick={(e) => e.stopPropagation()}>
             <MoreHorizontal className="h-4 w-4" />
-          </Button>
+          </SidebarMenuAction>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-48">
           <DropdownMenuItem
