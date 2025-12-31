@@ -399,7 +399,7 @@ const Chat = () => {
           onSignOut={handleSignOut}
         />
 
-        <div className="flex flex-1 flex-col">
+        <div className="relative z-0 flex flex-1 flex-col">
           {/* Header */}
           <header className="flex items-center gap-3 border-b border-border px-4 py-3">
             <SidebarTrigger />
