@@ -45,8 +45,11 @@ export function ChatSessionContextMenu({
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <SidebarMenuAction onClick={(e) => e.stopPropagation()}>
-            <MoreHorizontal className="h-4 w-4" />
+          <SidebarMenuAction 
+            onClick={(e) => e.stopPropagation()}
+            className="opacity-100 visible z-50"
+          >
+            <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
           </SidebarMenuAction>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-48">
