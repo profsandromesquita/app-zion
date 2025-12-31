@@ -37,7 +37,8 @@ interface KnowledgeItem {
 }
 
 const CATEGORIES = [
-  { value: "general", label: "Geral" },
+  { value: "nucleo", label: "Núcleo" },
+  { value: "biblioteca", label: "Biblioteca" },
   { value: "metodologia", label: "Metodologia ZION" },
   { value: "devocional", label: "Devocional" },
   { value: "aconselhamento", label: "Aconselhamento" },
