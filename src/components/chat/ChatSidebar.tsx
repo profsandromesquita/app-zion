@@ -210,9 +210,9 @@ export function ChatSidebar({
         isActive={session.id === activeSessionId}
         tooltip={collapsed ? session.title : undefined}
       >
-        <div className="flex items-center gap-2 overflow-hidden flex-1">
+        <div className="flex items-center gap-2 overflow-hidden flex-1 pr-6">
           <ColorDot color={session.color_tag as ColorTag} />
-          <div className="flex flex-col items-start overflow-hidden">
+          <div className="flex flex-col items-start overflow-hidden min-w-0">
             <span className="truncate w-full text-sm">
               {session.title || "Nova Conversa"}
             </span>
