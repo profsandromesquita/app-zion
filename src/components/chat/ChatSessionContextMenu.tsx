@@ -49,7 +49,7 @@ export function ChatSessionContextMenu({
           <Button
             variant="ghost"
             size="icon"
-            className="h-6 w-6 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
+            className="h-6 w-6 shrink-0 opacity-0 group-hover/menu-item:opacity-100 transition-opacity"
             onClick={(e) => e.stopPropagation()}
           >
             <MoreHorizontal className="h-4 w-4" />
