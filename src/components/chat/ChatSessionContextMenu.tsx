@@ -10,7 +10,6 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { SidebarMenuAction } from "@/components/ui/sidebar";
 import { ColorTagPicker, type ColorTag } from "./ColorTagPicker";
 import { RenameSessionDialog } from "./RenameSessionDialog";
 import { DeleteSessionDialog } from "./DeleteSessionDialog";
@@ -45,12 +44,12 @@ export function ChatSessionContextMenu({
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <SidebarMenuAction 
+          <button 
             onClick={(e) => e.stopPropagation()}
-            className="opacity-100 visible z-50"
+            className="ml-1 shrink-0 flex h-6 w-6 items-center justify-center rounded-md hover:bg-sidebar-accent"
           >
             <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
-          </SidebarMenuAction>
+          </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-48">
           <DropdownMenuItem
