@@ -85,6 +85,87 @@ export type Database = {
         }
         Relationships: []
       }
+      chunks: {
+        Row: {
+          char_end: number | null
+          char_start: number | null
+          created_at: string
+          doc_id: string
+          domain: string
+          embedding: string | null
+          embedding_model_id: string | null
+          embedding_status: Database["public"]["Enums"]["embedding_status"]
+          id: string
+          language: string
+          layer: Database["public"]["Enums"]["doc_layer"]
+          position: number
+          priority: number
+          retrievable: boolean
+          section_path: Json | null
+          tags_json: Json | null
+          text: string
+          version: string
+          version_id: string
+        }
+        Insert: {
+          char_end?: number | null
+          char_start?: number | null
+          created_at?: string
+          doc_id: string
+          domain: string
+          embedding?: string | null
+          embedding_model_id?: string | null
+          embedding_status?: Database["public"]["Enums"]["embedding_status"]
+          id?: string
+          language?: string
+          layer: Database["public"]["Enums"]["doc_layer"]
+          position?: number
+          priority?: number
+          retrievable?: boolean
+          section_path?: Json | null
+          tags_json?: Json | null
+          text: string
+          version: string
+          version_id: string
+        }
+        Update: {
+          char_end?: number | null
+          char_start?: number | null
+          created_at?: string
+          doc_id?: string
+          domain?: string
+          embedding?: string | null
+          embedding_model_id?: string | null
+          embedding_status?: Database["public"]["Enums"]["embedding_status"]
+          id?: string
+          language?: string
+          layer?: Database["public"]["Enums"]["doc_layer"]
+          position?: number
+          priority?: number
+          retrievable?: boolean
+          section_path?: Json | null
+          tags_json?: Json | null
+          text?: string
+          version?: string
+          version_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "chunks_doc_id_fkey"
+            columns: ["doc_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "chunks_version_id_fkey"
+            columns: ["version_id"]
+            isOneToOne: false
+            referencedRelation: "document_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       diary_entries: {
         Row: {
           content: string
@@ -108,6 +189,106 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      document_versions: {
+        Row: {
+          changelog: string | null
+          content_hash: string | null
+          created_at: string
+          doc_id: string
+          id: string
+          normalized_text: string | null
+          raw_text: string | null
+          source_file_url: string | null
+          status: Database["public"]["Enums"]["doc_status"]
+          version: string
+        }
+        Insert: {
+          changelog?: string | null
+          content_hash?: string | null
+          created_at?: string
+          doc_id: string
+          id?: string
+          normalized_text?: string | null
+          raw_text?: string | null
+          source_file_url?: string | null
+          status?: Database["public"]["Enums"]["doc_status"]
+          version?: string
+        }
+        Update: {
+          changelog?: string | null
+          content_hash?: string | null
+          created_at?: string
+          doc_id?: string
+          id?: string
+          normalized_text?: string | null
+          raw_text?: string | null
+          source_file_url?: string | null
+          status?: Database["public"]["Enums"]["doc_status"]
+          version?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_versions_doc_id_fkey"
+            columns: ["doc_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      documents: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          current_version_id: string | null
+          domain: string
+          id: string
+          language: string
+          layer: Database["public"]["Enums"]["doc_layer"]
+          priority: number
+          retrievable: boolean
+          status: Database["public"]["Enums"]["doc_status"]
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          current_version_id?: string | null
+          domain?: string
+          id?: string
+          language?: string
+          layer?: Database["public"]["Enums"]["doc_layer"]
+          priority?: number
+          retrievable?: boolean
+          status?: Database["public"]["Enums"]["doc_status"]
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          current_version_id?: string | null
+          domain?: string
+          id?: string
+          language?: string
+          layer?: Database["public"]["Enums"]["doc_layer"]
+          priority?: number
+          retrievable?: boolean
+          status?: Database["public"]["Enums"]["doc_status"]
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "documents_current_version_fk"
+            columns: ["current_version_id"]
+            isOneToOne: false
+            referencedRelation: "document_versions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       knowledge_base: {
         Row: {
@@ -225,6 +406,7 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      calculate_content_hash: { Args: { content: string }; Returns: string }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -232,9 +414,32 @@ export type Database = {
         }
         Returns: boolean
       }
+      search_chunks: {
+        Args: {
+          filter_domain?: string
+          filter_layer?: Database["public"]["Enums"]["doc_layer"]
+          match_count?: number
+          match_threshold?: number
+          query_embedding: string
+        }
+        Returns: {
+          doc_id: string
+          domain: string
+          id: string
+          layer: Database["public"]["Enums"]["doc_layer"]
+          priority: number
+          section_path: Json
+          similarity: number
+          tags_json: Json
+          text: string
+        }[]
+      }
     }
     Enums: {
       app_role: "admin" | "soldado" | "buscador"
+      doc_layer: "CONSTITUICAO" | "NUCLEO" | "BIBLIOTECA"
+      doc_status: "draft" | "review" | "published"
+      embedding_status: "pending" | "processing" | "ok" | "failed"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -363,6 +568,9 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin", "soldado", "buscador"],
+      doc_layer: ["CONSTITUICAO", "NUCLEO", "BIBLIOTECA"],
+      doc_status: ["draft", "review", "published"],
+      embedding_status: ["pending", "processing", "ok", "failed"],
     },
   },
 } as const
