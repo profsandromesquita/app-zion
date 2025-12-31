@@ -56,15 +56,26 @@ export interface UseSpeechRecognitionReturn {
   error: string | null;
 }
 
+const SILENCE_TIMEOUT_MS = 2000; // 2 seconds of silence before auto-stop
+
 export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   const recognitionRef = useRef<SpeechRecognitionInstance | null>(null);
+  const silenceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const isSupported = typeof window !== "undefined" && 
     ("SpeechRecognition" in window || "webkitSpeechRecognition" in window);
+
+  // Clear silence timeout helper
+  const clearSilenceTimeout = useCallback(() => {
+    if (silenceTimeoutRef.current) {
+      clearTimeout(silenceTimeoutRef.current);
+      silenceTimeoutRef.current = null;
+    }
+  }, []);
 
   useEffect(() => {
     if (!isSupported) return;
@@ -77,6 +88,14 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
     recognition.lang = "pt-BR";
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
+      // Reset silence timeout on each speech detection
+      if (silenceTimeoutRef.current) {
+        clearTimeout(silenceTimeoutRef.current);
+      }
+      silenceTimeoutRef.current = setTimeout(() => {
+        recognition.stop();
+      }, SILENCE_TIMEOUT_MS);
+
       let finalTranscript = "";
       let interimTranscript = "";
 
@@ -107,6 +126,11 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
     };
 
     recognition.onend = () => {
+      // Clear silence timeout when recognition ends
+      if (silenceTimeoutRef.current) {
+        clearTimeout(silenceTimeoutRef.current);
+        silenceTimeoutRef.current = null;
+      }
       setIsListening(false);
     };
 
@@ -118,6 +142,9 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
     recognitionRef.current = recognition;
 
     return () => {
+      if (silenceTimeoutRef.current) {
+        clearTimeout(silenceTimeoutRef.current);
+      }
       recognition.abort();
     };
   }, [isSupported]);
@@ -128,22 +155,32 @@ export const useSpeechRecognition = (): UseSpeechRecognitionReturn => {
     setTranscript("");
     setError(null);
     
+    // Start silence timeout
+    silenceTimeoutRef.current = setTimeout(() => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+    }, SILENCE_TIMEOUT_MS);
+    
     try {
       recognitionRef.current.start();
     } catch (err) {
       console.error("Error starting speech recognition:", err);
+      clearSilenceTimeout();
     }
-  }, [isListening]);
+  }, [isListening, clearSilenceTimeout]);
 
   const stopListening = useCallback(() => {
     if (!recognitionRef.current || !isListening) return;
+    
+    clearSilenceTimeout();
     
     try {
       recognitionRef.current.stop();
     } catch (err) {
       console.error("Error stopping speech recognition:", err);
     }
-  }, [isListening]);
+  }, [isListening, clearSilenceTimeout]);
 
   const resetTranscript = useCallback(() => {
     setTranscript("");
