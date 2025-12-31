@@ -45,7 +45,7 @@ export function ChatSessionContextMenu({
     <>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <SidebarMenuAction showOnHover onClick={(e) => e.stopPropagation()}>
+          <SidebarMenuAction onClick={(e) => e.stopPropagation()}>
             <MoreHorizontal className="h-4 w-4" />
           </SidebarMenuAction>
         </DropdownMenuTrigger>
