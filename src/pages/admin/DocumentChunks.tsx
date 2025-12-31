@@ -40,14 +40,6 @@ interface Chunk {
   embedding_status: EmbeddingStatus;
   created_at: string;
 }
-  retrievable: boolean;
-  section_path: string[];
-  position: number;
-  text: string;
-  tags_json: Record<string, { matched: string[]; confidence: number }>;
-  embedding_status: EmbeddingStatus;
-  created_at: string;
-}
 
 interface Document {
   id: string;

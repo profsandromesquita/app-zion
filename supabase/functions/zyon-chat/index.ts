@@ -37,8 +37,8 @@ serve(async (req) => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL");
     const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
     
-    let systemInstructionsContext = "";
-    let knowledgeBaseContext = "";
+  let systemInstructionsContext = "";
+    let ragContext = "";
     let diaryContext = "";
 
     if (supabaseUrl && supabaseServiceKey) {
@@ -68,33 +68,61 @@ ${instructionsText}`;
         console.error("Error fetching system instructions:", err);
       }
 
-      // Fetch active knowledge base content
+      // RAG: Buscar chunks relevantes via busca vetorial
       try {
-        const { data: knowledge, error: kbError } = await supabase
-          .from("knowledge_base")
-          .select("title, content, category")
-          .eq("is_active", true);
+        // Gerar embedding simples da mensagem para busca
+        const queryEmbedding = await generateSimpleEmbedding(message);
+        
+        // Buscar chunks usando a função RPC
+        const { data: chunks, error: chunksError } = await supabase.rpc("search_chunks", {
+          query_embedding: queryEmbedding,
+          match_threshold: 0.4,
+          match_count: 5,
+          filter_layer: null,
+          filter_domain: null,
+        });
 
-        if (!kbError && knowledge && knowledge.length > 0) {
-          const knowledgeText = knowledge.map((k) => {
-            // Limit each document to 1000 chars to prevent prompt overflow
-            const contentPreview = k.content.length > 1000 
-              ? k.content.substring(0, 1000) + "..." 
-              : k.content;
-            return `### ${k.title} (${k.category})\n${contentPreview}`;
+        if (!chunksError && chunks && chunks.length > 0) {
+          const chunksText = chunks.map((c: any, i: number) => {
+            const sectionPath = c.section_path?.join(" > ") || "";
+            return `### Referência ${i + 1} (${c.layer} - ${c.domain})${sectionPath ? `\nSeção: ${sectionPath}` : ""}\n${c.text}`;
           }).join("\n\n---\n\n");
           
-          knowledgeBaseContext = `
+          ragContext = `
+
+CONTEXTO RECUPERADO DA BASE DE CONHECIMENTO ZION:
+Use as seguintes referências para fundamentar suas respostas quando relevante:
+
+${chunksText}`;
+          
+          console.log("RAG context loaded:", chunks.length, "chunks");
+        } else {
+          // Fallback para knowledge_base legado
+          const { data: knowledge, error: kbError } = await supabase
+            .from("knowledge_base")
+            .select("title, content, category")
+            .eq("is_active", true);
+
+          if (!kbError && knowledge && knowledge.length > 0) {
+            const knowledgeText = knowledge.map((k) => {
+              const contentPreview = k.content.length > 1000 
+                ? k.content.substring(0, 1000) + "..." 
+                : k.content;
+              return `### ${k.title} (${k.category})\n${contentPreview}`;
+            }).join("\n\n---\n\n");
+            
+            ragContext = `
 
 BASE DE CONHECIMENTO ZION:
 Use os seguintes materiais como guia para suas respostas quando relevante:
 
 ${knowledgeText}`;
-          
-          console.log("Knowledge base loaded:", knowledge.length, "documents");
+            
+            console.log("Legacy knowledge base loaded:", knowledge.length, "documents");
+          }
         }
       } catch (err) {
-        console.error("Error fetching knowledge base:", err);
+        console.error("Error fetching RAG context:", err);
       }
 
       // Fetch diary entries for authenticated users
@@ -134,7 +162,7 @@ Não mencione diretamente o diário a menos que seja naturalmente relevante para
     }
 
     // Build the complete system prompt
-    const systemPrompt = BASE_IDENTITY + systemInstructionsContext + knowledgeBaseContext + diaryContext;
+    const systemPrompt = BASE_IDENTITY + systemInstructionsContext + ragContext + diaryContext;
 
     console.log("System prompt length:", systemPrompt.length, "characters");
 
@@ -217,3 +245,23 @@ Não mencione diretamente o diário a menos que seja naturalmente relevante para
     );
   }
 });
+
+// Helper: Gerar embedding simples baseado em hash
+async function generateSimpleEmbedding(text: string): Promise<number[]> {
+  const embedding: number[] = [];
+  const encoder = new TextEncoder();
+  
+  for (let i = 0; i < 48; i++) {
+    const data = encoder.encode(text + i.toString());
+    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+    const hashArray = new Float32Array(hashBuffer);
+    
+    for (let j = 0; j < 32 && embedding.length < 1536; j++) {
+      const val = (hashArray[j % hashArray.length] || 0) / 2147483647;
+      embedding.push(Math.max(-1, Math.min(1, val)));
+    }
+  }
+  
+  const magnitude = Math.sqrt(embedding.reduce((sum, v) => sum + v * v, 0));
+  return embedding.map(v => v / (magnitude || 1));
+}
