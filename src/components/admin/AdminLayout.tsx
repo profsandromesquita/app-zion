@@ -5,7 +5,9 @@ import {
   FileText, 
   Settings, 
   ArrowLeft,
-  BookOpen
+  BookOpen,
+  Database,
+  Search
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -18,7 +20,9 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
 
   const navItems = [
     { to: "/admin", icon: LayoutDashboard, label: "Dashboard", end: true },
-    { to: "/admin/knowledge", icon: BookOpen, label: "Base de Conhecimento" },
+    { to: "/admin/documents", icon: Database, label: "Documentos RAG" },
+    { to: "/admin/rag-test", icon: Search, label: "Teste RAG" },
+    { to: "/admin/knowledge", icon: BookOpen, label: "Base Legada" },
     { to: "/admin/instructions", icon: Settings, label: "System Instructions" },
   ];
 

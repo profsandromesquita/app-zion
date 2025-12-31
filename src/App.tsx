@@ -11,6 +11,9 @@ import NotFound from "./pages/NotFound";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import KnowledgeBase from "./pages/admin/KnowledgeBase";
 import SystemInstructions from "./pages/admin/SystemInstructions";
+import Documents from "./pages/admin/Documents";
+import DocumentChunks from "./pages/admin/DocumentChunks";
+import RagTest from "./pages/admin/RagTest";
 
 const queryClient = new QueryClient();
 
@@ -26,6 +29,9 @@ const App = () => (
           <Route path="/chat" element={<Chat />} />
           <Route path="/diary" element={<Diary />} />
           <Route path="/admin" element={<AdminDashboard />} />
+          <Route path="/admin/documents" element={<Documents />} />
+          <Route path="/admin/documents/:docId/chunks" element={<DocumentChunks />} />
+          <Route path="/admin/rag-test" element={<RagTest />} />
           <Route path="/admin/knowledge" element={<KnowledgeBase />} />
           <Route path="/admin/instructions" element={<SystemInstructions />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
