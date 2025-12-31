@@ -54,9 +54,9 @@ export function ChatSidebar({
   onSignOut,
 }: ChatSidebarProps) {
   const navigate = useNavigate();
-  const { state } = useSidebar();
+  const { state, isMobile } = useSidebar();
   const { toast } = useToast();
-  const collapsed = state === "collapsed";
+  const collapsed = !isMobile && state === "collapsed";
   
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
