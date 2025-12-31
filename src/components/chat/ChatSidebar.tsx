@@ -15,6 +15,7 @@ import {
   SidebarGroupLabel,
   SidebarHeader,
   SidebarMenu,
+  SidebarMenuAction,
   SidebarMenuButton,
   SidebarMenuItem,
   useSidebar,
@@ -207,7 +208,6 @@ export function ChatSidebar({
       <SidebarMenuButton
         onClick={() => onSelectSession(session.id)}
         isActive={session.id === activeSessionId}
-        className="w-full justify-between pr-1"
         tooltip={collapsed ? session.title : undefined}
       >
         <div className="flex items-center gap-2 overflow-hidden flex-1">
@@ -223,20 +223,20 @@ export function ChatSidebar({
             )}
           </div>
         </div>
-        {!collapsed && (
-          <ChatSessionContextMenu
-            sessionId={session.id}
-            sessionTitle={session.title || "Nova Conversa"}
-            isFavorite={session.is_favorite}
-            colorTag={session.color_tag as ColorTag}
-            canFavorite={canFavorite}
-            onRename={handleRename}
-            onDelete={handleDelete}
-            onToggleFavorite={handleToggleFavorite}
-            onChangeColor={handleChangeColor}
-          />
-        )}
       </SidebarMenuButton>
+      {!collapsed && (
+        <ChatSessionContextMenu
+          sessionId={session.id}
+          sessionTitle={session.title || "Nova Conversa"}
+          isFavorite={session.is_favorite}
+          colorTag={session.color_tag as ColorTag}
+          canFavorite={canFavorite}
+          onRename={handleRename}
+          onDelete={handleDelete}
+          onToggleFavorite={handleToggleFavorite}
+          onChangeColor={handleChangeColor}
+        />
+      )}
     </SidebarMenuItem>
   );
 
