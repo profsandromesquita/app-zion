@@ -49,13 +49,12 @@ const Chat = () => {
     error: speechError,
   } = useSpeechRecognition();
 
-  // Append transcript to input when speaking
+  // Update input with transcript while speaking (replace, don't concatenate)
   useEffect(() => {
-    if (transcript) {
-      setInput((prev) => prev + transcript);
-      resetTranscript();
+    if (isListening && transcript) {
+      setInput(transcript);
     }
-  }, [transcript, resetTranscript]);
+  }, [transcript, isListening]);
 
   const loading = authLoading || (isNicodemosMode && anonLoading);
 
