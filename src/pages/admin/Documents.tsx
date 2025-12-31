@@ -61,14 +61,18 @@ const LAYERS: { value: DocLayer; label: string; description: string }[] = [
 ];
 
 const DOMAINS = [
-  "geral",
+  "metodologia_teologia",
+  "canonic",
+  "produto_metodologia",
+  "teologia_antropologia",
   "metodologia",
+  "diagnostico_identidade",
   "diagnostico",
-  "perfis",
-  "exegese_aplicada",
+  "intervencao",
   "produto_arquitetura",
-  "devocional",
-  "teologia",
+  "exegese_aplicada",
+  "perfis",
+  "modelo_humano",
 ];
 
 const STATUS_CONFIG: Record<DocStatus, { label: string; color: string; icon: typeof Clock }> = {
