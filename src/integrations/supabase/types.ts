@@ -48,27 +48,36 @@ export type Database = {
       }
       chat_sessions: {
         Row: {
+          color_tag: string | null
           created_at: string
+          favorited_at: string | null
           id: string
           is_anonymous: boolean
+          is_favorite: boolean | null
           session_token: string | null
           title: string | null
           updated_at: string
           user_id: string | null
         }
         Insert: {
+          color_tag?: string | null
           created_at?: string
+          favorited_at?: string | null
           id?: string
           is_anonymous?: boolean
+          is_favorite?: boolean | null
           session_token?: string | null
           title?: string | null
           updated_at?: string
           user_id?: string | null
         }
         Update: {
+          color_tag?: string | null
           created_at?: string
+          favorited_at?: string | null
           id?: string
           is_anonymous?: boolean
+          is_favorite?: boolean | null
           session_token?: string | null
           title?: string | null
           updated_at?: string

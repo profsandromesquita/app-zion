@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Plus, Search, Heart, LogOut, BookOpen, Shield, User } from "lucide-react";
+import { Plus, Search, Heart, LogOut, BookOpen, Shield, User, Star } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,11 +20,17 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { supabase } from "@/integrations/supabase/client";
+import { useToast } from "@/hooks/use-toast";
+import { ChatSessionContextMenu } from "./ChatSessionContextMenu";
+import { ColorDot, type ColorTag } from "./ColorTagPicker";
 
 interface ChatSession {
   id: string;
   title: string;
   updated_at: string;
+  is_favorite: boolean;
+  color_tag: string | null;
+  favorited_at: string | null;
 }
 
 interface ChatSidebarProps {
@@ -36,6 +42,8 @@ interface ChatSidebarProps {
   onSignOut: () => void;
 }
 
+const MAX_FAVORITES = 3;
+
 export function ChatSidebar({
   user,
   isAdmin,
@@ -46,6 +54,7 @@ export function ChatSidebar({
 }: ChatSidebarProps) {
   const navigate = useNavigate();
   const { state } = useSidebar();
+  const { toast } = useToast();
   const collapsed = state === "collapsed";
   
   const [sessions, setSessions] = useState<ChatSession[]>([]);
@@ -64,7 +73,7 @@ export function ChatSidebar({
     setLoading(true);
     const { data, error } = await supabase
       .from("chat_sessions")
-      .select("id, title, updated_at")
+      .select("id, title, updated_at, is_favorite, color_tag, favorited_at")
       .eq("user_id", user.id)
       .eq("is_anonymous", false)
       .order("updated_at", { ascending: false });
@@ -75,9 +84,111 @@ export function ChatSidebar({
     setLoading(false);
   };
 
-  const filteredSessions = sessions.filter((session) =>
-    session.title.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const favoriteSessions = sessions
+    .filter((s) => s.is_favorite)
+    .sort((a, b) => {
+      if (!a.favorited_at || !b.favorited_at) return 0;
+      return new Date(b.favorited_at).getTime() - new Date(a.favorited_at).getTime();
+    });
+
+  const regularSessions = sessions.filter((s) => !s.is_favorite);
+
+  const filterSessions = (sessionList: ChatSession[]) =>
+    sessionList.filter((session) =>
+      session.title.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+
+  const canFavorite = favoriteSessions.length < MAX_FAVORITES;
+
+  const handleRename = async (sessionId: string, newTitle: string) => {
+    const { error } = await supabase
+      .from("chat_sessions")
+      .update({ title: newTitle })
+      .eq("id", sessionId);
+
+    if (error) {
+      toast({ title: "Erro ao renomear", description: error.message, variant: "destructive" });
+      return;
+    }
+
+    setSessions((prev) =>
+      prev.map((s) => (s.id === sessionId ? { ...s, title: newTitle } : s))
+    );
+    toast({ title: "Conversa renomeada" });
+  };
+
+  const handleDelete = async (sessionId: string) => {
+    const { error } = await supabase
+      .from("chat_sessions")
+      .delete()
+      .eq("id", sessionId);
+
+    if (error) {
+      toast({ title: "Erro ao excluir", description: error.message, variant: "destructive" });
+      return;
+    }
+
+    setSessions((prev) => prev.filter((s) => s.id !== sessionId));
+    toast({ title: "Conversa excluída" });
+
+    if (sessionId === activeSessionId) {
+      onNewChat();
+    }
+  };
+
+  const handleToggleFavorite = async (sessionId: string) => {
+    const session = sessions.find((s) => s.id === sessionId);
+    if (!session) return;
+
+    const newIsFavorite = !session.is_favorite;
+
+    if (newIsFavorite && !canFavorite) {
+      toast({
+        title: "Limite de favoritos",
+        description: "Você já tem 3 favoritos. Remova um para adicionar outro.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const { error } = await supabase
+      .from("chat_sessions")
+      .update({
+        is_favorite: newIsFavorite,
+        favorited_at: newIsFavorite ? new Date().toISOString() : null,
+      })
+      .eq("id", sessionId);
+
+    if (error) {
+      toast({ title: "Erro ao favoritar", description: error.message, variant: "destructive" });
+      return;
+    }
+
+    setSessions((prev) =>
+      prev.map((s) =>
+        s.id === sessionId
+          ? { ...s, is_favorite: newIsFavorite, favorited_at: newIsFavorite ? new Date().toISOString() : null }
+          : s
+      )
+    );
+    toast({ title: newIsFavorite ? "Adicionado aos favoritos" : "Removido dos favoritos" });
+  };
+
+  const handleChangeColor = async (sessionId: string, color: ColorTag) => {
+    const { error } = await supabase
+      .from("chat_sessions")
+      .update({ color_tag: color })
+      .eq("id", sessionId);
+
+    if (error) {
+      toast({ title: "Erro ao alterar cor", description: error.message, variant: "destructive" });
+      return;
+    }
+
+    setSessions((prev) =>
+      prev.map((s) => (s.id === sessionId ? { ...s, color_tag: color } : s))
+    );
+  };
 
   const formatDate = (dateString: string) => {
     const date = new Date(dateString);
@@ -90,6 +201,44 @@ export function ChatSidebar({
     if (diffDays < 7) return `${diffDays} dias atrás`;
     return date.toLocaleDateString("pt-BR");
   };
+
+  const renderSessionItem = (session: ChatSession) => (
+    <SidebarMenuItem key={session.id} className="group">
+      <SidebarMenuButton
+        onClick={() => onSelectSession(session.id)}
+        isActive={session.id === activeSessionId}
+        className="w-full justify-between pr-1"
+        tooltip={collapsed ? session.title : undefined}
+      >
+        <div className="flex items-center gap-2 overflow-hidden flex-1">
+          <ColorDot color={session.color_tag as ColorTag} />
+          <div className="flex flex-col items-start overflow-hidden">
+            <span className="truncate w-full text-sm">
+              {session.title || "Nova Conversa"}
+            </span>
+            {!collapsed && (
+              <span className="text-xs text-muted-foreground">
+                {formatDate(session.updated_at)}
+              </span>
+            )}
+          </div>
+        </div>
+        {!collapsed && (
+          <ChatSessionContextMenu
+            sessionId={session.id}
+            sessionTitle={session.title || "Nova Conversa"}
+            isFavorite={session.is_favorite}
+            colorTag={session.color_tag as ColorTag}
+            canFavorite={canFavorite}
+            onRename={handleRename}
+            onDelete={handleDelete}
+            onToggleFavorite={handleToggleFavorite}
+            onChangeColor={handleChangeColor}
+          />
+        )}
+      </SidebarMenuButton>
+    </SidebarMenuItem>
+  );
 
   return (
     <Sidebar className="border-r border-border">
@@ -130,42 +279,42 @@ export function ChatSidebar({
 
         <Separator className="my-2" />
 
+        {/* Favorites Section */}
+        {favoriteSessions.length > 0 && (
+          <SidebarGroup>
+            {!collapsed && (
+              <SidebarGroupLabel className="flex items-center gap-1">
+                <Star className="h-3 w-3 fill-yellow-500 text-yellow-500" />
+                Favoritos
+              </SidebarGroupLabel>
+            )}
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {filterSessions(favoriteSessions).map(renderSessionItem)}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+
+        {favoriteSessions.length > 0 && <Separator className="my-2" />}
+
+        {/* Regular Conversations Section */}
         <SidebarGroup>
           {!collapsed && <SidebarGroupLabel>Conversas</SidebarGroupLabel>}
           <SidebarGroupContent>
-            <ScrollArea className="h-[calc(100vh-320px)]">
+            <ScrollArea className="h-[calc(100vh-420px)]">
               <SidebarMenu>
                 {loading ? (
                   <div className="px-4 py-2">
                     <div className="h-4 w-full animate-pulse rounded bg-muted" />
                     <div className="mt-2 h-4 w-3/4 animate-pulse rounded bg-muted" />
                   </div>
-                ) : filteredSessions.length === 0 ? (
+                ) : filterSessions(regularSessions).length === 0 ? (
                   <div className="px-4 py-2 text-sm text-muted-foreground">
                     {searchQuery ? "Nenhum chat encontrado" : "Nenhuma conversa ainda"}
                   </div>
                 ) : (
-                  filteredSessions.map((session) => (
-                    <SidebarMenuItem key={session.id}>
-                      <SidebarMenuButton
-                        onClick={() => onSelectSession(session.id)}
-                        isActive={session.id === activeSessionId}
-                        className="w-full justify-start"
-                        tooltip={collapsed ? session.title : undefined}
-                      >
-                        <div className="flex flex-col items-start overflow-hidden">
-                          <span className="truncate w-full text-sm">
-                            {session.title || "Nova Conversa"}
-                          </span>
-                          {!collapsed && (
-                            <span className="text-xs text-muted-foreground">
-                              {formatDate(session.updated_at)}
-                            </span>
-                          )}
-                        </div>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))
+                  filterSessions(regularSessions).map(renderSessionItem)
                 )}
               </SidebarMenu>
             </ScrollArea>
