@@ -1,6 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Heart, Send, Menu, BookOpen, LogOut, ArrowLeft, User, Shield } from "lucide-react";
+import { Heart, Send, Menu, ArrowLeft } from "lucide-react";
+import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
+import { VoiceMicButton } from "@/components/chat/VoiceMicButton";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -36,6 +38,24 @@ const Chat = () => {
   const [chatSessionId, setChatSessionId] = useState<string | null>(null);
   const [isFirstMessage, setIsFirstMessage] = useState(true);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const {
+    isListening,
+    isSupported,
+    transcript,
+    startListening,
+    stopListening,
+    resetTranscript,
+    error: speechError,
+  } = useSpeechRecognition();
+
+  // Append transcript to input when speaking
+  useEffect(() => {
+    if (transcript) {
+      setInput((prev) => prev + transcript);
+      resetTranscript();
+    }
+  }, [transcript, resetTranscript]);
 
   const loading = authLoading || (isNicodemosMode && anonLoading);
 
@@ -344,6 +364,13 @@ const Chat = () => {
               className="min-h-[50px] max-h-32 resize-none"
               disabled={isLoading}
             />
+            <VoiceMicButton
+              isListening={isListening}
+              isSupported={isSupported}
+              onToggle={isListening ? stopListening : startListening}
+              disabled={isLoading}
+              error={speechError}
+            />
             <Button
               onClick={sendMessage}
               size="icon"
@@ -449,6 +476,13 @@ const Chat = () => {
                 placeholder="Compartilhe o que está em seu coração..."
                 className="min-h-[50px] max-h-32 resize-none"
                 disabled={isLoading}
+              />
+              <VoiceMicButton
+                isListening={isListening}
+                isSupported={isSupported}
+                onToggle={isListening ? stopListening : startListening}
+                disabled={isLoading}
+                error={speechError}
               />
               <Button
                 onClick={sendMessage}
