@@ -8,3 +8,12 @@ verify_jwt = false
 
 [functions.search-chunks]
 verify_jwt = false
+
+[functions.crisis-detector]
+verify_jwt = false
+
+[functions.intent-router]
+verify_jwt = false
+
+[functions.feedback-handler]
+verify_jwt = false

@@ -19,6 +19,10 @@ export type Database = {
           content: string
           created_at: string
           id: string
+          intent: string | null
+          metadata: Json | null
+          risk_level: Database["public"]["Enums"]["risk_level"] | null
+          role_detected: string | null
           sender: string
           session_id: string
         }
@@ -26,6 +30,10 @@ export type Database = {
           content: string
           created_at?: string
           id?: string
+          intent?: string | null
+          metadata?: Json | null
+          risk_level?: Database["public"]["Enums"]["risk_level"] | null
+          role_detected?: string | null
           sender: string
           session_id: string
         }
@@ -33,6 +41,10 @@ export type Database = {
           content?: string
           created_at?: string
           id?: string
+          intent?: string | null
+          metadata?: Json | null
+          risk_level?: Database["public"]["Enums"]["risk_level"] | null
+          role_detected?: string | null
           sender?: string
           session_id?: string
         }
@@ -54,6 +66,7 @@ export type Database = {
           id: string
           is_anonymous: boolean
           is_favorite: boolean | null
+          locale: string | null
           session_token: string | null
           title: string | null
           updated_at: string
@@ -66,6 +79,7 @@ export type Database = {
           id?: string
           is_anonymous?: boolean
           is_favorite?: boolean | null
+          locale?: string | null
           session_token?: string | null
           title?: string | null
           updated_at?: string
@@ -78,6 +92,7 @@ export type Database = {
           id?: string
           is_anonymous?: boolean
           is_favorite?: boolean | null
+          locale?: string | null
           session_token?: string | null
           title?: string | null
           updated_at?: string
@@ -162,6 +177,77 @@ export type Database = {
             columns: ["version_id"]
             isOneToOne: false
             referencedRelation: "document_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      crisis_events: {
+        Row: {
+          admin_notified: boolean | null
+          created_at: string
+          crisis_response_sent: string | null
+          id: string
+          keywords_matched: string[] | null
+          message_id: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          risk_level: Database["public"]["Enums"]["risk_level"]
+          session_id: string
+          user_id: string | null
+        }
+        Insert: {
+          admin_notified?: boolean | null
+          created_at?: string
+          crisis_response_sent?: string | null
+          id?: string
+          keywords_matched?: string[] | null
+          message_id?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          risk_level: Database["public"]["Enums"]["risk_level"]
+          session_id: string
+          user_id?: string | null
+        }
+        Update: {
+          admin_notified?: boolean | null
+          created_at?: string
+          crisis_response_sent?: string | null
+          id?: string
+          keywords_matched?: string[] | null
+          message_id?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          risk_level?: Database["public"]["Enums"]["risk_level"]
+          session_id?: string
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crisis_events_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "chat_messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crisis_events_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crisis_events_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "chat_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crisis_events_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -290,6 +376,71 @@ export type Database = {
           },
         ]
       }
+      feedback_events: {
+        Row: {
+          created_at: string
+          id: string
+          message_id: string
+          reason: string | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          session_id: string
+          type: Database["public"]["Enums"]["feedback_type"]
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          message_id: string
+          reason?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          session_id: string
+          type: Database["public"]["Enums"]["feedback_type"]
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          message_id?: string
+          reason?: string | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          session_id?: string
+          type?: Database["public"]["Enums"]["feedback_type"]
+          user_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "feedback_events_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "chat_messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "feedback_events_reviewed_by_fkey"
+            columns: ["reviewed_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "feedback_events_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "chat_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "feedback_events_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       knowledge_base: {
         Row: {
           category: string | null
@@ -326,6 +477,57 @@ export type Database = {
         }
         Relationships: []
       }
+      memory_items: {
+        Row: {
+          confidence: number | null
+          created_at: string
+          id: string
+          key: string
+          session_id: string | null
+          ttl: string | null
+          updated_at: string
+          user_id: string | null
+          value: Json
+        }
+        Insert: {
+          confidence?: number | null
+          created_at?: string
+          id?: string
+          key: string
+          session_id?: string | null
+          ttl?: string | null
+          updated_at?: string
+          user_id?: string | null
+          value: Json
+        }
+        Update: {
+          confidence?: number | null
+          created_at?: string
+          id?: string
+          key?: string
+          session_id?: string | null
+          ttl?: string | null
+          updated_at?: string
+          user_id?: string | null
+          value?: Json
+        }
+        Relationships: [
+          {
+            foreignKeyName: "memory_items_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "chat_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "memory_items_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           created_at: string
@@ -350,12 +552,74 @@ export type Database = {
         }
         Relationships: []
       }
+      retrieval_logs: {
+        Row: {
+          created_at: string
+          filters_used: Json | null
+          id: string
+          intent: string | null
+          latency_ms: number | null
+          message_id: string | null
+          query_text: string
+          rag_plan: Json | null
+          retrieved_chunk_ids: string[] | null
+          role: string | null
+          scores_json: Json | null
+          session_id: string
+        }
+        Insert: {
+          created_at?: string
+          filters_used?: Json | null
+          id?: string
+          intent?: string | null
+          latency_ms?: number | null
+          message_id?: string | null
+          query_text: string
+          rag_plan?: Json | null
+          retrieved_chunk_ids?: string[] | null
+          role?: string | null
+          scores_json?: Json | null
+          session_id: string
+        }
+        Update: {
+          created_at?: string
+          filters_used?: Json | null
+          id?: string
+          intent?: string | null
+          latency_ms?: number | null
+          message_id?: string | null
+          query_text?: string
+          rag_plan?: Json | null
+          retrieved_chunk_ids?: string[] | null
+          role?: string | null
+          scores_json?: Json | null
+          session_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "retrieval_logs_message_id_fkey"
+            columns: ["message_id"]
+            isOneToOne: false
+            referencedRelation: "chat_messages"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "retrieval_logs_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "chat_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       system_instructions: {
         Row: {
           content: string
           created_at: string | null
           id: string
           is_active: boolean | null
+          is_pinned: boolean | null
+          layer: string | null
           name: string
           priority: number | null
           updated_at: string | null
@@ -365,6 +629,8 @@ export type Database = {
           created_at?: string | null
           id?: string
           is_active?: boolean | null
+          is_pinned?: boolean | null
+          layer?: string | null
           name: string
           priority?: number | null
           updated_at?: string | null
@@ -374,11 +640,66 @@ export type Database = {
           created_at?: string | null
           id?: string
           is_active?: boolean | null
+          is_pinned?: boolean | null
+          layer?: string | null
           name?: string
           priority?: number | null
           updated_at?: string | null
         }
         Relationships: []
+      }
+      user_profiles: {
+        Row: {
+          centros: Json | null
+          created_at: string
+          dom_original: string | null
+          eneagrama: string | null
+          fase_jornada: string | null
+          id: string
+          mecanismo_defesa_padrao: string | null
+          medo_raiz_dominante: string | null
+          perfil_disc: string | null
+          seguranca_quebrada_primaria: string | null
+          updated_at: string
+          virtude_hiperdesenvolvida: string | null
+        }
+        Insert: {
+          centros?: Json | null
+          created_at?: string
+          dom_original?: string | null
+          eneagrama?: string | null
+          fase_jornada?: string | null
+          id: string
+          mecanismo_defesa_padrao?: string | null
+          medo_raiz_dominante?: string | null
+          perfil_disc?: string | null
+          seguranca_quebrada_primaria?: string | null
+          updated_at?: string
+          virtude_hiperdesenvolvida?: string | null
+        }
+        Update: {
+          centros?: Json | null
+          created_at?: string
+          dom_original?: string | null
+          eneagrama?: string | null
+          fase_jornada?: string | null
+          id?: string
+          mecanismo_defesa_padrao?: string | null
+          medo_raiz_dominante?: string | null
+          perfil_disc?: string | null
+          seguranca_quebrada_primaria?: string | null
+          updated_at?: string
+          virtude_hiperdesenvolvida?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_profiles_id_fkey"
+            columns: ["id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_roles: {
         Row: {
@@ -440,6 +761,8 @@ export type Database = {
       doc_layer: "CONSTITUICAO" | "NUCLEO" | "BIBLIOTECA"
       doc_status: "draft" | "review" | "published"
       embedding_status: "pending" | "processing" | "ok" | "failed"
+      feedback_type: "helpful" | "not_helpful" | "heresia"
+      risk_level: "none" | "low" | "medium" | "high"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -571,6 +894,8 @@ export const Constants = {
       doc_layer: ["CONSTITUICAO", "NUCLEO", "BIBLIOTECA"],
       doc_status: ["draft", "review", "published"],
       embedding_status: ["pending", "processing", "ok", "failed"],
+      feedback_type: ["helpful", "not_helpful", "heresia"],
+      risk_level: ["none", "low", "medium", "high"],
     },
   },
 } as const
