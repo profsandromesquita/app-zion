@@ -6,9 +6,9 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
 };
 
-const BASE_SYSTEM_PROMPT = `Você é Zyon, um conselheiro espiritual cristão acolhedor e empático. Seu papel é oferecer apoio emocional e espiritual baseado nos ensinamentos bíblicos.
+const BASE_IDENTITY = `Você é Zyon, um conselheiro espiritual cristão acolhedor e empático. Seu papel é oferecer apoio emocional e espiritual baseado nos ensinamentos bíblicos.
 
-DIRETRIZES IMPORTANTES:
+DIRETRIZES FUNDAMENTAIS:
 1. ACOLHIMENTO PRIMEIRO: Sempre valide os sentimentos da pessoa antes de oferecer qualquer orientação.
 2. TOM: Seja gentil, paciente e compreensivo. Use linguagem calorosa e acessível.
 3. ESCUTA ATIVA: Faça perguntas abertas para entender melhor a situação.
@@ -17,14 +17,9 @@ DIRETRIZES IMPORTANTES:
 6. ESPERANÇA: Sempre aponte para a esperança em Cristo, mesmo nas situações mais difíceis.
 7. LIMITE PROFISSIONAL: Não substitua terapia profissional. Se perceber sinais de crise (suicídio, violência), incentive gentilmente a buscar ajuda especializada (CVV: 188).
 
-EXEMPLO DE RESPOSTA:
-- "Entendo que você está passando por um momento difícil. É corajoso da sua parte compartilhar isso comigo."
-- "Você não está sozinho(a). Deus nos lembra em Isaías 41:10: 'Não temas, porque eu sou contigo; não te assombres, porque eu sou o teu Deus'."
-
 Responda sempre em português brasileiro, de forma acolhedora e com empatia genuína.`;
 
 serve(async (req) => {
-  // Handle CORS preflight requests
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
   }
@@ -39,27 +34,82 @@ serve(async (req) => {
 
     console.log("Processing message:", message.substring(0, 50) + "...");
 
-    // Build personalized context from diary if user is authenticated
+    const supabaseUrl = Deno.env.get("SUPABASE_URL");
+    const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    
+    let systemInstructionsContext = "";
+    let knowledgeBaseContext = "";
     let diaryContext = "";
-    if (userId) {
+
+    if (supabaseUrl && supabaseServiceKey) {
+      const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+      // Fetch active system instructions (ordered by priority)
       try {
-        const supabaseUrl = Deno.env.get("SUPABASE_URL");
-        const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-        
-        if (supabaseUrl && supabaseServiceKey) {
-          const supabase = createClient(supabaseUrl, supabaseServiceKey);
+        const { data: instructions, error: instrError } = await supabase
+          .from("system_instructions")
+          .select("name, content")
+          .eq("is_active", true)
+          .order("priority", { ascending: true });
+
+        if (!instrError && instructions && instructions.length > 0) {
+          const instructionsText = instructions.map((i) => 
+            `## ${i.name}\n${i.content}`
+          ).join("\n\n");
           
-          const { data: diaryEntries, error } = await supabase
+          systemInstructionsContext = `
+
+INSTRUÇÕES CUSTOMIZADAS DO SISTEMA:
+${instructionsText}`;
+          
+          console.log("System instructions loaded:", instructions.length);
+        }
+      } catch (err) {
+        console.error("Error fetching system instructions:", err);
+      }
+
+      // Fetch active knowledge base content
+      try {
+        const { data: knowledge, error: kbError } = await supabase
+          .from("knowledge_base")
+          .select("title, content, category")
+          .eq("is_active", true);
+
+        if (!kbError && knowledge && knowledge.length > 0) {
+          const knowledgeText = knowledge.map((k) => {
+            // Limit each document to 1000 chars to prevent prompt overflow
+            const contentPreview = k.content.length > 1000 
+              ? k.content.substring(0, 1000) + "..." 
+              : k.content;
+            return `### ${k.title} (${k.category})\n${contentPreview}`;
+          }).join("\n\n---\n\n");
+          
+          knowledgeBaseContext = `
+
+BASE DE CONHECIMENTO ZION:
+Use os seguintes materiais como guia para suas respostas quando relevante:
+
+${knowledgeText}`;
+          
+          console.log("Knowledge base loaded:", knowledge.length, "documents");
+        }
+      } catch (err) {
+        console.error("Error fetching knowledge base:", err);
+      }
+
+      // Fetch diary entries for authenticated users
+      if (userId) {
+        try {
+          const { data: diaryEntries, error: diaryError } = await supabase
             .from("diary_entries")
             .select("content, created_at")
             .eq("user_id", userId)
             .order("created_at", { ascending: false })
             .limit(5);
 
-          if (!error && diaryEntries && diaryEntries.length > 0) {
+          if (!diaryError && diaryEntries && diaryEntries.length > 0) {
             const entriesSummary = diaryEntries.map((entry) => {
               const date = new Date(entry.created_at).toLocaleDateString("pt-BR");
-              // Limitar cada entrada a 200 caracteres para não sobrecarregar o contexto
               const contentPreview = entry.content.length > 200 
                 ? entry.content.substring(0, 200) + "..." 
                 : entry.content;
@@ -73,19 +123,20 @@ Este usuário compartilhou recentemente em seu diário espiritual:
 ${entriesSummary}
 
 Use estas informações para oferecer apoio mais personalizado e contextualizado. 
-Não mencione diretamente o diário a menos que seja naturalmente relevante para a conversa.
-Se o usuário mencionou dificuldades específicas no diário, mostre sensibilidade a esses temas.`;
+Não mencione diretamente o diário a menos que seja naturalmente relevante para a conversa.`;
             
             console.log("Diary context loaded for user:", userId);
           }
+        } catch (err) {
+          console.error("Error fetching diary entries:", err);
         }
-      } catch (diaryError) {
-        console.error("Error fetching diary entries:", diaryError);
-        // Continue without diary context
       }
     }
 
-    const systemPrompt = BASE_SYSTEM_PROMPT + diaryContext;
+    // Build the complete system prompt
+    const systemPrompt = BASE_IDENTITY + systemInstructionsContext + knowledgeBaseContext + diaryContext;
+
+    console.log("System prompt length:", systemPrompt.length, "characters");
 
     const messages = [
       { role: "system", content: systemPrompt },

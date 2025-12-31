@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Heart, Send, Menu, BookOpen, LogOut, ArrowLeft, User } from "lucide-react";
+import { Heart, Send, Menu, BookOpen, LogOut, ArrowLeft, User, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -8,6 +8,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { useAuth } from "@/hooks/useAuth";
 import { useAnonymousSession } from "@/hooks/useAnonymousSession";
+import { useUserRole } from "@/hooks/useUserRole";
 import { supabase } from "@/integrations/supabase/client";
 import SafetyExit from "@/components/SafetyExit";
 
@@ -25,6 +26,7 @@ const Chat = () => {
 
   const { user, loading: authLoading, signOut } = useAuth();
   const { sessionId: anonSessionId, loading: anonLoading } = useAnonymousSession();
+  const { isAdmin } = useUserRole();
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
@@ -239,6 +241,16 @@ const Chat = () => {
                       <p className="text-xs text-muted-foreground">Logado</p>
                     </div>
                   </div>
+                  {isAdmin && (
+                    <Button
+                      variant="outline"
+                      className="justify-start"
+                      onClick={() => navigate("/admin")}
+                    >
+                      <Shield className="mr-2 h-4 w-4" />
+                      Painel Admin
+                    </Button>
+                  )}
                   <Button
                     variant="outline"
                     className="justify-start"
