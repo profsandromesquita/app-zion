@@ -204,12 +204,12 @@ export function ChatSidebar({
   };
 
   const renderSessionItem = (session: ChatSession) => (
-    <SidebarMenuItem key={session.id} className="flex items-center w-full min-w-0">
+    <SidebarMenuItem key={session.id} className="flex items-center w-full min-w-0 max-w-full">
       <SidebarMenuButton
         onClick={() => onSelectSession(session.id)}
         isActive={session.id === activeSessionId}
         tooltip={collapsed ? session.title : undefined}
-        className="flex-1 min-w-0 pr-0"
+        className="flex-1 min-w-0 pr-1 max-w-[calc(100%-32px)]"
       >
         <div className="flex items-center gap-2 overflow-hidden flex-1 min-w-0">
           <ColorDot color={session.color_tag as ColorTag} />

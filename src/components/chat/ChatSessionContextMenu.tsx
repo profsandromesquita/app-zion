@@ -46,7 +46,7 @@ export function ChatSessionContextMenu({
         <DropdownMenuTrigger asChild>
           <button 
             onClick={(e) => e.stopPropagation()}
-            className="ml-1 shrink-0 flex h-6 w-6 items-center justify-center rounded-md hover:bg-sidebar-accent"
+            className="ml-1 shrink-0 flex-none h-6 w-6 flex items-center justify-center rounded-md hover:bg-sidebar-accent"
           >
             <MoreHorizontal className="h-4 w-4 text-muted-foreground" />
           </button>
