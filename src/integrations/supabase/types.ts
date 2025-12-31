@@ -52,6 +52,7 @@ export type Database = {
           id: string
           is_anonymous: boolean
           session_token: string | null
+          title: string | null
           updated_at: string
           user_id: string | null
         }
@@ -60,6 +61,7 @@ export type Database = {
           id?: string
           is_anonymous?: boolean
           session_token?: string | null
+          title?: string | null
           updated_at?: string
           user_id?: string | null
         }
@@ -68,6 +70,7 @@ export type Database = {
           id?: string
           is_anonymous?: boolean
           session_token?: string | null
+          title?: string | null
           updated_at?: string
           user_id?: string | null
         }
