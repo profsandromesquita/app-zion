@@ -129,6 +129,7 @@ const Chat = () => {
         body: {
           message: userMessage,
           sessionId: chatSessionId,
+          userId: user?.id || null,
           history: messages.slice(-10).map((m) => ({
             role: m.sender === "user" ? "user" : "assistant",
             content: m.content,
