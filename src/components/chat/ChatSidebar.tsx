@@ -212,7 +212,7 @@ export function ChatSidebar({
       >
         <div className="flex items-center gap-2 overflow-hidden flex-1 pr-6">
           <ColorDot color={session.color_tag as ColorTag} />
-          <div className="flex flex-col items-start overflow-hidden min-w-0 w-1/2">
+          <div className="flex flex-col items-start overflow-hidden min-w-0">
             <span className="truncate w-full text-sm">
               {session.title || "Nova Conversa"}
             </span>
@@ -299,7 +299,7 @@ export function ChatSidebar({
         {favoriteSessions.length > 0 && <Separator className="my-2" />}
 
         {/* Regular Conversations Section */}
-        <SidebarGroup>
+        <SidebarGroup className="w-1/2">
           {!collapsed && <SidebarGroupLabel>Conversas</SidebarGroupLabel>}
           <SidebarGroupContent>
             <ScrollArea className="h-[calc(100vh-420px)]">
