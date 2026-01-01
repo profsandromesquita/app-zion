@@ -1,13 +1,15 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Heart, Send, Menu, ArrowLeft } from "lucide-react";
+import { Heart, Send, Menu, ArrowLeft, Bug } from "lucide-react";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { VoiceMicButton } from "@/components/chat/VoiceMicButton";
+import { MessageFeedback } from "@/components/chat/MessageFeedback";
+import { CrisisBanner } from "@/components/chat/CrisisBanner";
+import { DebugPanel } from "@/components/chat/DebugPanel";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { useAuth } from "@/hooks/useAuth";
 import { useAnonymousSession } from "@/hooks/useAnonymousSession";
@@ -21,6 +23,17 @@ interface Message {
   sender: "user" | "ai";
   content: string;
   created_at: string;
+  risk_level?: "none" | "low" | "medium" | "high";
+  intent?: string;
+  role_detected?: string;
+  metadata?: {
+    chunk_ids?: string[];
+    tags_applied?: string[];
+    rag_plan?: object;
+    debug?: object;
+    scores?: Record<string, number>;
+    guardrails?: string[];
+  };
 }
 
 const Chat = () => {
@@ -37,6 +50,8 @@ const Chat = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [chatSessionId, setChatSessionId] = useState<string | null>(null);
   const [isFirstMessage, setIsFirstMessage] = useState(true);
+  const [showCrisisBanner, setShowCrisisBanner] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const {
@@ -45,7 +60,6 @@ const Chat = () => {
     transcript,
     startListening,
     stopListening,
-    resetTranscript,
     error: speechError,
   } = useSpeechRecognition();
 
@@ -116,7 +130,7 @@ const Chat = () => {
   const loadMessages = async (sessionId: string) => {
     const { data, error } = await supabase
       .from("chat_messages")
-      .select("*")
+      .select("id, content, sender, created_at, risk_level, intent, role_detected, metadata")
       .eq("session_id", sessionId)
       .order("created_at", { ascending: true });
 
@@ -126,6 +140,10 @@ const Chat = () => {
         sender: m.sender as "user" | "ai",
         content: m.content,
         created_at: m.created_at,
+        risk_level: m.risk_level as Message["risk_level"],
+        intent: m.intent || undefined,
+        role_detected: m.role_detected || undefined,
+        metadata: m.metadata as Message["metadata"],
       })));
       setIsFirstMessage(data.length === 0);
     }
@@ -194,6 +212,7 @@ const Chat = () => {
           message: userMessage,
           sessionId: chatSessionId,
           userId: user?.id || null,
+          isAdmin: isAdmin,
           history: messages.slice(-10).map((m) => ({
             role: m.sender === "user" ? "user" : "assistant",
             content: m.content,
@@ -205,21 +224,39 @@ const Chat = () => {
         throw new Error(response.error.message);
       }
 
-      const aiContent = response.data?.response || "Estou aqui para ajudar. Como posso te acolher hoje?";
+      const data = response.data;
+      const aiContent = data?.response || "Estou aqui para ajudar. Como posso te acolher hoje?";
+      const riskLevel = data?.risk_level || "none";
+      const intent = data?.intent;
+      const role = data?.role;
+      const debug = data?.debug;
 
-      // Save AI response to DB
-      await supabase.from("chat_messages").insert({
+      // Show crisis banner if high risk
+      if (riskLevel === "high") {
+        setShowCrisisBanner(true);
+      }
+
+      // Save AI response to DB with metadata
+      const { data: savedMsg } = await supabase.from("chat_messages").insert({
         session_id: chatSessionId,
         sender: "ai",
         content: aiContent,
-      });
+        risk_level: riskLevel,
+        intent: intent,
+        role_detected: role,
+        metadata: debug ? { debug, ...debug } : null,
+      }).select("id").single();
 
       // Add AI message
       const aiMsg: Message = {
-        id: `ai-${Date.now()}`,
+        id: savedMsg?.id || `ai-${Date.now()}`,
         sender: "ai",
         content: aiContent,
         created_at: new Date().toISOString(),
+        risk_level: riskLevel,
+        intent: intent,
+        role_detected: role,
+        metadata: debug,
       };
       setMessages((prev) => [...prev, aiMsg]);
     } catch (error) {
@@ -249,6 +286,52 @@ const Chat = () => {
     navigate("/");
   };
 
+  // Message rendering component
+  const renderMessage = (message: Message) => (
+    <div
+      key={message.id}
+      className={`group mb-4 flex ${message.sender === "user" ? "justify-end" : "justify-start"}`}
+    >
+      <div className="flex flex-col">
+        <div
+          className={`max-w-[80%] rounded-2xl px-4 py-3 ${
+            message.sender === "user"
+              ? "bg-primary text-primary-foreground"
+              : "bg-muted text-foreground"
+          }`}
+        >
+          <p className="text-sm whitespace-pre-wrap">{message.content}</p>
+        </div>
+
+        {/* Feedback buttons - only for AI messages with real IDs */}
+        {message.sender === "ai" && message.id && !message.id.startsWith("temp") && !message.id.startsWith("error") && (
+          <MessageFeedback
+            messageId={message.id}
+            sessionId={chatSessionId!}
+            userId={user?.id}
+          />
+        )}
+
+        {/* Debug panel - only for admins */}
+        {isAdmin && showDebug && message.sender === "ai" && message.metadata && (
+          <DebugPanel
+            visible={true}
+            debugData={{
+              intent: message.intent,
+              role: message.role_detected,
+              risk_level: message.risk_level,
+              chunk_ids: message.metadata.chunk_ids,
+              tags_applied: message.metadata.tags_applied,
+              rag_plan: message.metadata.rag_plan as any,
+              scores: message.metadata.scores,
+              guardrails: message.metadata.guardrails,
+            }}
+          />
+        )}
+      </div>
+    </div>
+  );
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
@@ -264,6 +347,12 @@ const Chat = () => {
     return (
       <div className="flex h-screen flex-col bg-background">
         <SafetyExit />
+        
+        {/* Crisis Banner */}
+        <CrisisBanner
+          visible={showCrisisBanner}
+          onDismiss={() => setShowCrisisBanner(false)}
+        />
 
         {/* Header */}
         <header className="flex items-center justify-between border-b border-border px-4 py-3">
@@ -319,22 +408,7 @@ const Chat = () => {
               </div>
             )}
 
-            {messages.map((message) => (
-              <div
-                key={message.id}
-                className={`mb-4 flex ${message.sender === "user" ? "justify-end" : "justify-start"}`}
-              >
-                <div
-                  className={`max-w-[80%] rounded-2xl px-4 py-3 ${
-                    message.sender === "user"
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted text-foreground"
-                  }`}
-                >
-                  <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                </div>
-              </div>
-            ))}
+            {messages.map(renderMessage)}
 
             {isLoading && (
               <div className="mb-4 flex justify-start">
@@ -400,18 +474,38 @@ const Chat = () => {
         />
 
         <div className="relative z-0 flex flex-1 flex-col">
+          {/* Crisis Banner */}
+          <CrisisBanner
+            visible={showCrisisBanner}
+            onDismiss={() => setShowCrisisBanner(false)}
+          />
+
           {/* Header */}
-          <header className="flex items-center gap-3 border-b border-border px-4 py-3">
-            <SidebarTrigger />
-            <div className="flex items-center gap-2">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                <Heart className="h-5 w-5 text-primary" />
-              </div>
-              <div>
-                <h1 className="font-medium text-foreground">Zyon</h1>
-                <p className="text-xs text-muted-foreground">Acolhimento</p>
+          <header className="flex items-center justify-between border-b border-border px-4 py-3">
+            <div className="flex items-center gap-3">
+              <SidebarTrigger />
+              <div className="flex items-center gap-2">
+                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+                  <Heart className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <h1 className="font-medium text-foreground">Zyon</h1>
+                  <p className="text-xs text-muted-foreground">Acolhimento</p>
+                </div>
               </div>
             </div>
+
+            {/* Debug toggle for admins */}
+            {isAdmin && (
+              <Button
+                variant={showDebug ? "secondary" : "ghost"}
+                size="icon"
+                onClick={() => setShowDebug(!showDebug)}
+                title="Toggle Debug Panel"
+              >
+                <Bug className="h-4 w-4" />
+              </Button>
+            )}
           </header>
 
           {/* Messages */}
@@ -432,22 +526,7 @@ const Chat = () => {
                 </div>
               )}
 
-              {messages.map((message) => (
-                <div
-                  key={message.id}
-                  className={`mb-4 flex ${message.sender === "user" ? "justify-end" : "justify-start"}`}
-                >
-                  <div
-                    className={`max-w-[80%] rounded-2xl px-4 py-3 ${
-                      message.sender === "user"
-                        ? "bg-primary text-primary-foreground"
-                        : "bg-muted text-foreground"
-                    }`}
-                  >
-                    <p className="text-sm whitespace-pre-wrap">{message.content}</p>
-                  </div>
-                </div>
-              ))}
+              {messages.map(renderMessage)}
 
               {isLoading && (
                 <div className="mb-4 flex justify-start">
