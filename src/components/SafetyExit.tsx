@@ -19,7 +19,7 @@ const SafetyExit = () => {
           onClick={handleSafetyExit}
           variant="outline"
           size="icon"
-          className="fixed bottom-4 right-4 z-50 h-12 w-12 rounded-full border-2 border-destructive/30 bg-background/95 shadow-lg backdrop-blur-sm transition-all hover:border-destructive hover:bg-destructive hover:text-destructive-foreground"
+          className="fixed bottom-20 right-4 z-50 h-12 w-12 rounded-full border-2 border-destructive/30 bg-background/95 shadow-lg backdrop-blur-sm transition-all hover:border-destructive hover:bg-destructive hover:text-destructive-foreground sm:bottom-4"
           aria-label="Sair rápido"
         >
           <X className="h-5 w-5" />
