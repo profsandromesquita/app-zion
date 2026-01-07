@@ -20,3 +20,9 @@ verify_jwt = false
 
 [functions.dataset-export]
 verify_jwt = false
+
+[functions.turn-insight-observer]
+verify_jwt = false
+
+[functions.journey-export]
+verify_jwt = false

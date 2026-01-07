@@ -764,6 +764,137 @@ export type Database = {
         }
         Relationships: []
       }
+      turn_insights: {
+        Row: {
+          admin_confirmed: boolean | null
+          admin_notes: string | null
+          chat_session_id: string
+          created_at: string
+          curated_at: string | null
+          curated_by: string | null
+          emotion_intensity: number | null
+          emotion_stability: string | null
+          exclude_from_training: boolean | null
+          extraction_error: string | null
+          extraction_status: string | null
+          extractor_version: string
+          id: string
+          include_in_training: boolean | null
+          issues_detected: string[] | null
+          lie_active: Json | null
+          mentor_model_id: string | null
+          message_assistant_id: string
+          message_user_id: string
+          next_best_question_type:
+            | Database["public"]["Enums"]["next_question_type"]
+            | null
+          observer_model_id: string | null
+          overall_score: number | null
+          phase: Database["public"]["Enums"]["journey_phase"] | null
+          phase_confidence: number | null
+          primary_emotions: string[] | null
+          primary_virtue: Json | null
+          quality_metrics: Json | null
+          quality_rationale: string | null
+          rubric_scores: Json | null
+          shift_description: string | null
+          shift_detected: boolean | null
+          shift_evidence: string[] | null
+          truth_target: Json | null
+          turn_number: number
+          updated_at: string
+          zion_cycle: Json | null
+        }
+        Insert: {
+          admin_confirmed?: boolean | null
+          admin_notes?: string | null
+          chat_session_id: string
+          created_at?: string
+          curated_at?: string | null
+          curated_by?: string | null
+          emotion_intensity?: number | null
+          emotion_stability?: string | null
+          exclude_from_training?: boolean | null
+          extraction_error?: string | null
+          extraction_status?: string | null
+          extractor_version?: string
+          id?: string
+          include_in_training?: boolean | null
+          issues_detected?: string[] | null
+          lie_active?: Json | null
+          mentor_model_id?: string | null
+          message_assistant_id: string
+          message_user_id: string
+          next_best_question_type?:
+            | Database["public"]["Enums"]["next_question_type"]
+            | null
+          observer_model_id?: string | null
+          overall_score?: number | null
+          phase?: Database["public"]["Enums"]["journey_phase"] | null
+          phase_confidence?: number | null
+          primary_emotions?: string[] | null
+          primary_virtue?: Json | null
+          quality_metrics?: Json | null
+          quality_rationale?: string | null
+          rubric_scores?: Json | null
+          shift_description?: string | null
+          shift_detected?: boolean | null
+          shift_evidence?: string[] | null
+          truth_target?: Json | null
+          turn_number?: number
+          updated_at?: string
+          zion_cycle?: Json | null
+        }
+        Update: {
+          admin_confirmed?: boolean | null
+          admin_notes?: string | null
+          chat_session_id?: string
+          created_at?: string
+          curated_at?: string | null
+          curated_by?: string | null
+          emotion_intensity?: number | null
+          emotion_stability?: string | null
+          exclude_from_training?: boolean | null
+          extraction_error?: string | null
+          extraction_status?: string | null
+          extractor_version?: string
+          id?: string
+          include_in_training?: boolean | null
+          issues_detected?: string[] | null
+          lie_active?: Json | null
+          mentor_model_id?: string | null
+          message_assistant_id?: string
+          message_user_id?: string
+          next_best_question_type?:
+            | Database["public"]["Enums"]["next_question_type"]
+            | null
+          observer_model_id?: string | null
+          overall_score?: number | null
+          phase?: Database["public"]["Enums"]["journey_phase"] | null
+          phase_confidence?: number | null
+          primary_emotions?: string[] | null
+          primary_virtue?: Json | null
+          quality_metrics?: Json | null
+          quality_rationale?: string | null
+          rubric_scores?: Json | null
+          shift_description?: string | null
+          shift_detected?: boolean | null
+          shift_evidence?: string[] | null
+          truth_target?: Json | null
+          turn_number?: number
+          updated_at?: string
+          zion_cycle?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "turn_insights_chat_session_id_fkey"
+            columns: ["chat_session_id"]
+            isOneToOne: false
+            referencedRelation: "chat_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_profiles: {
         Row: {
           centros: Json | null
@@ -879,6 +1010,20 @@ export type Database = {
       doc_status: "draft" | "review" | "published"
       embedding_status: "pending" | "processing" | "ok" | "failed"
       feedback_type: "helpful" | "not_helpful" | "heresia"
+      journey_phase:
+        | "ACOLHIMENTO"
+        | "CLARIFICACAO"
+        | "PADROES"
+        | "RAIZ"
+        | "TROCA"
+        | "CONSOLIDACAO"
+      next_question_type:
+        | "EVIDENCE"
+        | "ALTERNATIVE"
+        | "SENSATION"
+        | "VALUE"
+        | "TRUTH"
+        | "PRACTICE"
       risk_level: "none" | "low" | "medium" | "high"
     }
     CompositeTypes: {
@@ -1013,6 +1158,22 @@ export const Constants = {
       doc_status: ["draft", "review", "published"],
       embedding_status: ["pending", "processing", "ok", "failed"],
       feedback_type: ["helpful", "not_helpful", "heresia"],
+      journey_phase: [
+        "ACOLHIMENTO",
+        "CLARIFICACAO",
+        "PADROES",
+        "RAIZ",
+        "TROCA",
+        "CONSOLIDACAO",
+      ],
+      next_question_type: [
+        "EVIDENCE",
+        "ALTERNATIVE",
+        "SENSATION",
+        "VALUE",
+        "TRUTH",
+        "PRACTICE",
+      ],
       risk_level: ["none", "low", "medium", "high"],
     },
   },
