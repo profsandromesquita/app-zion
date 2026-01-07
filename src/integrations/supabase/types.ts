@@ -14,6 +14,33 @@ export type Database = {
   }
   public: {
     Tables: {
+      admin_audit_logs: {
+        Row: {
+          action: string
+          admin_id: string
+          created_at: string
+          details: Json | null
+          id: string
+          ip_address: string | null
+        }
+        Insert: {
+          action: string
+          admin_id: string
+          created_at?: string
+          details?: Json | null
+          id?: string
+          ip_address?: string | null
+        }
+        Update: {
+          action?: string
+          admin_id?: string
+          created_at?: string
+          details?: Json | null
+          id?: string
+          ip_address?: string | null
+        }
+        Relationships: []
+      }
       chat_messages: {
         Row: {
           content: string
@@ -372,6 +399,95 @@ export type Database = {
             columns: ["current_version_id"]
             isOneToOne: false
             referencedRelation: "document_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      feedback_dataset_items: {
+        Row: {
+          assistant_answer_text: string
+          chat_session_id: string
+          created_at: string
+          curation_notes: string | null
+          feedback_event_id: string | null
+          feedback_label: Database["public"]["Enums"]["dataset_label"]
+          feedback_note: string | null
+          id: string
+          include_in_export: boolean | null
+          intent: string | null
+          message_assistant_id: string
+          message_user_id: string
+          model_id: string | null
+          rag_low_confidence: boolean | null
+          rag_used: boolean | null
+          retrieval_stats: Json | null
+          retrieved_chunk_ids: string[] | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          risk_level: string | null
+          updated_at: string
+          user_id: string | null
+          user_prompt_text: string
+          was_rewritten: boolean | null
+        }
+        Insert: {
+          assistant_answer_text: string
+          chat_session_id: string
+          created_at?: string
+          curation_notes?: string | null
+          feedback_event_id?: string | null
+          feedback_label: Database["public"]["Enums"]["dataset_label"]
+          feedback_note?: string | null
+          id?: string
+          include_in_export?: boolean | null
+          intent?: string | null
+          message_assistant_id: string
+          message_user_id: string
+          model_id?: string | null
+          rag_low_confidence?: boolean | null
+          rag_used?: boolean | null
+          retrieval_stats?: Json | null
+          retrieved_chunk_ids?: string[] | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          risk_level?: string | null
+          updated_at?: string
+          user_id?: string | null
+          user_prompt_text: string
+          was_rewritten?: boolean | null
+        }
+        Update: {
+          assistant_answer_text?: string
+          chat_session_id?: string
+          created_at?: string
+          curation_notes?: string | null
+          feedback_event_id?: string | null
+          feedback_label?: Database["public"]["Enums"]["dataset_label"]
+          feedback_note?: string | null
+          id?: string
+          include_in_export?: boolean | null
+          intent?: string | null
+          message_assistant_id?: string
+          message_user_id?: string
+          model_id?: string | null
+          rag_low_confidence?: boolean | null
+          rag_used?: boolean | null
+          retrieval_stats?: Json | null
+          retrieved_chunk_ids?: string[] | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          risk_level?: string | null
+          updated_at?: string
+          user_id?: string | null
+          user_prompt_text?: string
+          was_rewritten?: boolean | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "feedback_dataset_items_feedback_event_id_fkey"
+            columns: ["feedback_event_id"]
+            isOneToOne: false
+            referencedRelation: "feedback_events"
             referencedColumns: ["id"]
           },
         ]
@@ -758,6 +874,7 @@ export type Database = {
     }
     Enums: {
       app_role: "admin" | "soldado" | "buscador"
+      dataset_label: "useful" | "not_useful" | "theology_report"
       doc_layer: "CONSTITUICAO" | "NUCLEO" | "BIBLIOTECA"
       doc_status: "draft" | "review" | "published"
       embedding_status: "pending" | "processing" | "ok" | "failed"
@@ -891,6 +1008,7 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin", "soldado", "buscador"],
+      dataset_label: ["useful", "not_useful", "theology_report"],
       doc_layer: ["CONSTITUICAO", "NUCLEO", "BIBLIOTECA"],
       doc_status: ["draft", "review", "published"],
       embedding_status: ["pending", "processing", "ok", "failed"],

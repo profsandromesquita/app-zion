@@ -14,6 +14,7 @@ import SystemInstructions from "./pages/admin/SystemInstructions";
 import Documents from "./pages/admin/Documents";
 import DocumentChunks from "./pages/admin/DocumentChunks";
 import RagTest from "./pages/admin/RagTest";
+import FeedbackDataset from "./pages/admin/FeedbackDataset";
 
 const queryClient = new QueryClient();
 
@@ -32,6 +33,7 @@ const App = () => (
           <Route path="/admin/documents" element={<Documents />} />
           <Route path="/admin/documents/:docId/chunks" element={<DocumentChunks />} />
           <Route path="/admin/rag-test" element={<RagTest />} />
+          <Route path="/admin/feedback-dataset" element={<FeedbackDataset />} />
           <Route path="/admin/knowledge" element={<KnowledgeBase />} />
           <Route path="/admin/instructions" element={<SystemInstructions />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}

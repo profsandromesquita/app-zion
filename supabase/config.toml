@@ -17,3 +17,6 @@ verify_jwt = false
 
 [functions.feedback-handler]
 verify_jwt = false
+
+[functions.dataset-export]
+verify_jwt = false
