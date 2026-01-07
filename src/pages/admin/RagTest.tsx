@@ -30,14 +30,14 @@ interface SearchResult {
 }
 
 const LAYERS = [
-  { value: "", label: "Todas as camadas" },
+  { value: "__all__", label: "Todas as camadas" },
   { value: "CONSTITUICAO", label: "Constituição" },
   { value: "NUCLEO", label: "Núcleo" },
   { value: "BIBLIOTECA", label: "Biblioteca" },
 ];
 
 const DOMAINS = [
-  { value: "", label: "Todos os domínios" },
+  { value: "__all__", label: "Todos os domínios" },
   { value: "geral", label: "Geral" },
   { value: "metodologia", label: "Metodologia" },
   { value: "diagnostico", label: "Diagnóstico" },
@@ -50,8 +50,8 @@ const DOMAINS = [
 
 const RagTest = () => {
   const [query, setQuery] = useState("");
-  const [filterLayer, setFilterLayer] = useState("");
-  const [filterDomain, setFilterDomain] = useState("");
+  const [filterLayer, setFilterLayer] = useState("__all__");
+  const [filterDomain, setFilterDomain] = useState("__all__");
   const [matchThreshold, setMatchThreshold] = useState([0.05]); // Alinhado com threshold adaptável
   const [matchCount, setMatchCount] = useState([10]);
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -74,8 +74,8 @@ const RagTest = () => {
           query,
           match_threshold: matchThreshold[0],
           match_count: matchCount[0],
-          filter_layer: filterLayer || null,
-          filter_domain: filterDomain || null,
+          filter_layer: filterLayer === "__all__" ? null : filterLayer,
+          filter_domain: filterDomain === "__all__" ? null : filterDomain,
         },
       });
 
