@@ -316,77 +316,118 @@ ${metadataContext}
 
 Analise este turno e extraia os insights estruturados.`;
 
-    // Call LLM for extraction
+    // Call LLM for extraction (with one retry)
     console.log("Calling LLM for extraction...");
-    
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "openai/gpt-5-mini",
-        messages: [
-          { role: "system", content: OBSERVER_SYSTEM_PROMPT },
-          { role: "user", content: userPrompt }
-        ],
-        tools: [EXTRACTION_TOOL],
-        tool_choice: { type: "function", function: { name: "extract_turn_insight" } },
-        max_completion_tokens: 2000,
-      }),
-    });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("LLM error:", response.status, errorText);
-      
-      // Mark as failed
-      await supabase
-        .from("turn_insights")
-        .update({ 
-          extraction_status: "failed",
-          extraction_error: `LLM error: ${response.status}`,
-        })
-        .eq("id", pendingRecord.id);
-      
-      throw new Error(`LLM error: ${response.status}`);
-    }
+    const stripJsonFences = (text: string) => {
+      const trimmed = text.trim();
+      // ```json ... ``` or ``` ... ```
+      const fenceMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+      return fenceMatch ? fenceMatch[1].trim() : trimmed;
+    };
 
-    const llmResult = await response.json();
-    console.log("LLM response received");
+    const extractFromLlmResult = (llm: any) => {
+      const msg = llm?.choices?.[0]?.message;
+      const toolCall = msg?.tool_calls?.[0];
+      if (toolCall?.function?.arguments) {
+        try {
+          return JSON.parse(toolCall.function.arguments);
+        } catch {
+          // fallthrough
+        }
+      }
 
-    // Extract tool call result
-    const toolCall = llmResult.choices?.[0]?.message?.tool_calls?.[0];
-    if (!toolCall?.function?.arguments) {
-      console.error("No tool call in response");
-      
-      await supabase
-        .from("turn_insights")
-        .update({ 
-          extraction_status: "failed",
-          extraction_error: "No tool call in LLM response",
-        })
-        .eq("id", pendingRecord.id);
-      
-      throw new Error("No tool call in LLM response");
-    }
+      // Fallback: sometimes the model returns JSON in message.content
+      const content = msg?.content;
+      if (typeof content === "string" && content.trim()) {
+        try {
+          return JSON.parse(stripJsonFences(content));
+        } catch {
+          // no-op
+        }
+      }
 
-    let extractedData;
+      return null;
+    };
+
+    const callLLM = async (model: string) => {
+      const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: "system", content: OBSERVER_SYSTEM_PROMPT },
+            { role: "user", content: userPrompt },
+          ],
+          tools: [EXTRACTION_TOOL],
+          tool_choice: { type: "function", function: { name: "extract_turn_insight" } },
+          max_completion_tokens: 2000,
+        }),
+      });
+
+      if (!resp.ok) {
+        const errorText = await resp.text();
+        console.error("LLM error:", resp.status, errorText);
+        throw new Error(`LLM error: ${resp.status}`);
+      }
+
+      return resp.json();
+    };
+
+    let usedModel = "openai/gpt-5-mini";
+    let llmResult: any;
+    let extractedData: any = null;
+
     try {
-      extractedData = JSON.parse(toolCall.function.arguments);
-    } catch (parseErr) {
-      console.error("Failed to parse tool call arguments:", parseErr);
-      
+      llmResult = await callLLM(usedModel);
+      console.log("LLM response received");
+      extractedData = extractFromLlmResult(llmResult);
+
+      if (!extractedData) {
+        console.warn("No tool call/content JSON on first attempt; retrying with openai/gpt-5...");
+        usedModel = "openai/gpt-5";
+        llmResult = await callLLM(usedModel);
+        console.log("LLM response received (retry)");
+        extractedData = extractFromLlmResult(llmResult);
+      }
+    } catch (err) {
       await supabase
         .from("turn_insights")
-        .update({ 
+        .update({
           extraction_status: "failed",
-          extraction_error: "Failed to parse extraction result",
+          extraction_error: err instanceof Error ? err.message : "LLM call failed",
+          observer_model_id: usedModel,
         })
         .eq("id", pendingRecord.id);
-      
-      throw parseErr;
+
+      // Do not hard-fail the caller; telemetry can fail silently.
+      return new Response(
+        JSON.stringify({ status: "failed", error: err instanceof Error ? err.message : "LLM call failed" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    if (!extractedData) {
+      console.error("No tool call in response");
+
+      await supabase
+        .from("turn_insights")
+        .update({
+          extraction_status: "failed",
+          extraction_error: "No tool call/content JSON in LLM response",
+          observer_model_id: usedModel,
+        })
+        .eq("id", pendingRecord.id);
+
+      // Return 200 to avoid breaking the app flow; this is non-critical telemetry.
+      return new Response(
+        JSON.stringify({ status: "failed", error: "No tool call in LLM response" }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
     console.log("Extracted data:", JSON.stringify(extractedData).substring(0, 200));
@@ -414,6 +455,7 @@ Analise este turno e extraia os insights estruturados.`;
         quality_rationale: extractedData.quality_rationale,
         extraction_status: "completed",
         extraction_error: null,
+        observer_model_id: usedModel,
       })
       .eq("id", pendingRecord.id);
 
