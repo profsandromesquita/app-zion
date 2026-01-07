@@ -41,6 +41,13 @@ interface ChunkResult {
   similarity: number;
 }
 
+interface TopChunkDebug {
+  id: string;
+  title: string;
+  score: string;
+  text_preview: string;
+}
+
 interface ZyonResponse {
   response: string;
   debug?: {
@@ -50,6 +57,8 @@ interface ZyonResponse {
     chunk_ids: string[];
     rag_plan: RouterResult["rag_plan"];
     latency_ms: number;
+    top_chunks?: TopChunkDebug[];
+    guardrails?: string[];
   };
   next_actions?: {
     suggestions?: string[];
@@ -289,6 +298,46 @@ function applyGuardrails(response: string, chunks: ChunkResult[]): {
   return {
     clean: warnings.length === 0,
     warnings,
+  };
+}
+
+// ============================================
+// OUTPUT VALIDATOR (Fase 4)
+// ============================================
+
+interface ValidationResult {
+  valid: boolean;
+  issues: string[];
+  needsRewrite: boolean;
+}
+
+function validateResponse(response: string, intent: string): ValidationResult {
+  const issues: string[] = [];
+  
+  // Check response length (should be concise - under 900 chars for most intents)
+  if (response.length > 900 && intent !== "EXEGESE_DUVIDA_BIBLICA") {
+    issues.push("RESPONSE_TOO_LONG");
+  }
+  
+  // Check for questions (should have at least 1-2)
+  const questionCount = (response.match(/\?/g) || []).length;
+  if (questionCount < 1 && intent !== "EXEGESE_DUVIDA_BIBLICA") {
+    issues.push("TOO_FEW_QUESTIONS");
+  }
+  
+  // Check for Bible citation without context of permission
+  const hasBibleCitation = BIBLE_VERSE_PATTERN.test(response);
+  const asksPermission = /posso compartilhar|gostaria de compartilhar|você permite|quer que eu/i.test(response);
+  
+  // Only flag if there's a Bible citation but the intent suggests emotional context
+  if (hasBibleCitation && (intent === "ACOLHIMENTO_IMEDIATO") && !asksPermission) {
+    issues.push("BIBLE_WITHOUT_PERMISSION");
+  }
+  
+  return {
+    valid: issues.length === 0,
+    issues,
+    needsRewrite: issues.includes("RESPONSE_TOO_LONG") || issues.includes("TOO_FEW_QUESTIONS"),
   };
 }
 
@@ -633,10 +682,52 @@ serve(async (req) => {
       "Estou aqui para você. Por favor, compartilhe o que está em seu coração.";
 
     // ========================================
-    // STEP 7: GUARDRAILS
+    // STEP 7: GUARDRAILS + OUTPUT VALIDATION
     // ========================================
-    console.log("Step 7: Guardrails");
+    console.log("Step 7: Guardrails & Output Validation");
     const guardrailResult = applyGuardrails(aiResponse, chunks);
+    const validationResult = validateResponse(aiResponse, intent);
+    
+    // If validation fails and we have a rewrite need, try to get shorter response
+    if (validationResult.needsRewrite && !validationResult.valid) {
+      console.log("Output validation failed, attempting rewrite:", validationResult.issues);
+      
+      try {
+        const rewritePrompt = `A resposta anterior precisa ser ajustada:
+${validationResult.issues.includes("RESPONSE_TOO_LONG") ? "- Encurte para no máximo 5 linhas" : ""}
+${validationResult.issues.includes("TOO_FEW_QUESTIONS") ? "- Inclua pelo menos 2 perguntas abertas" : ""}
+${validationResult.issues.includes("BIBLE_WITHOUT_PERMISSION") ? "- Pergunte se a pessoa quer uma perspectiva bíblica antes de citar" : ""}
+
+Resposta original: "${aiResponse}"
+
+Reescreva de forma mais concisa, mantendo o tom acolhedor e incluindo perguntas:`;
+
+        const rewriteResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${LOVABLE_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model: "google/gemini-2.5-flash-lite",
+            messages: [{ role: "user", content: rewritePrompt }],
+            max_tokens: 600,
+            temperature: 0.5,
+          }),
+        });
+
+        if (rewriteResponse.ok) {
+          const rewriteData = await rewriteResponse.json();
+          const rewrittenContent = rewriteData.choices?.[0]?.message?.content;
+          if (rewrittenContent && rewrittenContent.length < aiResponse.length) {
+            console.log("Response rewritten successfully");
+            aiResponse = rewrittenContent;
+          }
+        }
+      } catch (rewriteErr) {
+        console.error("Rewrite failed:", rewriteErr);
+      }
+    }
     
     if (!guardrailResult.clean && isAdmin) {
       console.log("Guardrail warnings:", guardrailResult.warnings);
@@ -666,6 +757,14 @@ serve(async (req) => {
     const latencyMs = Date.now() - startTime;
     console.log(`=== PIPELINE COMPLETE (${latencyMs}ms) ===`);
 
+    // Build top_chunks for debug
+    const topChunksDebug: TopChunkDebug[] = chunks.slice(0, 3).map(c => ({
+      id: c.id,
+      title: c.section_path?.join(" > ") || c.domain || "Sem título",
+      score: (c.similarity * 100).toFixed(1) + "%",
+      text_preview: c.text.substring(0, 100) + "...",
+    }));
+
     // Build response
     const response: ZyonResponse = {
       response: aiResponse,
@@ -684,6 +783,8 @@ serve(async (req) => {
         chunk_ids: chunks.map(c => c.id),
         rag_plan: ragPlan,
         latency_ms: latencyMs,
+        top_chunks: topChunksDebug,
+        guardrails: guardrailResult.warnings.length > 0 ? guardrailResult.warnings : undefined,
       };
     }
 
