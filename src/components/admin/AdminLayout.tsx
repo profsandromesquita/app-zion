@@ -8,7 +8,8 @@ import {
   BookOpen,
   Database,
   Search,
-  MessageSquare
+  MessageSquare,
+  Map
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -24,6 +25,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
     { to: "/admin/documents", icon: Database, label: "Documentos RAG" },
     { to: "/admin/rag-test", icon: Search, label: "Teste RAG" },
     { to: "/admin/feedback-dataset", icon: MessageSquare, label: "Dataset Feedback" },
+    { to: "/admin/journey-map", icon: Map, label: "Mapa de Jornada" },
     { to: "/admin/knowledge", icon: BookOpen, label: "Base Legada" },
     { to: "/admin/instructions", icon: Settings, label: "System Instructions" },
   ];

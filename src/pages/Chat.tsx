@@ -187,12 +187,14 @@ const Chat = () => {
     setMessages((prev) => [...prev, tempUserMsg]);
 
     try {
-      // Save user message to DB
-      await supabase.from("chat_messages").insert({
+      // Save user message to DB and get its ID
+      const { data: savedUserMsg } = await supabase.from("chat_messages").insert({
         session_id: chatSessionId,
         sender: "user",
         content: userMessage,
-      });
+      }).select("id").single();
+
+      const userMessageId = savedUserMsg?.id;
 
       // Update session title if first message
       if (isFirstMessage) {
@@ -206,6 +208,9 @@ const Chat = () => {
           .eq("id", chatSessionId);
       }
 
+      // Count turns for observer
+      const turnNumber = messages.filter(m => m.sender === "user").length + 1;
+
       // Call AI Edge Function
       const response = await supabase.functions.invoke("zyon-chat", {
         body: {
@@ -213,6 +218,8 @@ const Chat = () => {
           sessionId: chatSessionId,
           userId: user?.id || null,
           isAdmin: isAdmin,
+          userMessageId: userMessageId,
+          turnNumber: turnNumber,
           history: messages.slice(-10).map((m) => ({
             role: m.sender === "user" ? "user" : "assistant",
             content: m.content,
@@ -246,6 +253,31 @@ const Chat = () => {
         role_detected: role,
         metadata: debug ? { debug, ...debug } : null,
       }).select("id").single();
+
+      // Trigger observer for telemetry (fire and forget - async)
+      if (userMessageId && savedMsg?.id && chatSessionId) {
+        supabase.functions.invoke("turn-insight-observer", {
+          body: {
+            session_id: chatSessionId,
+            message_user_id: userMessageId,
+            message_assistant_id: savedMsg.id,
+            history: messages.slice(-10).map((m) => ({
+              role: m.sender === "user" ? "user" : "assistant",
+              content: m.content,
+            })),
+            user_prompt: userMessage,
+            assistant_response: aiContent,
+            turn_number: turnNumber,
+            metadata: {
+              intent,
+              risk_level: riskLevel,
+              was_rewritten: debug?.validation?.was_rewritten || false,
+              low_confidence_retrieval: debug?.low_confidence_retrieval || false,
+              validation_issues: debug?.validation?.issues?.map((i: any) => i.code) || [],
+            },
+          },
+        }).catch(err => console.warn("Observer trigger failed:", err));
+      }
 
       // Add AI message
       const aiMsg: Message = {
