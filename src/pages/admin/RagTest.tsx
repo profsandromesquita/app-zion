@@ -52,7 +52,7 @@ const RagTest = () => {
   const [query, setQuery] = useState("");
   const [filterLayer, setFilterLayer] = useState("");
   const [filterDomain, setFilterDomain] = useState("");
-  const [matchThreshold, setMatchThreshold] = useState([0.35]); // Alinhado com zyon-chat
+  const [matchThreshold, setMatchThreshold] = useState([0.05]); // Alinhado com threshold adaptável
   const [matchCount, setMatchCount] = useState([10]);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
