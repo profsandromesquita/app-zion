@@ -266,7 +266,7 @@ serve(async (req) => {
         turn_number,
         extractor_version: "v1.0",
         mentor_model_id: metadata.model_id || "google/gemini-2.5-flash",
-        observer_model_id: "openai/gpt-5-nano",
+        observer_model_id: "openai/gpt-5-mini",
         extraction_status: "processing",
         quality_metrics: {
           char_count: assistant_response?.length || 0,
@@ -326,7 +326,7 @@ Analise este turno e extraia os insights estruturados.`;
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "openai/gpt-5-nano",
+        model: "openai/gpt-5-mini",
         messages: [
           { role: "system", content: OBSERVER_SYSTEM_PROMPT },
           { role: "user", content: userPrompt }
