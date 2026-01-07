@@ -48,6 +48,35 @@ interface TopChunkDebug {
   text_preview: string;
 }
 
+interface ValidationIssue {
+  code: string;
+  severity: 'CRITICAL' | 'HIGH' | 'FORMAT' | 'MEDIUM';
+  message: string;
+}
+
+interface UserContext {
+  hasRevolt: boolean;
+  hasGrief: boolean;
+  hasExplicitEmotion: boolean;
+  askedForBible: boolean;
+  mentionedBible: boolean;
+  refusedBible: boolean;
+}
+
+interface ValidationResult {
+  valid: boolean;
+  issues: ValidationIssue[];
+  needsRewrite: boolean;
+  rewriteInstructions: string[];
+}
+
+interface RetrievalStats {
+  max_score: number;
+  avg_score: number;
+  chunks_above_threshold: number;
+  total_chunks: number;
+}
+
 interface ZyonResponse {
   response: string;
   debug?: {
@@ -59,6 +88,16 @@ interface ZyonResponse {
     latency_ms: number;
     top_chunks?: TopChunkDebug[];
     guardrails?: string[];
+    retrieval_confidence?: 'high' | 'medium' | 'low';
+    low_confidence_retrieval?: boolean;
+    retrieval_stats?: RetrievalStats;
+    validation?: {
+      char_count: number;
+      line_count: number;
+      question_count: number;
+      issues: ValidationIssue[];
+      was_rewritten: boolean;
+    };
   };
   next_actions?: {
     suggestions?: string[];
@@ -69,6 +108,27 @@ interface ZyonResponse {
     contacts?: Record<string, string>;
   };
 }
+
+// ============================================
+// EMBEDDING CONFIGURATION (PHASE 0)
+// ============================================
+
+const EMBEDDING_CONFIG = {
+  'simple-hash-v1': {
+    threshold: 0.03,
+    fallbackEnabled: true,
+    fallbackTopK: 3,
+    maxChunkTextInFallback: 200,
+  },
+  'semantic-real': {
+    threshold: 0.40,
+    fallbackEnabled: false,
+    fallbackTopK: 0,
+    maxChunkTextInFallback: 500,
+  },
+};
+
+const CURRENT_EMBEDDING_TYPE = 'simple-hash-v1';
 
 // ============================================
 // BASE IDENTITY (CONSTITUIÇÃO)
@@ -302,44 +362,198 @@ function applyGuardrails(response: string, chunks: ChunkResult[]): {
 }
 
 // ============================================
-// OUTPUT VALIDATOR (Fase 4)
+// USER CONTEXT DETECTION (PHASE 1)
 // ============================================
 
-interface ValidationResult {
-  valid: boolean;
-  issues: string[];
-  needsRewrite: boolean;
-}
-
-function validateResponse(response: string, intent: string): ValidationResult {
-  const issues: string[] = [];
+function detectUserContext(message: string, history: any[]): UserContext {
+  const allUserText = [message, ...history
+    .filter(h => h.role === 'user')
+    .map(h => h.content)
+  ].join(' ');
   
-  // Check response length (should be concise - under 900 chars for most intents)
-  if (response.length > 900 && intent !== "EXEGESE_DUVIDA_BIBLICA") {
-    issues.push("RESPONSE_TOO_LONG");
-  }
-  
-  // Check for questions (should have at least 1-2)
-  const questionCount = (response.match(/\?/g) || []).length;
-  if (questionCount < 1 && intent !== "EXEGESE_DUVIDA_BIBLICA") {
-    issues.push("TOO_FEW_QUESTIONS");
-  }
-  
-  // Check for Bible citation without context of permission
-  const hasBibleCitation = BIBLE_VERSE_PATTERN.test(response);
-  const asksPermission = /posso compartilhar|gostaria de compartilhar|você permite|quer que eu/i.test(response);
-  
-  // Only flag if there's a Bible citation but the intent suggests emotional context
-  if (hasBibleCitation && (intent === "ACOLHIMENTO_IMEDIATO") && !asksPermission) {
-    issues.push("BIBLE_WITHOUT_PERMISSION");
-  }
+  const currentMsg = message.toLowerCase();
   
   return {
-    valid: issues.length === 0,
-    issues,
-    needsRewrite: issues.includes("RESPONSE_TOO_LONG") || issues.includes("TOO_FEW_QUESTIONS"),
+    hasRevolt: /\b(deus n[aã]o existe|n[aã]o acredito em deus|revoltado com deus|deus me abandonou|odeio deus|deus n[aã]o se importa)\b/i.test(allUserText),
+    
+    hasGrief: /\b(perdi (meu|minha|um|uma)|morte|morreu|faleceu|luto|perda)\b/i.test(allUserText),
+    
+    hasExplicitEmotion: /\b(triste|dor|angust|raiva|vazio|medo|desespero|arrasado|sofrendo|chorando|destru[ií]do)\b/i.test(currentMsg),
+    
+    // PEDIDO EXPLICITO (autoriza citacao)
+    askedForBible: /\b(me (d[aá]|de|fala|traz) (um |uma )?(vers[ií]culo|passagem)|cita a b[ií]blia|quero.*passagem|quer.*palavra de deus)\b/i.test(allUserText),
+    
+    // MENCAO (NAO autoriza citacao)
+    mentionedBible: /\b(b[ií]blia|vers[ií]culo|passagem b[ií]blica)\b/i.test(allUserText) && 
+                    !/\b(me (d[aá]|de|fala|traz)|cita|quero)\b/i.test(allUserText),
+    
+    // RECUSA EXPLICITA (prevalece sobre pedido anterior)
+    refusedBible: /\b(n[aã]o quero b[ií]blia|n[aã]o cite b[ií]blia|para de (trazer|citar) b[ií]blia|sem b[ií]blia|chega de b[ií]blia)\b/i.test(allUserText),
   };
 }
+
+// ============================================
+// OUTPUT VALIDATOR (PHASE 1 - COMPLETE)
+// ============================================
+
+function validateResponseComplete(
+  response: string, 
+  intent: string, 
+  userContext: UserContext,
+  turnCount: number
+): ValidationResult {
+  const issues: ValidationIssue[] = [];
+  const rewriteInstructions: string[] = [];
+  
+  const lines = response.split('\n').filter(l => l.trim()).length;
+  const chars = response.length;
+  const questions = (response.match(/\?/g) || []).length;
+  
+  // === FORMAT ===
+  if (chars > 900 && intent !== 'EXEGESE_DUVIDA_BIBLICA') {
+    issues.push({ code: 'TOO_LONG', severity: 'FORMAT', message: 'Resposta > 900 chars' });
+    rewriteInstructions.push('Reduza para 3-7 linhas curtas');
+  }
+  if (lines > 7) {
+    issues.push({ code: 'TOO_MANY_LINES', severity: 'FORMAT', message: 'Mais de 7 linhas' });
+    rewriteInstructions.push('Reduza para no máximo 7 linhas');
+  }
+  if (questions < 2) {
+    issues.push({ code: 'TOO_FEW_QUESTIONS', severity: 'FORMAT', message: 'Menos de 2 perguntas' });
+    rewriteInstructions.push('Inclua 2-4 perguntas abertas e curtas');
+  }
+  
+  // === MEDIUM ===
+  if (questions > 4) {
+    issues.push({ code: 'TOO_MANY_QUESTIONS', severity: 'MEDIUM', message: 'Mais de 4 perguntas' });
+  }
+  
+  // JARGAO CEDO (primeiros 3 turnos)
+  if (turnCount <= 3) {
+    const jargaoRegex = /\b(perda\s*->\s*medo|medo raiz|falsa seguran[cç]a|mecanismo de defesa|detector de ciclos|portas dos sentidos|espelho da virtude)\b/i;
+    if (jargaoRegex.test(response)) {
+      issues.push({ code: 'JARGON_TOO_EARLY', severity: 'MEDIUM', message: 'Jargão metodológico cedo demais' });
+      rewriteInstructions.push('Remova jargões metodológicos - use linguagem acessível');
+    }
+  }
+  
+  // === HIGH ===
+  
+  // PRESUNCAO (so se usuario NAO deu sinal emocional)
+  if (!userContext.hasExplicitEmotion) {
+    const presuncaoRegex = /\b(sinto que|consigo sentir|percebo que (voc[eê]|h[aá])|vejo que|minha sensa[cç][aã]o [eé] que|h[aá] algo pesando|me parece que h[aá])\b/i;
+    if (presuncaoRegex.test(response)) {
+      issues.push({ code: 'PRESUMPTION', severity: 'HIGH', message: 'Presunção sem sinal do usuário' });
+      rewriteInstructions.push('Remova "sinto que...", "percebo que..." - pergunte em vez de presumir');
+    }
+  }
+  
+  // DIAGNOSTICO ABSOLUTO
+  const diagnosticoRegex = /\b(seu problema [eé]|o seu problema [eé]|isso (mostra|prova|indica) que|[eé] evidente que|claramente|sem d[uú]vida|com certeza|h[aá] um padr[aã]o em sua vida|isso revela um padr[aã]o)\b/i;
+  if (diagnosticoRegex.test(response)) {
+    issues.push({ code: 'DIAGNOSTIC_ABSOLUTE', severity: 'HIGH', message: 'Diagnóstico declarativo' });
+    rewriteInstructions.push('Remova diagnósticos absolutos - transforme em perguntas');
+  }
+  
+  // === CRITICAL ===
+  
+  // CONFLICT AS FACT - Deteccao por JANELA LOCAL (sentença)
+  const conflictTerms = /\b(inveja|invejoso|invejosos|querem te diminuir|querem te derrubar|minar sua autoconfian[cç]a)\b/i;
+  const sentences = response.split(/[.!]/);
+  
+  for (const sentence of sentences) {
+    if (conflictTerms.test(sentence)) {
+      const hypothesisMarkers = /\b(talvez|pode ser|[eé] poss[ií]vel|hip[oó]tese|ser[aá] que|voc[eê] acha que)\b/i;
+      const hasHypothesisInSentence = hypothesisMarkers.test(sentence);
+      const hasQuestionInSentence = sentence.includes('?');
+      
+      if (!hasHypothesisInSentence && !hasQuestionInSentence) {
+        issues.push({ code: 'CONFLICT_AS_FACT', severity: 'CRITICAL', message: 'Inveja confirmada como fato' });
+        rewriteInstructions.push(`Para "inveja", siga este padrão OBRIGATÓRIO:
+1) Valide a emoção: "Faz sentido você sentir raiva/injustiça..."
+2) Pergunta de evidência: "O que exatamente eles disseram ou fizeram?"
+3) Ofereça alternativas: "Pode ser insegurança deles, brincadeira..."
+4) Retorne ao controle: "O que isso mexe em você?"
+NÃO confirme inveja como fato.`);
+        break;
+      }
+    }
+  }
+  
+  // BIBLIA - Recusa prevalece
+  const biblePattern = /\b([1-3]?\s?[A-Za-zÀ-ú]+)\s+(\d+)[:\.](\d+)/;
+  const biblePhrase = /\b(a b[ií]blia diz|est[aá] escrito|a escritura diz|tanakh|brit hadashah)\b/i;
+  const hasBible = biblePattern.test(response) || biblePhrase.test(response);
+  
+  if (hasBible) {
+    // Recusa EXPLICITA prevalece sobre tudo
+    if (userContext.refusedBible) {
+      issues.push({ code: 'BIBLE_REFUSED', severity: 'CRITICAL', message: 'Usuário recusou Bíblia' });
+      rewriteInstructions.push('Remova toda citação bíblica - o usuário pediu explicitamente sem Bíblia');
+    }
+    // Usuario NAO pediu biblia? CRITICAL
+    else if (!userContext.askedForBible) {
+      issues.push({ code: 'BIBLE_WITHOUT_PERMISSION', severity: 'CRITICAL', message: 'Bíblia sem pedido explícito' });
+      rewriteInstructions.push('Remova toda citação bíblica - o usuário não pediu');
+    }
+    // Usuario pediu MAS esta em revolta? Precisa perguntar permissao
+    else if (userContext.hasRevolt) {
+      const permissionQuestion = /voc[eê] quer (s[oó] ser ouvid|que eu procure uma palavra|uma perspectiva b[ií]blica)/i;
+      if (!permissionQuestion.test(response)) {
+        issues.push({ code: 'BIBLE_REVOLT_NO_PERMISSION', severity: 'CRITICAL', message: 'Bíblia em revolta sem pergunta de permissão' });
+        rewriteInstructions.push('Remova a citação e adicione: "Você quer só ser ouvido(a) agora — ou quer que eu procure uma palavra bíblica, bem curta, que não minimize a dor?"');
+      }
+    }
+  }
+  
+  // GRIEF TRAUMA DETAILS
+  const griefDetailsRegex = /\b(como (foi|aconteceu|ocorreu) (a |o )?(morte|falecimento|acidente)|detalhes (da|do) (morte|falecimento|acidente)|o que aconteceu com (ele|ela))\b/i;
+  if (userContext.hasGrief && griefDetailsRegex.test(response)) {
+    issues.push({ code: 'GRIEF_TRAUMA_DETAILS', severity: 'CRITICAL', message: 'Pedindo detalhes do trauma' });
+    rewriteInstructions.push('Remova perguntas sobre detalhes da morte/acidente - foque em sentimentos (vazio, raiva, injustiça)');
+  }
+  
+  // POLITICA DE DECISAO
+  const hasCritical = issues.some(i => i.severity === 'CRITICAL');
+  const hasFormat = issues.some(i => i.severity === 'FORMAT');
+  const highCount = issues.filter(i => i.severity === 'HIGH').length;
+  
+  const needsRewrite = hasCritical || hasFormat || highCount >= 2;
+  
+  return { 
+    valid: issues.length === 0, 
+    issues, 
+    needsRewrite,
+    rewriteInstructions 
+  };
+}
+
+// ============================================
+// REWRITE PROMPT BUILDER (PHASE 2)
+// ============================================
+
+function buildRewritePrompt(response: string, validation: ValidationResult): string {
+  const instructions = [
+    'Reescreva a resposta mantendo tom acolhedor:',
+    '- 3-7 linhas curtas',
+    '- 2-4 perguntas abertas',
+    '- Sem presunções ou diagnósticos',
+    '',
+    ...validation.rewriteInstructions,
+  ];
+  
+  return instructions.join('\n') + `\n\nOriginal: "${response}"\n\nReescreva APENAS o texto final (sem explicações):`;
+}
+
+// ============================================
+// MINIMAL SAFE RESPONSE (PHASE 2)
+// ============================================
+
+const MINIMAL_SAFE_RESPONSE = `Entendo que você está passando por algo importante.
+
+O que você está sentindo neste momento?
+
+Como isso tem afetado seu dia a dia?`;
 
 // ============================================
 // EMBEDDING GENERATION (Simple hash-based)
@@ -362,6 +576,22 @@ async function generateSimpleEmbedding(text: string): Promise<number[]> {
   
   const magnitude = Math.sqrt(embedding.reduce((sum, v) => sum + v * v, 0));
   return embedding.map(v => v / (magnitude || 1));
+}
+
+// ============================================
+// LEXICAL OVERLAP RERANKER (PHASE 0 - HYGIENE)
+// ============================================
+
+function rerankByLexicalOverlap(chunks: ChunkResult[], userMessage: string): ChunkResult[] {
+  const userKeywords = userMessage.toLowerCase()
+    .split(/\s+/)
+    .filter(w => w.length > 3);
+  
+  return chunks.sort((a, b) => {
+    const overlapA = userKeywords.filter(kw => a.text.toLowerCase().includes(kw)).length;
+    const overlapB = userKeywords.filter(kw => b.text.toLowerCase().includes(kw)).length;
+    return overlapB - overlapA;
+  });
 }
 
 // ============================================
@@ -398,6 +628,9 @@ serve(async (req) => {
     const supabase = supabaseUrl && supabaseServiceKey 
       ? createClient(supabaseUrl, supabaseServiceKey) 
       : null;
+
+    // Get embedding config
+    const embeddingConfig = EMBEDDING_CONFIG[CURRENT_EMBEDDING_TYPE];
 
     // ========================================
     // STEP 1: CRISIS DETECTION (Priority Zero)
@@ -441,18 +674,23 @@ serve(async (req) => {
     }
 
     // ========================================
-    // STEP 2: INTENT ROUTING
+    // STEP 2: INTENT ROUTING + USER CONTEXT
     // ========================================
-    console.log("Step 2: Intent Routing");
+    console.log("Step 2: Intent Routing + User Context");
     const { intent, confidence } = classifyIntent(message);
     const ragPlan = buildRAGPlan(intent);
+    const userContext = detectUserContext(message, history);
+    const turnCount = history.filter((h: { role: string }) => h.role === 'user').length + 1;
+    
     console.log("Intent:", intent, "Confidence:", confidence);
+    console.log("User context:", JSON.stringify(userContext));
 
     // ========================================
-    // STEP 3-4: RAG RETRIEVAL
+    // STEP 3-4: RAG RETRIEVAL (WITH ADAPTIVE THRESHOLD)
     // ========================================
-    console.log("Step 3-4: RAG Retrieval");
+    console.log("Step 3-4: RAG Retrieval (Adaptive Threshold)");
     let chunks: ChunkResult[] = [];
+    let lowConfidence = false;
     let constitutionInstructions = "";
     let customInstructions = "";
     let diaryContext = "";
@@ -497,7 +735,7 @@ serve(async (req) => {
         console.error("Error fetching instructions:", err);
       }
 
-      // Vector search for chunks
+      // Vector search for chunks (PHASE 0: Adaptive threshold + fallback)
       if (ragPlan.topK > 0) {
         try {
           const queryEmbedding = await generateSimpleEmbedding(message);
@@ -508,15 +746,17 @@ serve(async (req) => {
             ? ragPlan.filters.domains[0] 
             : null;
 
+          // First attempt with configured threshold
+          console.log(`RAG Search: threshold=${embeddingConfig.threshold}, topK=${ragPlan.topK}`);
           const { data: searchResults, error: searchError } = await supabase.rpc("search_chunks", {
             query_embedding: queryEmbedding,
-            match_threshold: 0.35,
+            match_threshold: embeddingConfig.threshold,
             match_count: ragPlan.topK,
             filter_layer: filterLayer,
             filter_domain: filterDomain,
           });
 
-          if (!searchError && searchResults) {
+          if (!searchError && searchResults && searchResults.length > 0) {
             // Additional filtering for multiple domains
             chunks = searchResults.filter((c: ChunkResult) => {
               if (ragPlan.filters.domains && ragPlan.filters.domains.length > 1) {
@@ -527,7 +767,27 @@ serve(async (req) => {
               }
               return true;
             });
-            console.log("Chunks retrieved:", chunks.length);
+            console.log("Chunks retrieved (primary):", chunks.length);
+          }
+
+          // FALLBACK: If empty and fallback enabled
+          if (chunks.length === 0 && embeddingConfig.fallbackEnabled) {
+            console.log("Primary retrieval empty, attempting fallback...");
+            
+            const { data: fallbackResults, error: fallbackError } = await supabase.rpc("search_chunks", {
+              query_embedding: queryEmbedding,
+              match_threshold: 0.0, // No threshold
+              match_count: embeddingConfig.fallbackTopK,
+              filter_layer: ragPlan.layers[0] || null, // Keep hygiene filter
+              filter_domain: null,
+            });
+
+            if (!fallbackError && fallbackResults && fallbackResults.length > 0) {
+              // Apply lexical reranking for hygiene
+              chunks = rerankByLexicalOverlap(fallbackResults, message);
+              lowConfidence = true;
+              console.log("Fallback retrieval (low confidence, reranked):", chunks.length);
+            }
           }
         } catch (err) {
           console.error("Error in vector search:", err);
@@ -599,14 +859,33 @@ serve(async (req) => {
       systemPrompt += `\n\n## INSTRUÇÕES ADICIONAIS\n${customInstructions}`;
     }
 
-    // Add retrieved context
+    // Add retrieved context (PHASE 0: Adapt for low confidence)
     if (chunks.length > 0) {
-      const chunksText = chunks.map((c, i) => {
-        const path = c.section_path?.join(" > ") || "";
-        return `### Ref ${i + 1} [${c.layer}/${c.domain}]${path ? ` - ${path}` : ""}\n${c.text}`;
-      }).join("\n\n---\n\n");
+      let chunksText;
+      
+      if (lowConfidence) {
+        // Limited text injection for low confidence
+        chunksText = chunks.map((c, i) => {
+          const preview = c.text.substring(0, embeddingConfig.maxChunkTextInFallback);
+          return `### Pista ${i + 1} [${c.layer}]\n${preview}...`;
+        }).join("\n\n");
+        
+        systemPrompt += `\n\n## CONTEXTO (BAIXA CONFIANÇA - USE COMO PISTAS)
+ATENÇÃO: Estes trechos podem não ser diretamente relevantes.
+- PERGUNTE MAIS, afirme menos
+- Use como PISTAS, não como base para conclusões
+- Seja mais aberto e exploratório
 
-      systemPrompt += `\n\n## CONTEXTO DA BASE DE CONHECIMENTO ZION\nUse as seguintes referências para fundamentar suas respostas:\n\n${chunksText}`;
+${chunksText}`;
+      } else {
+        // Normal context (high confidence)
+        chunksText = chunks.map((c, i) => {
+          const path = c.section_path?.join(" > ") || "";
+          return `### Ref ${i + 1} [${c.layer}/${c.domain}]${path ? ` - ${path}` : ""}\n${c.text}`;
+        }).join("\n\n---\n\n");
+
+        systemPrompt += `\n\n## CONTEXTO DA BASE DE CONHECIMENTO ZION\nUse as seguintes referências para fundamentar suas respostas:\n\n${chunksText}`;
+      }
     }
 
     // Add intent guidance
@@ -682,26 +961,24 @@ serve(async (req) => {
       "Estou aqui para você. Por favor, compartilhe o que está em seu coração.";
 
     // ========================================
-    // STEP 7: GUARDRAILS + OUTPUT VALIDATION
+    // STEP 7: GUARDRAILS + OUTPUT VALIDATION (PHASE 1-2)
     // ========================================
-    console.log("Step 7: Guardrails & Output Validation");
+    console.log("Step 7: Guardrails & Output Validation (Complete)");
     const guardrailResult = applyGuardrails(aiResponse, chunks);
-    const validationResult = validateResponse(aiResponse, intent);
+    const validationResult = validateResponseComplete(aiResponse, intent, userContext, turnCount);
     
-    // If validation fails and we have a rewrite need, try to get shorter response
-    if (validationResult.needsRewrite && !validationResult.valid) {
-      console.log("Output validation failed, attempting rewrite:", validationResult.issues);
+    let didRewrite = false;
+    const MAX_REWRITE_ATTEMPTS = 1;
+    let rewriteAttempts = 0;
+    
+    // If validation fails, try rewrite (PHASE 2: Max 1 attempt)
+    if (validationResult.needsRewrite && rewriteAttempts < MAX_REWRITE_ATTEMPTS) {
+      console.log("Output validation failed, attempting rewrite:", validationResult.issues.map(i => i.code));
+      rewriteAttempts++;
       
       try {
-        const rewritePrompt = `A resposta anterior precisa ser ajustada:
-${validationResult.issues.includes("RESPONSE_TOO_LONG") ? "- Encurte para no máximo 5 linhas" : ""}
-${validationResult.issues.includes("TOO_FEW_QUESTIONS") ? "- Inclua pelo menos 2 perguntas abertas" : ""}
-${validationResult.issues.includes("BIBLE_WITHOUT_PERMISSION") ? "- Pergunte se a pessoa quer uma perspectiva bíblica antes de citar" : ""}
-
-Resposta original: "${aiResponse}"
-
-Reescreva de forma mais concisa, mantendo o tom acolhedor e incluindo perguntas:`;
-
+        const rewritePrompt = buildRewritePrompt(aiResponse, validationResult);
+        
         const rewriteResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
           method: "POST",
           headers: {
@@ -711,21 +988,34 @@ Reescreva de forma mais concisa, mantendo o tom acolhedor e incluindo perguntas:
           body: JSON.stringify({
             model: "google/gemini-2.5-flash-lite",
             messages: [{ role: "user", content: rewritePrompt }],
-            max_tokens: 600,
-            temperature: 0.5,
+            max_tokens: 500,
+            temperature: 0.3, // Lower temperature for consistency
           }),
         });
 
         if (rewriteResponse.ok) {
           const rewriteData = await rewriteResponse.json();
           const rewrittenContent = rewriteData.choices?.[0]?.message?.content;
-          if (rewrittenContent && rewrittenContent.length < aiResponse.length) {
+          
+          // Validate that rewrite improved things
+          if (rewrittenContent && rewrittenContent.length < aiResponse.length * 1.2) {
             console.log("Response rewritten successfully");
             aiResponse = rewrittenContent;
+            didRewrite = true;
           }
         }
       } catch (rewriteErr) {
         console.error("Rewrite failed:", rewriteErr);
+      }
+    }
+
+    // If rewrite failed or still invalid with CRITICAL, use minimal safe
+    if (validationResult.needsRewrite && !didRewrite) {
+      const hasCritical = validationResult.issues.some(i => i.severity === 'CRITICAL');
+      if (hasCritical) {
+        console.log("Using minimal safe response due to CRITICAL issues");
+        aiResponse = MINIMAL_SAFE_RESPONSE;
+        didRewrite = true;
       }
     }
     
@@ -738,6 +1028,20 @@ Reescreva de forma mais concisa, mantendo o tom acolhedor e incluindo perguntas:
     // ========================================
     console.log("Step 8: Persistence & Response");
     
+    // Calculate retrieval stats (PHASE 4)
+    const retrievalStats: RetrievalStats | null = chunks.length > 0 ? {
+      max_score: Math.max(...chunks.map(c => c.similarity)),
+      avg_score: chunks.reduce((sum, c) => sum + c.similarity, 0) / chunks.length,
+      chunks_above_threshold: chunks.filter(c => c.similarity >= embeddingConfig.threshold).length,
+      total_chunks: chunks.length,
+    } : null;
+
+    const retrievalConfidence: 'high' | 'medium' | 'low' = 
+      !chunks.length ? 'low' :
+      lowConfidence ? 'low' :
+      (retrievalStats?.max_score || 0) > 0.10 ? 'high' :
+      (retrievalStats?.max_score || 0) > 0.05 ? 'medium' : 'low';
+    
     // Log retrieval for audit
     if (supabase && sessionId) {
       const { error: retrievalLogError } = await supabase.from("retrieval_logs").insert({
@@ -747,7 +1051,11 @@ Reescreva de forma mais concisa, mantendo o tom acolhedor e incluindo perguntas:
         role: "BUSCADOR",
         retrieved_chunk_ids: chunks.map(c => c.id),
         filters_used: ragPlan.filters,
-        scores_json: { chunks: chunks.map(c => ({ id: c.id, similarity: c.similarity })) },
+        scores_json: { 
+          chunks: chunks.map(c => ({ id: c.id, similarity: c.similarity })),
+          retrieval_confidence: retrievalConfidence,
+          low_confidence: lowConfidence,
+        },
         rag_plan: ragPlan,
         latency_ms: Date.now() - startTime,
       });
@@ -774,7 +1082,7 @@ Reescreva de forma mais concisa, mantendo o tom acolhedor e incluindo perguntas:
       } : undefined,
     };
 
-    // Add debug info for admins
+    // Add debug info for admins (PHASE 3-4)
     if (isAdmin) {
       response.debug = {
         intent,
@@ -785,6 +1093,17 @@ Reescreva de forma mais concisa, mantendo o tom acolhedor e incluindo perguntas:
         latency_ms: latencyMs,
         top_chunks: topChunksDebug,
         guardrails: guardrailResult.warnings.length > 0 ? guardrailResult.warnings : undefined,
+        // New debug fields
+        retrieval_confidence: retrievalConfidence,
+        low_confidence_retrieval: lowConfidence,
+        retrieval_stats: retrievalStats || undefined,
+        validation: {
+          char_count: aiResponse.length,
+          line_count: aiResponse.split('\n').filter((l: string) => l.trim()).length,
+          question_count: (aiResponse.match(/\?/g) || []).length,
+          issues: validationResult.issues,
+          was_rewritten: didRewrite,
+        },
       };
     }
 
