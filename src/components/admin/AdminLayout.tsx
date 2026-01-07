@@ -7,7 +7,8 @@ import {
   ArrowLeft,
   BookOpen,
   Database,
-  Search
+  Search,
+  MessageSquare
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -22,6 +23,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
     { to: "/admin", icon: LayoutDashboard, label: "Dashboard", end: true },
     { to: "/admin/documents", icon: Database, label: "Documentos RAG" },
     { to: "/admin/rag-test", icon: Search, label: "Teste RAG" },
+    { to: "/admin/feedback-dataset", icon: MessageSquare, label: "Dataset Feedback" },
     { to: "/admin/knowledge", icon: BookOpen, label: "Base Legada" },
     { to: "/admin/instructions", icon: Settings, label: "System Instructions" },
   ];
