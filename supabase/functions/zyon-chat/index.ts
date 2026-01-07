@@ -1115,56 +1115,6 @@ ${chunksText}`;
     const latencyMs = Date.now() - startTime;
     console.log(`=== PIPELINE COMPLETE (${latencyMs}ms) ===`);
 
-    // ========================================
-    // STEP 9: TRIGGER OBSERVER (ASYNC - NON-BLOCKING)
-    // ========================================
-    // This runs AFTER responding to the user (fire and forget)
-    // The observer will analyze the turn and save insights for telemetry
-    const triggerObserver = async (userMsgId: string, assistantMsgId: string, turnNum: number) => {
-      try {
-        console.log("Triggering turn-insight-observer...");
-        const supabaseUrl = Deno.env.get("SUPABASE_URL");
-        const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
-        
-        if (!supabaseUrl || !supabaseServiceKey) {
-          console.error("Cannot trigger observer: missing credentials");
-          return;
-        }
-
-        // Use fetch to call the edge function directly (fire and forget)
-        fetch(`${supabaseUrl}/functions/v1/turn-insight-observer`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${supabaseServiceKey}`,
-          },
-          body: JSON.stringify({
-            session_id: sessionId,
-            message_user_id: userMsgId,
-            message_assistant_id: assistantMsgId,
-            history: messages.slice(-10),
-            user_prompt: message,
-            assistant_response: aiResponse,
-            turn_number: turnNum,
-            metadata: {
-              intent,
-              risk_level: crisisResult.risk_level,
-              was_rewritten: didRewrite,
-              low_confidence_retrieval: lowConfidence,
-              retrieval_stats: retrievalStats,
-              validation_issues: validationResult.issues.map(i => i.code),
-              model_id: "google/gemini-2.5-flash",
-            },
-          }),
-        }).then(res => {
-          if (!res.ok) console.error("Observer response error:", res.status);
-          else console.log("Observer triggered successfully");
-        }).catch(err => console.error("Observer trigger failed:", err));
-      } catch (err) {
-        console.error("Observer trigger error:", err);
-      }
-    };
-
     // Build top_chunks for debug
     const topChunksDebug: TopChunkDebug[] = chunks.slice(0, 3).map(c => ({
       id: c.id,
