@@ -8,6 +8,13 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 
+interface TopChunk {
+  id: string;
+  title: string;
+  score: string;
+  text_preview: string;
+}
+
 interface DebugData {
   intent?: string;
   role?: string;
@@ -22,6 +29,7 @@ interface DebugData {
   scores?: Record<string, number>;
   latency_ms?: number;
   guardrails?: string[];
+  top_chunks?: TopChunk[];
 }
 
 interface DebugPanelProps {
@@ -113,14 +121,40 @@ export const DebugPanel = ({ visible, debugData }: DebugPanelProps) => {
             </div>
           )}
 
-          {/* Chunks */}
-          {debugData.chunk_ids && debugData.chunk_ids.length > 0 && (
+          {/* Top Chunks with Preview */}
+          {debugData.top_chunks && debugData.top_chunks.length > 0 && (
+            <div className="mb-3">
+              <p className="mb-1 font-medium text-muted-foreground">
+                Top Chunks ({debugData.top_chunks.length})
+              </p>
+              <div className="space-y-2">
+                {debugData.top_chunks.map((chunk, index) => (
+                  <div key={chunk.id} className="rounded bg-background p-2 text-xs">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="font-medium text-foreground">
+                        #{index + 1} {chunk.title}
+                      </span>
+                      <Badge variant="outline" className="text-xs">
+                        {chunk.score}
+                      </Badge>
+                    </div>
+                    <p className="text-muted-foreground line-clamp-2">
+                      {chunk.text_preview}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Fallback: Chunk IDs (if no top_chunks) */}
+          {!debugData.top_chunks && debugData.chunk_ids && debugData.chunk_ids.length > 0 && (
             <div className="mb-3">
               <p className="mb-1 font-medium text-muted-foreground">
                 Chunks ({debugData.chunk_ids.length})
               </p>
               <div className="flex flex-wrap gap-1">
-                {debugData.chunk_ids.slice(0, 5).map((id, index) => (
+                {debugData.chunk_ids.slice(0, 5).map((id) => (
                   <code key={id} className="rounded bg-background px-1.5 py-0.5">
                     {id.slice(0, 8)}...
                     {debugData.scores?.[id] && (

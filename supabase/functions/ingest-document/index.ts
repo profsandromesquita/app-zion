@@ -417,18 +417,31 @@ serve(async (req) => {
       }
     }
 
-    // Atualizar status da versão
-    const newStatus = action === "generate_embeddings" ? "review" : version.status;
+    // Atualizar status da versão e documento para PUBLISHED após sucesso
+    // Isso garante que os chunks sejam recuperáveis via search_chunks
+    const newStatus = action === "generate_embeddings" ? "published" : version.status;
+    
     await supabase
       .from("document_versions")
       .update({ status: newStatus })
       .eq("id", version_id);
+
+    // Auto-publicar documento após processamento bem-sucedido
+    if (action === "generate_embeddings") {
+      await supabase
+        .from("documents")
+        .update({ status: "published", updated_at: new Date().toISOString() })
+        .eq("id", doc_id);
+      
+      console.log("Document auto-published after successful embedding generation");
+    }
 
     return new Response(
       JSON.stringify({ 
         success: true,
         chunks_created: chunks.length,
         message: `Processed ${chunks.length} chunks`,
+        auto_published: action === "generate_embeddings",
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

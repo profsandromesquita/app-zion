@@ -16,13 +16,14 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
-import { Plus, Trash2, Edit, Settings, GripVertical } from "lucide-react";
+import { Plus, Trash2, Edit, Settings, GripVertical, Pin } from "lucide-react";
 
 interface InstructionItem {
   id: string;
   name: string;
   content: string;
   is_active: boolean;
+  is_pinned: boolean;
   priority: number;
   created_at: string;
 }
@@ -108,6 +109,20 @@ const SystemInstructions = () => {
     if (error) {
       toast.error("Erro ao atualizar status");
     } else {
+      fetchItems();
+    }
+  };
+
+  const handleTogglePinned = async (id: string, isPinned: boolean) => {
+    const { error } = await supabase
+      .from("system_instructions")
+      .update({ is_pinned: !isPinned })
+      .eq("id", id);
+
+    if (error) {
+      toast.error("Erro ao atualizar status");
+    } else {
+      toast.success(isPinned ? "Removido da Constituição" : "Fixado como Constituição");
       fetchItems();
     }
   };
@@ -252,18 +267,34 @@ const SystemInstructions = () => {
           ) : (
             <div className="space-y-3">
               {items.map((item) => (
-                <Card key={item.id} className={!item.is_active ? "opacity-50" : ""}>
+                <Card key={item.id} className={`${!item.is_active ? "opacity-50" : ""} ${item.is_pinned ? "border-primary border-2" : ""}`}>
                   <CardHeader className="flex flex-row items-center justify-between pb-2">
                     <div className="flex items-center gap-3">
                       <GripVertical className="h-5 w-5 text-muted-foreground" />
                       <div>
-                        <CardTitle className="text-base">{item.name}</CardTitle>
+                        <div className="flex items-center gap-2">
+                          <CardTitle className="text-base">{item.name}</CardTitle>
+                          {item.is_pinned && (
+                            <span className="text-xs bg-primary text-primary-foreground px-2 py-0.5 rounded-full flex items-center gap-1">
+                              <Pin className="h-3 w-3" />
+                              Constituição
+                            </span>
+                          )}
+                        </div>
                         <p className="text-xs text-muted-foreground">
                           Prioridade: {item.priority}
                         </p>
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
+                      <Button
+                        variant={item.is_pinned ? "default" : "outline"}
+                        size="sm"
+                        onClick={() => handleTogglePinned(item.id, item.is_pinned)}
+                        title={item.is_pinned ? "Remover da Constituição" : "Fixar como Constituição"}
+                      >
+                        <Pin className="h-4 w-4" />
+                      </Button>
                       <Switch
                         checked={item.is_active}
                         onCheckedChange={() =>

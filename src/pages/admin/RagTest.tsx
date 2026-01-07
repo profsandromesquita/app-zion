@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Slider } from "@/components/ui/slider";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { CheckCircle, XCircle } from "lucide-react";
 import { Search, FileText, Layers, Tag, ChevronRight } from "lucide-react";
 
 interface SearchResult {
@@ -22,6 +23,10 @@ interface SearchResult {
   domain: string;
   priority: number;
   similarity: number;
+  // Extended fields from join
+  doc_title?: string;
+  doc_status?: string;
+  retrievable?: boolean;
 }
 
 const LAYERS = [
@@ -47,7 +52,7 @@ const RagTest = () => {
   const [query, setQuery] = useState("");
   const [filterLayer, setFilterLayer] = useState("");
   const [filterDomain, setFilterDomain] = useState("");
-  const [matchThreshold, setMatchThreshold] = useState([0.5]);
+  const [matchThreshold, setMatchThreshold] = useState([0.35]); // Alinhado com zyon-chat
   const [matchCount, setMatchCount] = useState([10]);
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -220,8 +225,27 @@ const RagTest = () => {
                           <Badge variant="outline" className="ml-2">
                             {(result.similarity * 100).toFixed(1)}% similar
                           </Badge>
+                          {/* Retrievable indicator */}
+                          {result.retrievable !== undefined && (
+                            result.retrievable ? (
+                              <Badge variant="default" className="gap-1 bg-green-600">
+                                <CheckCircle className="h-3 w-3" />
+                                Recuperável
+                              </Badge>
+                            ) : (
+                              <Badge variant="destructive" className="gap-1">
+                                <XCircle className="h-3 w-3" />
+                                Não Recuperável
+                              </Badge>
+                            )
+                          )}
                         </CardTitle>
                         <CardDescription className="flex items-center gap-1 flex-wrap">
+                          {result.doc_title && (
+                            <span className="font-medium text-foreground mr-2">
+                              [{result.doc_title}]
+                            </span>
+                          )}
                           {result.section_path?.map((section, i) => (
                             <span key={i} className="flex items-center">
                               {i > 0 && <ChevronRight className="h-3 w-3 text-muted-foreground" />}
@@ -230,13 +254,21 @@ const RagTest = () => {
                           ))}
                         </CardDescription>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <Badge variant="outline" className="gap-1">
                           <Layers className="h-3 w-3" />
                           {result.layer}
                         </Badge>
                         <Badge variant="secondary">{result.domain}</Badge>
                         <Badge>P: {result.priority}</Badge>
+                        {result.doc_status && (
+                          <Badge 
+                            variant={result.doc_status === 'published' ? 'default' : 'outline'}
+                            className={result.doc_status === 'published' ? 'bg-green-600' : ''}
+                          >
+                            {result.doc_status}
+                          </Badge>
+                        )}
                       </div>
                     </div>
                   </CardHeader>
