@@ -40,7 +40,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import {
-  Map,
+  Map as MapIcon,
   TrendingUp,
   AlertTriangle,
   Download,
@@ -341,7 +341,7 @@ const JourneyMap = () => {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-2xl font-bold text-foreground flex items-center gap-2">
-              <Map className="h-6 w-6" />
+              <MapIcon className="h-6 w-6" />
               Mapa de Jornada (Metanoia)
             </h1>
             <p className="text-muted-foreground">
@@ -509,7 +509,7 @@ const JourneyMap = () => {
             <CardContent>
               {!selectedSessionId ? (
                 <div className="text-center py-16 text-muted-foreground">
-                  <Map className="mx-auto h-12 w-12 opacity-50 mb-4" />
+                  <MapIcon className="mx-auto h-12 w-12 opacity-50 mb-4" />
                   <p>Selecione uma conversa para ver a timeline</p>
                 </div>
               ) : loadingTimeline ? (
