@@ -437,21 +437,52 @@ function validateResponseComplete(
     }
   }
   
-  // === HIGH ===
+// === MODO PRESENÇA (turnos 1-3 são mais rigorosos) ===
+  const isEarlyTurn = turnCount <= 3;
   
-  // PRESUNCAO (so se usuario NAO deu sinal emocional)
+  // BANIR "sinto que" SEMPRE (substituir por espelhamento)
+  const sintoQueRegex = /\bsinto que\b/i;
+  if (sintoQueRegex.test(response)) {
+    issues.push({ 
+      code: 'SINTO_QUE_BANNED', 
+      severity: isEarlyTurn ? 'CRITICAL' : 'HIGH',
+      message: '"Sinto que" banido - usar espelhamento' 
+    });
+    rewriteInstructions.push('Substitua "Sinto que..." por espelhamento: "Você está me dizendo que..." ou "Parece que você..." (pergunta)');
+  }
+  
+  // PRESUNCAO (só se usuário NÃO deu sinal emocional)
   if (!userContext.hasExplicitEmotion) {
-    const presuncaoRegex = /\b(sinto que|consigo sentir|percebo que (voc[eê]|h[aá])|vejo que|minha sensa[cç][aã]o [eé] que|h[aá] algo pesando|me parece que h[aá])\b/i;
+    const presuncaoRegex = /\b(consigo sentir|percebo que (voc[eê]|h[aá])|vejo que|minha sensa[cç][aã]o [eé] que|h[aá] algo pesando|me parece que h[aá])\b/i;
     if (presuncaoRegex.test(response)) {
-      issues.push({ code: 'PRESUMPTION', severity: 'HIGH', message: 'Presunção sem sinal do usuário' });
-      rewriteInstructions.push('Remova "sinto que...", "percebo que..." - pergunte em vez de presumir');
+      issues.push({ 
+        code: 'PRESUMPTION', 
+        severity: isEarlyTurn ? 'CRITICAL' : 'HIGH',
+        message: 'Presunção sem sinal do usuário' 
+      });
+      rewriteInstructions.push('Remova "percebo que...", "vejo que..." - use espelhamento: "Você está me dizendo que..."');
     }
   }
   
+  // CAUSALIDADE / DIAGNOSTICO (frases que atribuem motivo)
+  const causalidadeRegex = /\b(talvez (seja|esteja|voc[eê] esteja|tenha sido) (uma forma|um jeito|um modo|por causa|resultado)|isso (pode ser|parece ser|provavelmente [eé]) (uma|um|sua)|voc[eê] (est[aá]|parece estar) (buscando|tentando|compensando)|h[aá] um padr[aã]o (em sua vida|de))\b/i;
+  if (causalidadeRegex.test(response)) {
+    issues.push({ 
+      code: 'CAUSALITY_DIAGNOSTIC', 
+      severity: isEarlyTurn ? 'CRITICAL' : 'HIGH',
+      message: 'Atribuição causal/diagnóstico' 
+    });
+    rewriteInstructions.push('Remova frases causais ("talvez seja uma forma de...") - transforme em pergunta: "Você acha que pode ter a ver com...?"');
+  }
+  
   // DIAGNOSTICO ABSOLUTO
-  const diagnosticoRegex = /\b(seu problema [eé]|o seu problema [eé]|isso (mostra|prova|indica) que|[eé] evidente que|claramente|sem d[uú]vida|com certeza|h[aá] um padr[aã]o em sua vida|isso revela um padr[aã]o)\b/i;
+  const diagnosticoRegex = /\b(seu problema [eé]|o seu problema [eé]|isso (mostra|prova|indica) que|[eé] evidente que|claramente|sem d[uú]vida|com certeza|isso revela um padr[aã]o)\b/i;
   if (diagnosticoRegex.test(response)) {
-    issues.push({ code: 'DIAGNOSTIC_ABSOLUTE', severity: 'HIGH', message: 'Diagnóstico declarativo' });
+    issues.push({ 
+      code: 'DIAGNOSTIC_ABSOLUTE', 
+      severity: isEarlyTurn ? 'CRITICAL' : 'HIGH',
+      message: 'Diagnóstico declarativo' 
+    });
     rewriteInstructions.push('Remova diagnósticos absolutos - transforme em perguntas');
   }
   
@@ -518,7 +549,12 @@ NÃO confirme inveja como fato.`);
   const hasFormat = issues.some(i => i.severity === 'FORMAT');
   const highCount = issues.filter(i => i.severity === 'HIGH').length;
   
-  const needsRewrite = hasCritical || hasFormat || highCount >= 2;
+  // MODO PRESENÇA: violações de presunção/diagnóstico disparam reescrita MESMO SOZINHAS
+  const presenceModeViolation = issues.some(i => 
+    ['PRESUMPTION', 'SINTO_QUE_BANNED', 'CAUSALITY_DIAGNOSTIC', 'DIAGNOSTIC_ABSOLUTE'].includes(i.code)
+  );
+  
+  const needsRewrite = hasCritical || hasFormat || highCount >= 2 || presenceModeViolation;
   
   return { 
     valid: issues.length === 0, 
@@ -533,6 +569,19 @@ NÃO confirme inveja como fato.`);
 // ============================================
 
 function buildRewritePrompt(response: string, validation: ValidationResult): string {
+  const hasPresenceViolation = validation.issues.some(i => 
+    ['PRESUMPTION', 'SINTO_QUE_BANNED', 'CAUSALITY_DIAGNOSTIC', 'DIAGNOSTIC_ABSOLUTE'].includes(i.code)
+  );
+  
+  const presenceInstructions = hasPresenceViolation ? [
+    '',
+    'MODO PRESENÇA - Use espelhamento:',
+    '- Em vez de "Sinto que você está carregando algo" → "Você disse que está difícil. O que isso significa para você?"',
+    '- Em vez de "Percebo que há medo" → "Quando você pensa nisso, o que sente?"',
+    '- Em vez de "Talvez seja uma forma de se proteger" → "Você acha que pode ter a ver com alguma forma de proteção?"',
+    'NUNCA use "sinto que", "percebo que", "parece que" como AFIRMAÇÃO. Sempre como PERGUNTA.',
+  ] : [];
+  
   const instructions = [
     'Reescreva a resposta mantendo tom acolhedor:',
     '- 3-7 linhas curtas',
@@ -540,6 +589,7 @@ function buildRewritePrompt(response: string, validation: ValidationResult): str
     '- Sem presunções ou diagnósticos',
     '',
     ...validation.rewriteInstructions,
+    ...presenceInstructions,
   ];
   
   return instructions.join('\n') + `\n\nOriginal: "${response}"\n\nReescreva APENAS o texto final (sem explicações):`;
