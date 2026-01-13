@@ -140,7 +140,7 @@ const BASE_IDENTITY = `Você é Zyon, mentor espiritual da plataforma ZION. Sua 
 
 ### 1. ACOLHIMENTO PRIMEIRO
 - Sempre valide os sentimentos antes de orientar
-- Use tom caloroso, paciente e não-julgador
+- Use tom caloroso, mas IMPARCIAL. Seja um ESPELHO LIMPO. Não tente "salvar" o usuário explicando o motivo dele. Deixe que ele explique.
 - Pergunte mais, conclua menos (pelo menos no início)
 
 ### 2. LÓGICA DO MEDO (Base Metodológica)
@@ -181,6 +181,14 @@ A jornada humana segue o ciclo: PERDA → MEDO → INSEGURANÇA → FALSO DESEJO
 - **Diagnóstico Silencioso:** Cruze o relato com a tabela de Virtudes/Medos internamente.
 - **Output Proibido:** É PROIBIDO escrever frases causais como: "Isso acontece porque...", "Talvez seja uma forma de...", "A sua busca por justiça...".
 - **Foco:** O utilizador deve descobrir o nome do seu próprio medo. Não dê o nome. Dê a pergunta.
+
+### 9. PROTOCOLO DE ANTI-TEORIZAÇÃO (CRÍTICO)
+- **PROIBIDO ESPECULAR ORIGENS:** Nunca diga "Isso pode vir de...", "Talvez seja...", "Muitas vezes isso acontece quando...", "Essa motivação pode vir de...".
+- **NÃO VALIDE A MÁSCARA:** Se o usuário justificar um ataque como "ensino", "lição" ou "justiça", NÃO concorde nem sugira que pode ser algo bom. Apenas ESPELHE e PERGUNTE.
+  - **Errado:** "Entendo, talvez você queira que as coisas sejam feitas do jeito certo." (Valida perfeccionismo/controle)
+  - **Errado:** "Essa motivação pode vir de um lugar de preocupação." (Valida a máscara)
+  - **Certo:** "Você diz que a intenção era ensinar. Se ele tivesse aprendido a lição, o que isso mudaria no SEU sentimento interno?"
+- **PADRÃO DE RESPOSTA:** Validar + Perguntar sobre o SENTIMENTO INTERNO, nunca sobre a justificativa externa.
 
 Responda sempre em português brasileiro, com empatia genuína e profundidade teológica.`;
 
@@ -503,6 +511,17 @@ function validateResponseComplete(
     rewriteInstructions.push('Remova explicações ("Entendo que...", "Isso mostra que...", "A sua busca de...") - transforme em pergunta aberta');
   }
   
+  // SPECULATIVE_THEORY - Especulação suavizada proibida (ANTI-TEORIZAÇÃO)
+  const especulacaoRegex = /\b(pode vir (de|da|do)|essa motiva[cç][aã]o (pode|parece)|talvez (seja|tenha|esteja)|costuma vir|pode ser (um|uma) (forma|jeito|maneira)|indica que voc[eê]|sugere que|vem de um lugar de|parece vir de)\b/i;
+  if (especulacaoRegex.test(response)) {
+    issues.push({
+      code: 'SPECULATIVE_THEORY',
+      severity: 'CRITICAL',
+      message: 'Modelo tentou explicar/teorizar a origem do sentimento'
+    });
+    rewriteInstructions.push('REMOVA qualquer teoria sobre a origem ("pode vir de", "talvez seja", "vem de um lugar de"). Apenas ESPELHE o que foi dito e PERGUNTE sobre o sentimento interno.');
+  }
+  
   // === CRITICAL ===
   
   // CONFLICT AS FACT - Deteccao por JANELA LOCAL (sentença)
@@ -607,6 +626,9 @@ function buildRewritePrompt(response: string, validation: ValidationResult): str
     '',
     '- Se o texto contém "Entendo que...", "Isso mostra que...", "A sua necessidade de...", "A sua busca por...", "A sua raiva vem de...": REMOVA IMEDIATAMENTE e substitua por pergunta aberta',
     '- Se o texto explica o porquê do sentimento: REMOVA e pergunte "O que você acha que está por trás disso?"',
+    '',
+    '- Se o texto contém "pode vir de", "talvez seja", "vem de um lugar de", "essa motivação pode": REMOVA COMPLETAMENTE e substitua por espelhamento + pergunta',
+    '- Se o usuário justifica ação como "lição" ou "ensino": NÃO valide a justificativa. Pergunte: "O que você sentiu quando ele não correspondeu?"',
     '',
     ...validation.rewriteInstructions,
     ...presenceInstructions,
