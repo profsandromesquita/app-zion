@@ -28,6 +28,18 @@ interface RetrievalStats {
   total_chunks: number;
 }
 
+interface SessionContextDebug {
+  current_phase: string | null;
+  phase_confidence: number;
+  avg_score: number;
+  has_regression: boolean;
+  active_lie: string | null;
+  target_truth: string | null;
+  recommended_question_type: string | null;
+  total_shifts: number;
+  insights_loaded: number;
+}
+
 interface DebugData {
   intent?: string;
   role?: string;
@@ -54,6 +66,8 @@ interface DebugData {
     issues: ValidationIssue[];
     was_rewritten: boolean;
   };
+  // NEW: Observer session context
+  session_context?: SessionContextDebug;
 }
 
 interface DebugPanelProps {
@@ -100,6 +114,18 @@ const getSeverityBadgeClass = (severity: string) => {
     default:
       return "";
   }
+};
+
+const getPhaseColor = (phase: string | null) => {
+  const colors: Record<string, string> = {
+    ACOLHIMENTO: "bg-blue-500",
+    CLARIFICACAO: "bg-cyan-500",
+    PADROES: "bg-purple-500",
+    RAIZ: "bg-orange-500",
+    TROCA: "bg-green-500",
+    CONSOLIDACAO: "bg-emerald-600",
+  };
+  return phase ? colors[phase] || "bg-gray-500" : "bg-gray-500";
 };
 
 export const DebugPanel = ({ visible, debugData }: DebugPanelProps) => {
@@ -169,6 +195,79 @@ export const DebugPanel = ({ visible, debugData }: DebugPanelProps) => {
               </Badge>
             )}
           </div>
+
+          {/* NEW: Session Context from Observer */}
+          {debugData.session_context && (
+            <div className="mb-3">
+              <p className="mb-1 font-medium text-muted-foreground flex items-center gap-2">
+                🧠 Observer Insights
+                {debugData.session_context.has_regression && (
+                  <Badge variant="destructive" className="text-xs gap-1">
+                    <AlertTriangle className="h-3 w-3" />
+                    Regressão
+                  </Badge>
+                )}
+              </p>
+              <div className="rounded bg-background p-2 space-y-2">
+                {/* Phase */}
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground">Fase:</span>
+                  <Badge className={`text-xs text-white ${getPhaseColor(debugData.session_context.current_phase)}`}>
+                    {debugData.session_context.current_phase || "N/A"}
+                  </Badge>
+                  <span className="text-muted-foreground text-xs">
+                    ({(debugData.session_context.phase_confidence * 100).toFixed(0)}%)
+                  </span>
+                </div>
+
+                {/* Score & Shifts */}
+                <div className="flex gap-4">
+                  <span>
+                    <span className="text-muted-foreground">Score médio:</span>{" "}
+                    <span className={`font-mono ${debugData.session_context.avg_score < 3 ? 'text-red-500' : debugData.session_context.avg_score >= 4 ? 'text-green-500' : ''}`}>
+                      {debugData.session_context.avg_score.toFixed(1)}/5
+                    </span>
+                  </span>
+                  <span>
+                    <span className="text-muted-foreground">Shifts:</span>{" "}
+                    <span className="font-mono text-green-500">{debugData.session_context.total_shifts}</span>
+                  </span>
+                  <span>
+                    <span className="text-muted-foreground">Insights:</span>{" "}
+                    <span className="font-mono">{debugData.session_context.insights_loaded}</span>
+                  </span>
+                </div>
+
+                {/* Recommended Question Type */}
+                {debugData.session_context.recommended_question_type && (
+                  <div>
+                    <span className="text-muted-foreground">Pergunta recomendada:</span>{" "}
+                    <Badge variant="secondary" className="text-xs">
+                      {debugData.session_context.recommended_question_type}
+                    </Badge>
+                  </div>
+                )}
+
+                {/* Active Lie & Target Truth */}
+                {(debugData.session_context.active_lie || debugData.session_context.target_truth) && (
+                  <div className="pt-1 border-t border-border/50 space-y-1">
+                    {debugData.session_context.active_lie && (
+                      <p className="text-xs">
+                        <span className="text-red-400">Mentira ativa:</span>{" "}
+                        <span className="italic">"{debugData.session_context.active_lie}"</span>
+                      </p>
+                    )}
+                    {debugData.session_context.target_truth && (
+                      <p className="text-xs">
+                        <span className="text-green-400">Verdade alvo:</span>{" "}
+                        <span className="italic">"{debugData.session_context.target_truth}"</span>
+                      </p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Retrieval Stats */}
           {debugData.retrieval_stats && (
