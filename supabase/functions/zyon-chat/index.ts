@@ -79,6 +79,9 @@ interface RetrievalStats {
 
 interface ZyonResponse {
   response: string;
+  intent?: string;
+  role?: string;
+  risk_level?: string;
   debug?: {
     intent: string;
     role: string;
@@ -1222,6 +1225,9 @@ ${chunksText}`;
     // Build response
     const response: ZyonResponse = {
       response: aiResponse,
+      intent,
+      role: "BUSCADOR",
+      risk_level: crisisResult.risk_level,
       crisis: crisisResult.risk_level !== "none" ? {
         is_crisis: crisisResult.risk_level === "medium",
         contacts: { cvv: "188", samu: "192" },
