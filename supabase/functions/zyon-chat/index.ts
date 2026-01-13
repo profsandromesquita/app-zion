@@ -152,7 +152,7 @@ A jornada humana segue o ciclo: PERDA → MEDO → INSEGURANÇA → FALSO DESEJO
 
 ### 3. ESTRUTURA DAS RESPOSTAS
 1) **Acolhimento**: Validar o que a pessoa sente
-2) **Leitura**: Oferecer hipóteses (não afirmações absolutas)
+2) **Investigação Silenciosa**: Use a hipótese interna APENAS para formular a pergunta (NUNCA explique a hipótese ao utilizador)
 3) **Perguntas**: 1-3 perguntas para aprofundar
 4) **Passos práticos**: Quando apropriado, sugerir ações concretas
 
@@ -175,6 +175,12 @@ A jornada humana segue o ciclo: PERDA → MEDO → INSEGURANÇA → FALSO DESEJO
 ### 7. PRIVACIDADE
 - Nunca mencione diretamente informações do diário ou perfil
 - Use o contexto de forma natural e discreta
+
+### 8. MODO ESPELHO E MAIÊUTICA (Rigidez Absoluta)
+- **Espelhamento:** Use APENAS as palavras exatas do utilizador para validar. (Ex: "Você sentiu raiva..." e não "Entendo que a sua raiva venha de...")
+- **Diagnóstico Silencioso:** Cruze o relato com a tabela de Virtudes/Medos internamente.
+- **Output Proibido:** É PROIBIDO escrever frases causais como: "Isso acontece porque...", "Talvez seja uma forma de...", "A sua busca por justiça...".
+- **Foco:** O utilizador deve descobrir o nome do seu próprio medo. Não dê o nome. Dê a pergunta.
 
 Responda sempre em português brasileiro, com empatia genuína e profundidade teológica.`;
 
@@ -486,6 +492,17 @@ function validateResponseComplete(
     rewriteInstructions.push('Remova diagnósticos absolutos - transforme em perguntas');
   }
   
+  // PSYCHOLOGICAL_EXPLANATION - Explicações psicológicas proibidas
+  const explicacoesRegex = /\b(entendo que|isso (mostra|revela) que|a sua (necessidade|busca) de|acredito que voc[eê]|me parece que h[aá]|[eé] natural que voc[eê]|a sua raiva (vem|vinha) de|o que voc[eê] est[aá] sentindo [eé]|isso indica que)\b/i;
+  if (explicacoesRegex.test(response)) {
+    issues.push({ 
+      code: 'PSYCHOLOGICAL_EXPLANATION', 
+      severity: isEarlyTurn ? 'CRITICAL' : 'HIGH',
+      message: 'Explicação psicológica não solicitada' 
+    });
+    rewriteInstructions.push('Remova explicações ("Entendo que...", "Isso mostra que...", "A sua busca de...") - transforme em pergunta aberta');
+  }
+  
   // === CRITICAL ===
   
   // CONFLICT AS FACT - Deteccao por JANELA LOCAL (sentença)
@@ -588,6 +605,9 @@ function buildRewritePrompt(response: string, validation: ValidationResult): str
     '- 2-4 perguntas abertas',
     '- Sem presunções ou diagnósticos',
     '',
+    '- Se o texto contém "Entendo que...", "Isso mostra que...", "A sua necessidade de...", "A sua busca por...", "A sua raiva vem de...": REMOVA IMEDIATAMENTE e substitua por pergunta aberta',
+    '- Se o texto explica o porquê do sentimento: REMOVA e pergunte "O que você acha que está por trás disso?"',
+    '',
     ...validation.rewriteInstructions,
     ...presenceInstructions,
   ];
@@ -629,11 +649,65 @@ async function generateSimpleEmbedding(text: string): Promise<number[]> {
 }
 
 // ============================================
-// LEXICAL OVERLAP RERANKER (PHASE 0 - HYGIENE)
+// SYNONYM MAP FOR SEMANTIC COMPENSATION
+// ============================================
+
+const SYNONYM_MAP: Record<string, string[]> = {
+  // Emoções -> Virtudes/Pecados
+  'odio': ['ira', 'justiça'],
+  'ódio': ['ira', 'justiça'],
+  'raiva': ['ira', 'justiça'],
+  'tristeza': ['vazio', 'esperança'],
+  'triste': ['vazio', 'esperança'],
+  'ansiedade': ['medo', 'futuro', 'controle'],
+  'ansioso': ['medo', 'futuro', 'controle'],
+  'ansiosa': ['medo', 'futuro', 'controle'],
+  'medo': ['segurança', 'proteção'],
+  'orgulho': ['bondade', 'imagem'],
+  'vergonha': ['valor', 'identidade'],
+  'culpa': ['perdão', 'metanoia'],
+  'culpado': ['perdão', 'metanoia'],
+  'culpada': ['perdão', 'metanoia'],
+  'desejo': ['falso desejo', 'idolatria'],
+  // Comportamentos -> Mecanismos
+  'confrontar': ['ira', 'justiça', 'defesa'],
+  'controlar': ['controle', 'segurança', 'medo'],
+  'fugir': ['fuga', 'medo', 'proteção'],
+  'evitar': ['fuga', 'medo', 'proteção'],
+  'agradar': ['aprovação', 'rejeição', 'bondade'],
+  'perfeito': ['perfeccionismo', 'valor', 'identidade'],
+  'perfeita': ['perfeccionismo', 'valor', 'identidade'],
+  // Contextos -> Medos Raiz
+  'dinheiro': ['miséria', 'segurança', 'provisão'],
+  'trabalho': ['miséria', 'valor', 'identidade'],
+  'relacionamento': ['rejeição', 'abandono', 'amor'],
+  'família': ['rejeição', 'abandono', 'pertencimento'],
+  'sozinho': ['abandono', 'rejeição', 'solidão'],
+  'sozinha': ['abandono', 'rejeição', 'solidão'],
+  // Adicional - Virtudes específicas ZION
+  'injustiça': ['justiça', 'ira', 'medo'],
+  'abandono': ['rejeição', 'solidão', 'amor'],
+  'rejeição': ['abandono', 'valor', 'amor'],
+  'fracasso': ['valor', 'identidade', 'miséria'],
+  'incapaz': ['valor', 'identidade', 'competência'],
+  'impotente': ['controle', 'segurança', 'medo'],
+};
+
+// ============================================
+// LEXICAL OVERLAP RERANKER (PHASE 0 - HYGIENE + SYNONYM EXPANSION)
 // ============================================
 
 function rerankByLexicalOverlap(chunks: ChunkResult[], userMessage: string): ChunkResult[] {
-  const userKeywords = userMessage.toLowerCase()
+  // Expand message with synonyms for semantic compensation
+  let expandedMessage = userMessage.toLowerCase();
+  
+  for (const [key, synonyms] of Object.entries(SYNONYM_MAP)) {
+    if (expandedMessage.includes(key)) {
+      expandedMessage += ' ' + synonyms.join(' ');
+    }
+  }
+  
+  const userKeywords = expandedMessage
     .split(/\s+/)
     .filter(w => w.length > 3);
   
