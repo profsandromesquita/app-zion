@@ -70,6 +70,33 @@ interface ValidationResult {
   rewriteInstructions: string[];
 }
 
+// ============================================
+// OBSERVER INTEGRATION TYPES (NEW)
+// ============================================
+
+interface PreviousInsight {
+  phase: string | null;
+  phase_confidence: number | null;
+  overall_score: number | null;
+  next_best_question_type: string | null;
+  lie_active: { text?: string; confidence?: number } | null;
+  truth_target: { text?: string; confidence?: number } | null;
+  shift_detected: boolean;
+  turn_number: number;
+}
+
+interface SessionContext {
+  insights: PreviousInsight[];
+  currentPhase: string | null;
+  phaseConfidence: number;
+  avgScore: number;
+  hasRegression: boolean;
+  activeLie: string | null;
+  targetTruth: string | null;
+  recommendedQuestionType: string | null;
+  totalShifts: number;
+}
+
 interface RetrievalStats {
   max_score: number;
   avg_score: number;
@@ -100,6 +127,18 @@ interface ZyonResponse {
       question_count: number;
       issues: ValidationIssue[];
       was_rewritten: boolean;
+    };
+    // NEW: Observer session context
+    session_context?: {
+      current_phase: string | null;
+      phase_confidence: number;
+      avg_score: number;
+      has_regression: boolean;
+      active_lie: string | null;
+      target_truth: string | null;
+      recommended_question_type: string | null;
+      total_shifts: number;
+      insights_loaded: number;
     };
   };
   next_actions?: {
@@ -744,6 +783,89 @@ function rerankByLexicalOverlap(chunks: ChunkResult[], userMessage: string): Chu
 }
 
 // ============================================
+// FETCH SESSION INSIGHTS (OBSERVER INTEGRATION)
+// ============================================
+
+const PHASE_ORDER = ["ACOLHIMENTO", "CLARIFICACAO", "PADROES", "RAIZ", "TROCA", "CONSOLIDACAO"];
+
+async function fetchSessionInsights(
+  supabase: any, 
+  sessionId: string, 
+  limit: number = 3
+): Promise<SessionContext> {
+  const emptyContext: SessionContext = {
+    insights: [],
+    currentPhase: null,
+    phaseConfidence: 0,
+    avgScore: 0,
+    hasRegression: false,
+    activeLie: null,
+    targetTruth: null,
+    recommendedQuestionType: null,
+    totalShifts: 0,
+  };
+
+  try {
+    const { data: insights, error } = await supabase
+      .from("turn_insights")
+      .select(`
+        phase, phase_confidence, overall_score, 
+        next_best_question_type, lie_active, truth_target,
+        shift_detected, turn_number
+      `)
+      .eq("chat_session_id", sessionId)
+      .eq("extraction_status", "completed")
+      .order("turn_number", { ascending: false })
+      .limit(limit);
+
+    if (error || !insights || insights.length === 0) {
+      return emptyContext;
+    }
+
+    const latest = insights[0];
+    const previous = insights[1];
+    
+    // Detect phase regression
+    const hasRegression = previous && latest.phase && previous.phase
+      ? PHASE_ORDER.indexOf(latest.phase) < PHASE_ORDER.indexOf(previous.phase)
+      : false;
+
+    // Parse lie_active and truth_target (may be JSON strings or objects)
+    let activeLie: string | null = null;
+    let targetTruth: string | null = null;
+
+    if (latest.lie_active) {
+      const lieData = typeof latest.lie_active === 'string' 
+        ? JSON.parse(latest.lie_active) 
+        : latest.lie_active;
+      activeLie = lieData?.text || null;
+    }
+
+    if (latest.truth_target) {
+      const truthData = typeof latest.truth_target === 'string' 
+        ? JSON.parse(latest.truth_target) 
+        : latest.truth_target;
+      targetTruth = truthData?.text || null;
+    }
+
+    return {
+      insights: insights as PreviousInsight[],
+      currentPhase: latest.phase,
+      phaseConfidence: latest.phase_confidence || 0,
+      avgScore: insights.reduce((sum: number, i: any) => sum + (i.overall_score || 0), 0) / insights.length,
+      hasRegression,
+      activeLie,
+      targetTruth,
+      recommendedQuestionType: latest.next_best_question_type,
+      totalShifts: insights.filter((i: any) => i.shift_detected).length,
+    };
+  } catch (err) {
+    console.error("Error fetching session insights:", err);
+    return emptyContext;
+  }
+}
+
+// ============================================
 // MAIN HANDLER
 // ============================================
 
@@ -823,13 +945,38 @@ serve(async (req) => {
     }
 
     // ========================================
-    // STEP 2: INTENT ROUTING + USER CONTEXT
+    // STEP 2: INTENT ROUTING + USER CONTEXT + OBSERVER INSIGHTS
     // ========================================
-    console.log("Step 2: Intent Routing + User Context");
+    console.log("Step 2: Intent Routing + User Context + Observer Insights");
     const { intent, confidence } = classifyIntent(message);
     const ragPlan = buildRAGPlan(intent);
     const userContext = detectUserContext(message, history);
     const turnCount = history.filter((h: { role: string }) => h.role === 'user').length + 1;
+    
+    // NEW: Fetch session insights from Observer
+    let sessionContext: SessionContext = {
+      insights: [],
+      currentPhase: null,
+      phaseConfidence: 0,
+      avgScore: 0,
+      hasRegression: false,
+      activeLie: null,
+      targetTruth: null,
+      recommendedQuestionType: null,
+      totalShifts: 0,
+    };
+
+    if (supabase && sessionId) {
+      sessionContext = await fetchSessionInsights(supabase, sessionId, 3);
+      if (sessionContext.currentPhase) {
+        console.log("Session context loaded:", {
+          phase: sessionContext.currentPhase,
+          avgScore: sessionContext.avgScore.toFixed(2),
+          hasRegression: sessionContext.hasRegression,
+          recommendedQuestion: sessionContext.recommendedQuestionType,
+        });
+      }
+    }
     
     console.log("Intent:", intent, "Confidence:", confidence);
     console.log("User context:", JSON.stringify(userContext));
@@ -1055,6 +1202,49 @@ ${chunksText}`;
       systemPrompt += diaryContext;
     }
 
+    // NEW: Inject Observer session insights into prompt
+    if (sessionContext.currentPhase) {
+      const QUESTION_TYPE_GUIDE: Record<string, string> = {
+        EVIDENCE: "Peça EVIDÊNCIAS concretas do que a pessoa afirma sentir (Ex: 'O que te faz dizer isso?')",
+        ALTERNATIVE: "Explore ALTERNATIVAS para a interpretação atual (Ex: 'E se houvesse outra explicação?')",
+        SENSATION: "Pergunte sobre SENSAÇÕES FÍSICAS associadas (Ex: 'Onde você sente isso no corpo?')",
+        VALUE: "Investigue os VALORES em jogo (Ex: 'O que isso representa para você?')",
+        TRUTH: "Guie suavemente para a VERDADE que substitui a mentira (sem nomear diretamente)",
+        PRACTICE: "Sugira PRÁTICAS concretas de consolidação (exercícios, hábitos)",
+      };
+
+      let insightsBlock = `\n\n## ESTADO DA JORNADA (Interno - NÃO mencionar ao usuário)`;
+      insightsBlock += `\nFase atual: ${sessionContext.currentPhase} (confiança: ${(sessionContext.phaseConfidence * 100).toFixed(0)}%)`;
+      insightsBlock += `\nQualidade média das respostas: ${sessionContext.avgScore.toFixed(1)}/5`;
+      
+      if (sessionContext.recommendedQuestionType) {
+        const guide = QUESTION_TYPE_GUIDE[sessionContext.recommendedQuestionType] || sessionContext.recommendedQuestionType;
+        insightsBlock += `\nPróxima pergunta recomendada: ${guide}`;
+      }
+      
+      if (sessionContext.activeLie) {
+        insightsBlock += `\nMentira ativa identificada: "${sessionContext.activeLie}"`;
+        insightsBlock += `\n(Use isso para formular perguntas que EXPONHAM essa mentira SEM nomeá-la diretamente)`;
+      }
+      
+      if (sessionContext.targetTruth) {
+        insightsBlock += `\nVerdade alvo: "${sessionContext.targetTruth}"`;
+        insightsBlock += `\n(NÃO apresente ainda - deixe o usuário DESCOBRIR por si mesmo)`;
+      }
+      
+      if (sessionContext.hasRegression) {
+        insightsBlock += `\n\n⚠️ ALERTA: Detectada REGRESSÃO de fase.`;
+        insightsBlock += `\nO usuário pode ter se fechado ou voltado a uma postura defensiva.`;
+        insightsBlock += `\nAção recomendada: RETORNE ao acolhimento. NÃO force avanço. Valide os sentimentos primeiro.`;
+      }
+      
+      if (sessionContext.totalShifts > 0) {
+        insightsBlock += `\nShifts positivos detectados: ${sessionContext.totalShifts} (bom progresso!)`;
+      }
+
+      systemPrompt += insightsBlock;
+    }
+
     // Add risk level awareness
     if (crisisResult.risk_level === "medium") {
       systemPrompt += `\n\n## ATENÇÃO: RISCO MÉDIO DETECTADO\nA pessoa pode estar em sofrimento intenso. Seja especialmente acolhedor e mencione recursos de ajuda (CVV 188) de forma natural se apropriado.`;
@@ -1256,6 +1446,18 @@ ${chunksText}`;
           issues: validationResult.issues,
           was_rewritten: didRewrite,
         },
+        // NEW: Observer session context
+        session_context: sessionContext.currentPhase ? {
+          current_phase: sessionContext.currentPhase,
+          phase_confidence: sessionContext.phaseConfidence,
+          avg_score: sessionContext.avgScore,
+          has_regression: sessionContext.hasRegression,
+          active_lie: sessionContext.activeLie,
+          target_truth: sessionContext.targetTruth,
+          recommended_question_type: sessionContext.recommendedQuestionType,
+          total_shifts: sessionContext.totalShifts,
+          insights_loaded: sessionContext.insights.length,
+        } : undefined,
       };
     }
 
