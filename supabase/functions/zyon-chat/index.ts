@@ -876,15 +876,19 @@ interface CuratedCorrectionWithItem {
   feedback_dataset_items: {
     user_prompt_text: string;
     assistant_answer_text: string;
+    intent: string | null;
   };
 }
 
 async function fetchRecentCorrections(
-  supabase: any, 
+  supabase: any,
+  currentIntent: string,
   limit: number = 3
 ): Promise<CuratedCorrectionWithItem[]> {
   try {
-    const { data, error } = await supabase
+    // STEP 1: Fetch corrections for the SAME INTENT (up to 2)
+    const intentLimit = Math.min(2, limit);
+    const { data: intentCorrections, error: intentError } = await supabase
       .from('curated_corrections')
       .select(`
         corrected_response,
@@ -892,36 +896,86 @@ async function fetchRecentCorrections(
         diagnosis,
         feedback_dataset_items!inner(
           user_prompt_text,
-          assistant_answer_text
+          assistant_answer_text,
+          intent
         )
       `)
       .eq('status', 'rejected')
       .not('corrected_response', 'is', null)
       .eq('include_in_training', true)
+      .eq('feedback_dataset_items.intent', currentIntent)
       .order('curated_at', { ascending: false })
-      .limit(limit);
+      .limit(intentLimit);
     
-    if (error) {
-      console.error("Error fetching corrections for few-shot:", error);
-      return [];
+    if (intentError) {
+      console.error("Error fetching intent corrections:", intentError);
     }
     
-    return (data || []) as CuratedCorrectionWithItem[];
+    const foundIntentCorrections = (intentCorrections || []) as CuratedCorrectionWithItem[];
+    console.log(`Few-shot: ${foundIntentCorrections.length} by intent "${currentIntent}"`);
+    
+    // If we have enough, return them
+    if (foundIntentCorrections.length >= limit) {
+      return foundIntentCorrections.slice(0, limit);
+    }
+    
+    // STEP 2: Fetch GENERAL corrections to complement
+    const remaining = limit - foundIntentCorrections.length;
+    
+    const { data: generalCorrections, error: generalError } = await supabase
+      .from('curated_corrections')
+      .select(`
+        corrected_response,
+        violations,
+        diagnosis,
+        feedback_dataset_items!inner(
+          user_prompt_text,
+          assistant_answer_text,
+          intent
+        )
+      `)
+      .eq('status', 'rejected')
+      .not('corrected_response', 'is', null)
+      .eq('include_in_training', true)
+      .neq('feedback_dataset_items.intent', currentIntent)
+      .order('curated_at', { ascending: false })
+      .limit(remaining);
+    
+    if (generalError) {
+      console.error("Error fetching general corrections:", generalError);
+    }
+    
+    const foundGeneralCorrections = (generalCorrections || []) as CuratedCorrectionWithItem[];
+    console.log(`Few-shot: ${foundGeneralCorrections.length} general corrections`);
+    
+    // COMBINE: Intent first, then general
+    return [...foundIntentCorrections, ...foundGeneralCorrections];
+    
   } catch (err) {
     console.error("Exception fetching corrections:", err);
     return [];
   }
 }
 
-function buildFewShotBlock(corrections: CuratedCorrectionWithItem[]): string {
+function buildFewShotBlock(
+  corrections: CuratedCorrectionWithItem[],
+  currentIntent: string
+): string {
   if (corrections.length === 0) return '';
   
   const examples = corrections.map((c, i) => {
     const violations = c.violations?.map(v => v.code).join(', ') || 'N/A';
     const rootFear = c.diagnosis?.root_fear || 'N/A';
     const matrix = c.diagnosis?.security_matrix || 'N/A';
+    const itemIntent = c.feedback_dataset_items.intent || 'GERAL';
     
-    return `### Exemplo ${i + 1}
+    // Indicate if it's from the same intent or general
+    const relevanceTag = itemIntent === currentIntent 
+      ? '🎯 MESMO CONTEXTO' 
+      : '📚 ERRO GERAL';
+    
+    return `### Exemplo ${i + 1} (${relevanceTag})
+CONTEXTO: Intent = ${itemIntent}
 USUÁRIO: "${c.feedback_dataset_items.user_prompt_text}"
 
 ❌ RESPOSTA INCORRETA (violações: ${violations}):
@@ -935,6 +989,8 @@ DIAGNÓSTICO: Medo raiz = ${rootFear}, Matriz = ${matrix}`;
 
   return `
 ## EXEMPLOS DE CORREÇÕES RECENTES (APRENDA COM ESTES ERROS)
+
+Os exemplos marcados com 🎯 MESMO CONTEXTO são mais relevantes para esta conversa.
 
 ${examples}
 
@@ -1220,13 +1276,13 @@ serve(async (req) => {
     // ========================================
     console.log("Step 5: Prompt Assembly (with Few-Shot)");
     
-    // Fetch recent corrections for few-shot learning
+    // Fetch recent corrections for few-shot learning (HYBRID by intent)
     let fewShotBlock = "";
     if (supabase) {
-      const recentCorrections = await fetchRecentCorrections(supabase, 3);
+      const recentCorrections = await fetchRecentCorrections(supabase, intent, 3);
       if (recentCorrections.length > 0) {
-        fewShotBlock = buildFewShotBlock(recentCorrections);
-        console.log(`Few-shot loaded: ${recentCorrections.length} corrections`);
+        fewShotBlock = buildFewShotBlock(recentCorrections, intent);
+        console.log(`Few-shot loaded: ${recentCorrections.length} corrections (hybrid by intent: ${intent})`);
       }
     }
     
