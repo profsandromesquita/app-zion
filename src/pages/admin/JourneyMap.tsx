@@ -407,6 +407,31 @@ const JourneyMap = () => {
     enabled: !!selectedSessionId,
   });
 
+  // Fetch messages for theme insights
+  const { data: themeMessages } = useQuery({
+    queryKey: ["journey-theme-messages", selectedThemeId, themeInsights],
+    queryFn: async () => {
+      if (!themeInsights || themeInsights.length === 0) return [];
+      
+      // Collect all message IDs from the theme insights
+      const messageIds = themeInsights.flatMap(insight => [
+        insight.message_user_id,
+        insight.message_assistant_id
+      ]).filter(Boolean);
+      
+      if (messageIds.length === 0) return [];
+      
+      const { data, error } = await supabase
+        .from("chat_messages")
+        .select("id, content, sender, created_at")
+        .in("id", messageIds);
+
+      if (error) throw error;
+      return data || [];
+    },
+    enabled: !!selectedThemeId && !!themeInsights && themeInsights.length > 0,
+  });
+
   // Stats - includes extraction status
   const { data: stats, refetch: refetchStats } = useQuery({
     queryKey: ["journey-stats"],
@@ -646,10 +671,15 @@ const JourneyMap = () => {
     }
   };
 
-  // Find message content by ID
+  // Find message content by ID (search in both session and theme messages)
   const getMessageContent = (messageId: string) => {
-    const msg = messages?.find(m => m.id === messageId);
-    return msg?.content || "";
+    // First try session messages
+    const sessionMsg = messages?.find(m => m.id === messageId);
+    if (sessionMsg?.content) return sessionMsg.content;
+    
+    // Then try theme messages
+    const themeMsg = themeMessages?.find(m => m.id === messageId);
+    return themeMsg?.content || "";
   };
 
   // Refetch all data
@@ -662,6 +692,7 @@ const JourneyMap = () => {
         queryClient.invalidateQueries({ queryKey: ["journey-stats"] }),
         queryClient.invalidateQueries({ queryKey: ["journey-timeline"] }),
         queryClient.invalidateQueries({ queryKey: ["journey-theme-insights"] }),
+        queryClient.invalidateQueries({ queryKey: ["journey-theme-messages"] }),
         queryClient.invalidateQueries({ queryKey: ["journey-messages"] }),
       ]);
       toast.success("Dados atualizados!");
