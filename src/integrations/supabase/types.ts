@@ -279,6 +279,69 @@ export type Database = {
           },
         ]
       }
+      curated_corrections: {
+        Row: {
+          adherence_score: number | null
+          corrected_response: string | null
+          created_at: string
+          curated_at: string | null
+          curator_id: string | null
+          diagnosis: Json | null
+          feedback_item_id: string
+          id: string
+          include_in_training: boolean | null
+          notes: string | null
+          status: string
+          updated_at: string
+          violations: Json | null
+        }
+        Insert: {
+          adherence_score?: number | null
+          corrected_response?: string | null
+          created_at?: string
+          curated_at?: string | null
+          curator_id?: string | null
+          diagnosis?: Json | null
+          feedback_item_id: string
+          id?: string
+          include_in_training?: boolean | null
+          notes?: string | null
+          status?: string
+          updated_at?: string
+          violations?: Json | null
+        }
+        Update: {
+          adherence_score?: number | null
+          corrected_response?: string | null
+          created_at?: string
+          curated_at?: string | null
+          curator_id?: string | null
+          diagnosis?: Json | null
+          feedback_item_id?: string
+          id?: string
+          include_in_training?: boolean | null
+          notes?: string | null
+          status?: string
+          updated_at?: string
+          violations?: Json | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "curated_corrections_curator_id_fkey"
+            columns: ["curator_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "curated_corrections_feedback_item_id_fkey"
+            columns: ["feedback_item_id"]
+            isOneToOne: true
+            referencedRelation: "feedback_dataset_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       diary_entries: {
         Row: {
           content: string
