@@ -887,6 +887,7 @@ interface CuratedCorrectionWithItem {
 interface FewShotResult {
   positives: CuratedCorrectionWithItem[];
   negatives: CuratedCorrectionWithItem[];
+  refinements: CuratedCorrectionWithItem[];  // needs_review com correção pontual
 }
 
 type RelevanceLevel = 'SAME_PHASE_INTENT' | 'SAME_PHASE' | 'SAME_INTENT' | 'GENERAL';
@@ -896,9 +897,10 @@ async function fetchRecentCorrections(
   currentIntent: string,
   currentPhase: string | null,
   positiveLimit: number = 2,
-  negativeLimit: number = 2
+  negativeLimit: number = 2,
+  refinementLimit: number = 1
 ): Promise<FewShotResult> {
-  const result: FewShotResult = { positives: [], negatives: [] };
+  const result: FewShotResult = { positives: [], negatives: [], refinements: [] };
   
   try {
     // ===============================
@@ -1064,13 +1066,95 @@ async function fetchRecentCorrections(
     }
     
     console.log(`Few-shot negatives: ${result.negatives.length} loaded`);
-    console.log(`Few-shot total: ${result.positives.length} positives, ${result.negatives.length} negatives (phase: ${currentPhase}, intent: ${currentIntent})`);
+    
+    // ===============================
+    // PARTE 3: EXEMPLOS DE REFINAMENTO (Revisar com correção pontual)
+    // ===============================
+    
+    // 3A. Buscar needs_review da MESMA FASE + INTENT (com correção)
+    if (currentPhase && result.refinements.length < refinementLimit) {
+      const { data: phaseIntentReview } = await supabase
+        .from('curated_corrections')
+        .select(`
+          id, status, corrected_response, violations, diagnosis, notes,
+          feedback_dataset_items!inner(
+            user_prompt_text, assistant_answer_text, intent, phase
+          )
+        `)
+        .eq('status', 'needs_review')
+        .eq('include_in_training', true)
+        .not('corrected_response', 'is', null)
+        .eq('feedback_dataset_items.phase', currentPhase)
+        .eq('feedback_dataset_items.intent', currentIntent)
+        .order('curated_at', { ascending: false })
+        .limit(1);
+      
+      if (phaseIntentReview?.length) {
+        result.refinements.push(...(phaseIntentReview as CuratedCorrectionWithItem[]));
+      }
+    }
+    
+    // 3B. Buscar needs_review do MESMO INTENT (qualquer fase)
+    if (result.refinements.length < refinementLimit) {
+      const existingIds = result.refinements.map(r => r.id);
+      const remaining = refinementLimit - result.refinements.length;
+      
+      const { data: intentReview } = await supabase
+        .from('curated_corrections')
+        .select(`
+          id, status, corrected_response, violations, diagnosis, notes,
+          feedback_dataset_items!inner(
+            user_prompt_text, assistant_answer_text, intent, phase
+          )
+        `)
+        .eq('status', 'needs_review')
+        .eq('include_in_training', true)
+        .not('corrected_response', 'is', null)
+        .eq('feedback_dataset_items.intent', currentIntent)
+        .order('curated_at', { ascending: false })
+        .limit(remaining + existingIds.length);
+      
+      const filtered = ((intentReview || []) as CuratedCorrectionWithItem[])
+        .filter(c => !existingIds.includes(c.id))
+        .slice(0, remaining);
+      
+      result.refinements.push(...filtered);
+    }
+    
+    // 3C. Fallback: Gerais needs_review
+    if (result.refinements.length < refinementLimit) {
+      const existingIds = result.refinements.map(r => r.id);
+      const remaining = refinementLimit - result.refinements.length;
+      
+      const { data: generalReview } = await supabase
+        .from('curated_corrections')
+        .select(`
+          id, status, corrected_response, violations, diagnosis, notes,
+          feedback_dataset_items!inner(
+            user_prompt_text, assistant_answer_text, intent, phase
+          )
+        `)
+        .eq('status', 'needs_review')
+        .eq('include_in_training', true)
+        .not('corrected_response', 'is', null)
+        .order('curated_at', { ascending: false })
+        .limit(remaining + existingIds.length);
+      
+      const filtered = ((generalReview || []) as CuratedCorrectionWithItem[])
+        .filter(c => !existingIds.includes(c.id))
+        .slice(0, remaining);
+      
+      result.refinements.push(...filtered);
+    }
+    
+    console.log(`Few-shot refinements: ${result.refinements.length} loaded`);
+    console.log(`Few-shot total: ${result.positives.length} positives, ${result.refinements.length} refinements, ${result.negatives.length} negatives (phase: ${currentPhase}, intent: ${currentIntent})`);
     
     return result;
     
   } catch (err) {
     console.error("Exception fetching corrections:", err);
-    return { positives: [], negatives: [] };
+    return { positives: [], negatives: [], refinements: [] };
   }
 }
 
@@ -1098,10 +1182,11 @@ function getRelevanceTag(
 function buildFewShotBlock(
   positives: CuratedCorrectionWithItem[],
   negatives: CuratedCorrectionWithItem[],
+  refinements: CuratedCorrectionWithItem[],
   currentIntent: string,
   currentPhase: string | null
 ): string {
-  if (positives.length === 0 && negatives.length === 0) return '';
+  if (positives.length === 0 && negatives.length === 0 && refinements.length === 0) return '';
   
   let block = `\n## EXEMPLOS DE REFERÊNCIA (ESTUDE ANTES DE RESPONDER)\n`;
   block += `Fase atual: ${currentPhase || 'N/A'} | Intent: ${currentIntent}\n\n`;
@@ -1122,6 +1207,32 @@ USUÁRIO: "${c.feedback_dataset_items.user_prompt_text.substring(0, 200)}${c.fee
 "${c.feedback_dataset_items.assistant_answer_text.substring(0, 400)}${c.feedback_dataset_items.assistant_answer_text.length > 400 ? '...' : ''}"
 
 📝 POR QUE FUNCIONA: ${notes.substring(0, 200)}${notes.length > 200 ? '...' : ''}
+
+---
+
+`;
+    });
+  }
+  
+  // SEÇÃO DE REFINAMENTO (entre positivos e negativos)
+  if (refinements.length > 0) {
+    block += `### 🔧 AJUSTES FINOS (quase certo, mas precisa de refinamento)\n\n`;
+    
+    refinements.forEach((c, i) => {
+      const { tag } = getRelevanceTag(c, currentIntent, currentPhase);
+      const notes = c.notes || 'Ver diferenças entre original e ajuste';
+      
+      block += `#### Refinamento ${i + 1} (${tag})
+CONTEXTO: Fase = ${c.feedback_dataset_items.phase || 'N/A'}, Intent = ${c.feedback_dataset_items.intent || 'N/A'}
+USUÁRIO: "${c.feedback_dataset_items.user_prompt_text.substring(0, 200)}${c.feedback_dataset_items.user_prompt_text.length > 200 ? '...' : ''}"
+
+🟡 RESPOSTA ORIGINAL (quase correta):
+"${c.feedback_dataset_items.assistant_answer_text.substring(0, 300)}${c.feedback_dataset_items.assistant_answer_text.length > 300 ? '...' : ''}"
+
+✨ AJUSTE NECESSÁRIO:
+"${(c.corrected_response || '').substring(0, 400)}${(c.corrected_response || '').length > 400 ? '...' : ''}"
+
+📝 O QUE AJUSTAR: ${notes.substring(0, 200)}${notes.length > 200 ? '...' : ''}
 
 ---
 
@@ -1157,7 +1268,7 @@ DIAGNÓSTICO: Medo raiz = ${rootFear}, Matriz = ${matrix}
     });
   }
   
-  block += `⚠️ ESTUDOU OS EXEMPLOS ACIMA? Agora responda seguindo o padrão dos exemplos positivos e evitando os erros listados.\n`;
+  block += `⚠️ ESTUDOU OS EXEMPLOS ACIMA? Agora responda seguindo o padrão dos exemplos positivos, aplicando os ajustes finos, e evitando os erros listados.\n`;
   
   return block;
 }
@@ -1445,17 +1556,18 @@ serve(async (req) => {
     if (supabase) {
       const currentPhase = sessionContext?.currentPhase || null;
       
-      const { positives, negatives } = await fetchRecentCorrections(
+      const { positives, negatives, refinements } = await fetchRecentCorrections(
         supabase, 
         intent, 
         currentPhase,
         2,  // positiveLimit
-        2   // negativeLimit
+        2,  // negativeLimit
+        1   // refinementLimit
       );
       
-      if (positives.length > 0 || negatives.length > 0) {
-        fewShotBlock = buildFewShotBlock(positives, negatives, intent, currentPhase);
-        console.log(`Few-shot loaded: ${positives.length} positives, ${negatives.length} negatives (phase: ${currentPhase}, intent: ${intent})`);
+      if (positives.length > 0 || negatives.length > 0 || refinements.length > 0) {
+        fewShotBlock = buildFewShotBlock(positives, negatives, refinements, intent, currentPhase);
+        console.log(`Few-shot loaded: ${positives.length} positives, ${refinements.length} refinements, ${negatives.length} negatives (phase: ${currentPhase}, intent: ${intent})`);
       }
     }
     
