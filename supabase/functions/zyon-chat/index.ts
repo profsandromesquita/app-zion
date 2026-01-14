@@ -866,6 +866,83 @@ async function fetchSessionInsights(
 }
 
 // ============================================
+// FEW-SHOT LEARNING FROM CURATED CORRECTIONS
+// ============================================
+
+interface CuratedCorrectionWithItem {
+  corrected_response: string;
+  violations: { code: string; description?: string }[];
+  diagnosis: { root_fear?: string; security_matrix?: string } | null;
+  feedback_dataset_items: {
+    user_prompt_text: string;
+    assistant_answer_text: string;
+  };
+}
+
+async function fetchRecentCorrections(
+  supabase: any, 
+  limit: number = 3
+): Promise<CuratedCorrectionWithItem[]> {
+  try {
+    const { data, error } = await supabase
+      .from('curated_corrections')
+      .select(`
+        corrected_response,
+        violations,
+        diagnosis,
+        feedback_dataset_items!inner(
+          user_prompt_text,
+          assistant_answer_text
+        )
+      `)
+      .eq('status', 'rejected')
+      .not('corrected_response', 'is', null)
+      .eq('include_in_training', true)
+      .order('curated_at', { ascending: false })
+      .limit(limit);
+    
+    if (error) {
+      console.error("Error fetching corrections for few-shot:", error);
+      return [];
+    }
+    
+    return (data || []) as CuratedCorrectionWithItem[];
+  } catch (err) {
+    console.error("Exception fetching corrections:", err);
+    return [];
+  }
+}
+
+function buildFewShotBlock(corrections: CuratedCorrectionWithItem[]): string {
+  if (corrections.length === 0) return '';
+  
+  const examples = corrections.map((c, i) => {
+    const violations = c.violations?.map(v => v.code).join(', ') || 'N/A';
+    const rootFear = c.diagnosis?.root_fear || 'N/A';
+    const matrix = c.diagnosis?.security_matrix || 'N/A';
+    
+    return `### Exemplo ${i + 1}
+USUÁRIO: "${c.feedback_dataset_items.user_prompt_text}"
+
+❌ RESPOSTA INCORRETA (violações: ${violations}):
+"${c.feedback_dataset_items.assistant_answer_text.substring(0, 300)}${c.feedback_dataset_items.assistant_answer_text.length > 300 ? '...' : ''}"
+
+✅ RESPOSTA CORRIGIDA (ZION PERFECT TONE):
+"${c.corrected_response.substring(0, 500)}${c.corrected_response.length > 500 ? '...' : ''}"
+
+DIAGNÓSTICO: Medo raiz = ${rootFear}, Matriz = ${matrix}`;
+  }).join('\n\n---\n\n');
+
+  return `
+## EXEMPLOS DE CORREÇÕES RECENTES (APRENDA COM ESTES ERROS)
+
+${examples}
+
+⚠️ Estude os exemplos acima e NÃO repita os mesmos erros. Priorize o tom e estrutura das respostas corrigidas.
+`;
+}
+
+// ============================================
 // MAIN HANDLER
 // ============================================
 
@@ -1139,11 +1216,22 @@ serve(async (req) => {
     }
 
     // ========================================
-    // STEP 5: PROMPT ASSEMBLY
+    // STEP 5: PROMPT ASSEMBLY (WITH FEW-SHOT LEARNING)
     // ========================================
-    console.log("Step 5: Prompt Assembly");
+    console.log("Step 5: Prompt Assembly (with Few-Shot)");
     
-    let systemPrompt = BASE_IDENTITY;
+    // Fetch recent corrections for few-shot learning
+    let fewShotBlock = "";
+    if (supabase) {
+      const recentCorrections = await fetchRecentCorrections(supabase, 3);
+      if (recentCorrections.length > 0) {
+        fewShotBlock = buildFewShotBlock(recentCorrections);
+        console.log(`Few-shot loaded: ${recentCorrections.length} corrections`);
+      }
+    }
+    
+    // Build system prompt: Few-Shot FIRST, then BASE_IDENTITY
+    let systemPrompt = fewShotBlock + BASE_IDENTITY;
 
     // Add constitution (pinned)
     if (constitutionInstructions) {
