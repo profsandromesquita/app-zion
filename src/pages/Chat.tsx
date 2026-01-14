@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Heart, Send, Menu, ArrowLeft, Bug } from "lucide-react";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
@@ -53,6 +53,7 @@ const Chat = () => {
   const [showCrisisBanner, setShowCrisisBanner] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const refreshSidebarRef = useRef<(() => void) | null>(null);
 
   const {
     isListening,
@@ -155,8 +156,15 @@ const Chat = () => {
   }, []);
 
   const handleNewChat = useCallback(async () => {
-    await createNewSession();
+    const newId = await createNewSession();
+    if (newId) {
+      refreshSidebarRef.current?.();
+    }
   }, [user]);
+
+  const handleSidebarReady = useCallback((refresh: () => void) => {
+    refreshSidebarRef.current = refresh;
+  }, []);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -200,6 +208,7 @@ const Chat = () => {
       if (isFirstMessage) {
         await updateSessionTitle(chatSessionId, userMessage);
         setIsFirstMessage(false);
+        refreshSidebarRef.current?.();
       } else {
         // Just update the updated_at timestamp
         await supabase
@@ -503,6 +512,7 @@ const Chat = () => {
           onSelectSession={handleSelectSession}
           onNewChat={handleNewChat}
           onSignOut={handleSignOut}
+          onSidebarReady={handleSidebarReady}
         />
 
         <div className="relative z-0 flex flex-1 flex-col">

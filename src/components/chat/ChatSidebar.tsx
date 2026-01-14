@@ -41,6 +41,7 @@ interface ChatSidebarProps {
   onSelectSession: (sessionId: string) => void;
   onNewChat: () => void;
   onSignOut: () => void;
+  onSidebarReady?: (refresh: () => void) => void;
 }
 
 const MAX_FAVORITES = 3;
@@ -52,6 +53,7 @@ export function ChatSidebar({
   onSelectSession,
   onNewChat,
   onSignOut,
+  onSidebarReady,
 }: ChatSidebarProps) {
   const navigate = useNavigate();
   const { state, isMobile } = useSidebar();
@@ -67,6 +69,13 @@ export function ChatSidebar({
       loadSessions();
     }
   }, [user]);
+
+  // Expose refresh function to parent
+  useEffect(() => {
+    if (onSidebarReady) {
+      onSidebarReady(loadSessions);
+    }
+  }, [onSidebarReady]);
 
   const loadSessions = async () => {
     if (!user) return;
