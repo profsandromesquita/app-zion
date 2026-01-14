@@ -407,40 +407,170 @@ const JourneyMap = () => {
     enabled: !!selectedSessionId,
   });
 
-  // Stats
-  const { data: stats } = useQuery({
+  // Stats - includes extraction status
+  const { data: stats, refetch: refetchStats } = useQuery({
     queryKey: ["journey-stats"],
     queryFn: async () => {
-      const { data: insights, error: insightsError } = await supabase
+      // Fetch ALL insights to calculate extraction stats
+      const { data: allInsights, error: allError } = await supabase
         .from("turn_insights")
-        .select("phase, shift_detected, overall_score, include_in_training")
-        .eq("extraction_status", "completed");
+        .select("extraction_status, phase, shift_detected, overall_score, include_in_training");
 
-      if (insightsError) throw insightsError;
+      if (allError) throw allError;
+
+      const totalAll = allInsights?.length || 0;
+      const completed = allInsights?.filter(d => d.extraction_status === 'completed') || [];
+      const failed = allInsights?.filter(d => d.extraction_status === 'failed') || [];
+      const processing = allInsights?.filter(d => d.extraction_status === 'processing') || [];
 
       const { data: themes, error: themesError } = await supabase
         .from("user_themes")
         .select("id, status");
 
-      const total = insights?.length || 0;
-      const shifts = insights?.filter(d => d.shift_detected).length || 0;
+      // Calculate stats from completed only
+      const total = completed.length;
+      const shifts = completed.filter(d => d.shift_detected).length;
       const avgScore = total > 0 
-        ? insights!.reduce((sum, d) => sum + (d.overall_score || 0), 0) / total 
+        ? completed.reduce((sum, d) => sum + (d.overall_score || 0), 0) / total 
         : 0;
-      const markedForTraining = insights?.filter(d => d.include_in_training).length || 0;
+      const markedForTraining = completed.filter(d => d.include_in_training).length;
       const totalThemes = themes?.length || 0;
       const activeThemes = themes?.filter(t => t.status === "active" || t.status === "in_progress").length || 0;
 
+      const extractionRate = totalAll > 0 ? Math.round((total / totalAll) * 100) : 0;
+
       return { 
         total, 
+        totalAll,
         shifts, 
         avgScore: Math.round(avgScore * 100) / 100, 
         markedForTraining,
         totalThemes,
         activeThemes,
+        failedCount: failed.length,
+        processingCount: processing.length,
+        extractionRate,
       };
     },
   });
+
+  // Reprocess failed insights
+  const [isReprocessing, setIsReprocessing] = useState(false);
+  const [reprocessProgress, setReprocessProgress] = useState({ current: 0, total: 0 });
+
+  const reprocessFailedInsights = async () => {
+    try {
+      setIsReprocessing(true);
+      
+      // Fetch failed insights with their message IDs
+      const { data: failedInsights, error } = await supabase
+        .from("turn_insights")
+        .select("id, chat_session_id, message_user_id, message_assistant_id, turn_number")
+        .eq("extraction_status", "failed")
+        .limit(20); // Process in batches
+
+      if (error) throw error;
+      if (!failedInsights?.length) {
+        toast.info("Nenhuma extração com falha encontrada");
+        setIsReprocessing(false);
+        return;
+      }
+
+      setReprocessProgress({ current: 0, total: failedInsights.length });
+      let successCount = 0;
+
+      for (let i = 0; i < failedInsights.length; i++) {
+        const insight = failedInsights[i];
+        setReprocessProgress({ current: i + 1, total: failedInsights.length });
+
+        try {
+          // Fetch the original messages
+          const { data: userMsg } = await supabase
+            .from("chat_messages")
+            .select("content")
+            .eq("id", insight.message_user_id)
+            .single();
+
+          const { data: assistantMsg } = await supabase
+            .from("chat_messages")
+            .select("content")
+            .eq("id", insight.message_assistant_id)
+            .single();
+
+          if (!userMsg || !assistantMsg) {
+            console.warn(`Missing messages for insight ${insight.id}`);
+            continue;
+          }
+
+          // Fetch history
+          const { data: historyMsgs } = await supabase
+            .from("chat_messages")
+            .select("content, sender, created_at")
+            .eq("session_id", insight.chat_session_id)
+            .order("created_at", { ascending: true })
+            .limit(20);
+
+          const history = (historyMsgs || []).map(m => ({
+            role: m.sender === 'user' ? 'user' : 'assistant',
+            content: m.content,
+          }));
+
+          // Delete old insight to allow reprocessing
+          await supabase
+            .from("turn_insights")
+            .delete()
+            .eq("id", insight.id);
+
+          // Get session token
+          const { data: { session } } = await supabase.auth.getSession();
+          
+          // Call turn-insight-observer
+          const response = await fetch(
+            `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/turn-insight-observer`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${session?.access_token || import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+              },
+              body: JSON.stringify({
+                session_id: insight.chat_session_id,
+                message_user_id: insight.message_user_id,
+                message_assistant_id: insight.message_assistant_id,
+                history,
+                user_prompt: userMsg.content,
+                assistant_response: assistantMsg.content,
+                turn_number: insight.turn_number,
+                metadata: {},
+              }),
+            }
+          );
+
+          const result = await response.json();
+          if (result.status === "completed") {
+            successCount++;
+          }
+        } catch (reprocessErr) {
+          console.error(`Error reprocessing insight ${insight.id}:`, reprocessErr);
+        }
+
+        // Small delay between requests
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
+      toast.success(`Reprocessado: ${successCount}/${failedInsights.length} com sucesso`);
+      
+      // Refresh data
+      refetchStats();
+      refetchSessions();
+      queryClient.invalidateQueries({ queryKey: ["journey-all-themes"] });
+    } catch (err) {
+      toast.error("Erro ao reprocessar: " + (err as Error).message);
+    } finally {
+      setIsReprocessing(false);
+      setReprocessProgress({ current: 0, total: 0 });
+    }
+  };
 
   // Update insight mutation
   const updateInsight = useMutation({
@@ -793,11 +923,66 @@ const JourneyMap = () => {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid gap-4 md:grid-cols-6">
+        <div className="grid gap-4 md:grid-cols-4 lg:grid-cols-8">
+          {/* Extraction Status Card */}
+          <Card className="md:col-span-2">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-muted-foreground flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4" />
+                Status de Extração
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-muted-foreground">Total</span>
+                  <span className="font-bold">{stats?.totalAll || 0}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-green-600">✅ Extraídos</span>
+                  <span className="font-medium text-green-600">{stats?.total || 0}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-xs text-red-600">❌ Falhas</span>
+                  <span className="font-medium text-red-600">{stats?.failedCount || 0}</span>
+                </div>
+                {(stats?.processingCount || 0) > 0 && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-xs text-yellow-600">⏳ Processando</span>
+                    <span className="font-medium text-yellow-600">{stats?.processingCount || 0}</span>
+                  </div>
+                )}
+                <Progress value={stats?.extractionRate || 0} className="h-2 mt-2" />
+                <p className="text-xs text-center text-muted-foreground">{stats?.extractionRate || 0}% taxa de sucesso</p>
+                {(stats?.failedCount || 0) > 0 && (
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    className="w-full mt-2"
+                    onClick={reprocessFailedInsights}
+                    disabled={isReprocessing}
+                  >
+                    {isReprocessing ? (
+                      <>
+                        <RefreshCw className="mr-2 h-3 w-3 animate-spin" />
+                        {reprocessProgress.current}/{reprocessProgress.total}
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="mr-2 h-3 w-3" />
+                        Reprocessar Falhas
+                      </>
+                    )}
+                  </Button>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-sm font-medium text-muted-foreground">
-                Total de Turnos
+                Turnos Analisados
               </CardTitle>
             </CardHeader>
             <CardContent>
