@@ -3,7 +3,22 @@ import { supabase } from "@/integrations/supabase/client";
 import AdminLayout from "@/components/admin/AdminLayout";
 import AdminRoute from "@/components/admin/AdminRoute";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { BookOpen, FileText, Users } from "lucide-react";
+
+interface UserProfile {
+  id: string;
+  nome: string | null;
+  email: string | null;
+  created_at: string;
+}
 
 const AdminDashboard = () => {
   const [stats, setStats] = useState({
@@ -11,20 +26,23 @@ const AdminDashboard = () => {
     instructionsCount: 0,
     usersCount: 0,
   });
+  const [users, setUsers] = useState<UserProfile[]>([]);
 
   useEffect(() => {
     const fetchStats = async () => {
       const [knowledgeRes, instructionsRes, usersRes] = await Promise.all([
         supabase.from("knowledge_base").select("id", { count: "exact", head: true }),
         supabase.from("system_instructions").select("id", { count: "exact", head: true }),
-        supabase.from("profiles").select("id", { count: "exact", head: true }),
+        supabase.from("profiles").select("*").order("created_at", { ascending: false }),
       ]);
 
       setStats({
         knowledgeCount: knowledgeRes.count || 0,
         instructionsCount: instructionsRes.count || 0,
-        usersCount: usersRes.count || 0,
+        usersCount: usersRes.data?.length || 0,
       });
+
+      setUsers(usersRes.data || []);
     };
 
     fetchStats();
@@ -87,6 +105,43 @@ const AdminDashboard = () => {
               </CardContent>
             </Card>
           </div>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Users className="h-5 w-5" />
+                Usuários Cadastrados ({stats.usersCount})
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {users.length === 0 ? (
+                <p className="text-muted-foreground text-center py-4">
+                  Nenhum usuário cadastrado
+                </p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Nome</TableHead>
+                      <TableHead>Email</TableHead>
+                      <TableHead>Cadastrado em</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {users.map((user) => (
+                      <TableRow key={user.id}>
+                        <TableCell>{user.nome || "—"}</TableCell>
+                        <TableCell>{user.email || "—"}</TableCell>
+                        <TableCell>
+                          {new Date(user.created_at).toLocaleDateString("pt-BR")}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
         </div>
       </AdminLayout>
     </AdminRoute>
