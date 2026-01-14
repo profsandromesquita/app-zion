@@ -239,6 +239,180 @@ const EXTRACTION_TOOL = {
 };
 
 // ============================================
+// JSON SCHEMA FOR NON-TOOL FALLBACK
+// ============================================
+
+const JSON_SCHEMA_INSTRUCTIONS = `
+
+RESPONDA SOMENTE UM JSON VÁLIDO seguindo exatamente este schema (sem markdown, sem explicações):
+{
+  "phase": "ACOLHIMENTO" | "CLARIFICACAO" | "PADROES" | "RAIZ" | "TROCA" | "CONSOLIDACAO",
+  "phase_confidence": 0.0 a 1.0,
+  "primary_emotions": ["emoção1", "emoção2"],
+  "emotion_intensity": 0 a 3,
+  "emotion_stability": "calm" | "unstable",
+  "zion_cycle": {
+    "loss": { "text": "", "confidence": 0.0, "evidence_quotes": [] },
+    "fear_root": { "text": "", "confidence": 0.0, "evidence_quotes": [] },
+    "insecurity": { "text": "", "confidence": 0.0, "evidence_quotes": [] },
+    "false_desire": { "text": "", "confidence": 0.0, "evidence_quotes": [] },
+    "defense_mechanism": { "text": "", "confidence": 0.0, "evidence_quotes": [] }
+  },
+  "lie_active": {
+    "text": "",
+    "confidence": 0.0,
+    "evidence_quotes": [],
+    "scenario": "Casamento | Carreira | Família | etc",
+    "center": "INSTINTIVO" | "EMOCIONAL" | "MENTAL",
+    "security_matrix": "SOBREVIVENCIA" | "IDENTIDADE" | "CAPACIDADE"
+  },
+  "truth_target": { "text": "", "confidence": 0.0 },
+  "shift_detected": false,
+  "shift_description": "",
+  "shift_evidence": [],
+  "primary_virtue": { "virtue_name": "", "distortion": "", "confidence": 0.0, "evidence_quotes": [] },
+  "next_best_question_type": "EVIDENCE" | "ALTERNATIVE" | "SENSATION" | "VALUE" | "TRUTH" | "PRACTICE",
+  "rubric_scores": {
+    "presence": 0 a 5,
+    "conduction_questions": 0 a 5,
+    "non_diagnostic": 0 a 5,
+    "method_alignment": 0 a 5,
+    "bible_permission_alignment": 0 a 5,
+    "safety_alignment": 0 a 5
+  },
+  "overall_score": 0 a 5,
+  "issues_detected": [],
+  "quality_rationale": "Justificativa curta"
+}`;
+
+// ============================================
+// HELPER FUNCTIONS
+// ============================================
+
+const stripJsonFences = (text: string): string => {
+  const trimmed = text.trim();
+  // ```json ... ``` or ``` ... ```
+  const fenceMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  if (fenceMatch) return fenceMatch[1].trim();
+  
+  // Try to find JSON object in text
+  const jsonStart = trimmed.indexOf('{');
+  const jsonEnd = trimmed.lastIndexOf('}');
+  if (jsonStart !== -1 && jsonEnd > jsonStart) {
+    return trimmed.substring(jsonStart, jsonEnd + 1);
+  }
+  
+  return trimmed;
+};
+
+const validateMinimalSchema = (data: any): boolean => {
+  return (
+    data &&
+    typeof data === 'object' &&
+    typeof data.phase === 'string' &&
+    typeof data.phase_confidence === 'number' &&
+    typeof data.overall_score === 'number' &&
+    typeof data.rubric_scores === 'object' &&
+    typeof data.quality_rationale === 'string'
+  );
+};
+
+const extractFromLlmResult = (llm: any): any => {
+  const msg = llm?.choices?.[0]?.message;
+  const toolCall = msg?.tool_calls?.[0];
+  
+  // Try tool call first
+  if (toolCall?.function?.arguments) {
+    try {
+      const parsed = JSON.parse(toolCall.function.arguments);
+      if (validateMinimalSchema(parsed)) {
+        return parsed;
+      }
+    } catch {
+      // fallthrough
+    }
+  }
+
+  // Fallback: try message.content
+  const content = msg?.content;
+  if (typeof content === "string" && content.trim()) {
+    try {
+      const stripped = stripJsonFences(content);
+      const parsed = JSON.parse(stripped);
+      if (validateMinimalSchema(parsed)) {
+        return parsed;
+      }
+    } catch {
+      // no-op
+    }
+  }
+
+  return null;
+};
+
+// ============================================
+// LLM CALL FUNCTIONS
+// ============================================
+
+const callLLMWithTools = async (model: string, systemPrompt: string, userPrompt: string, apiKey: string) => {
+  console.log(`Calling LLM with tools: ${model}`);
+  
+  const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      tools: [EXTRACTION_TOOL],
+      tool_choice: { type: "function", function: { name: "extract_turn_insight" } },
+      max_completion_tokens: 2000,
+    }),
+  });
+
+  if (!resp.ok) {
+    const errorText = await resp.text();
+    console.error(`LLM error (${model}):`, resp.status, errorText);
+    throw new Error(`LLM error: ${resp.status}`);
+  }
+
+  return resp.json();
+};
+
+const callLLMWithoutTools = async (model: string, systemPrompt: string, userPrompt: string, apiKey: string) => {
+  console.log(`Calling LLM without tools (JSON direct): ${model}`);
+  
+  const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: "system", content: systemPrompt + JSON_SCHEMA_INSTRUCTIONS },
+        { role: "user", content: userPrompt + "\n\nRespire fundo e retorne APENAS o JSON válido, sem markdown." },
+      ],
+      max_tokens: 2000,
+    }),
+  });
+
+  if (!resp.ok) {
+    const errorText = await resp.text();
+    console.error(`LLM error (${model}):`, resp.status, errorText);
+    throw new Error(`LLM error: ${resp.status}`);
+  }
+
+  return resp.json();
+};
+
+// ============================================
 // MAIN HANDLER
 // ============================================
 
@@ -312,7 +486,7 @@ serve(async (req) => {
         message_user_id,
         message_assistant_id,
         turn_number,
-        extractor_version: "v1.0",
+        extractor_version: "v1.1",
         mentor_model_id: metadata.model_id || "google/gemini-2.5-flash",
         observer_model_id: "openai/gpt-5-mini",
         extraction_status: "processing",
@@ -348,7 +522,7 @@ METADADOS DO TURNO:
 - Issues do validator: ${metadata.validation_issues?.join(', ') || 'nenhum'}
 `;
 
-    const userPrompt = `ANÁLISE DO TURNO DE CONVERSA
+    const userPromptForLLM = `ANÁLISE DO TURNO DE CONVERSA
 
 ${historyContext}
 
@@ -364,116 +538,66 @@ ${metadataContext}
 
 Analise este turno e extraia os insights estruturados.`;
 
-    // Call LLM for extraction (with one retry)
-    console.log("Calling LLM for extraction...");
+    // ============================================
+    // MULTI-MODEL RETRY STRATEGY
+    // ============================================
+    
+    const MODEL_ATTEMPTS = [
+      { model: "openai/gpt-5-mini", useTools: true },
+      { model: "openai/gpt-5", useTools: true },
+      { model: "google/gemini-2.5-flash", useTools: false }, // Fallback without tools
+    ];
 
-    const stripJsonFences = (text: string) => {
-      const trimmed = text.trim();
-      // ```json ... ``` or ``` ... ```
-      const fenceMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
-      return fenceMatch ? fenceMatch[1].trim() : trimmed;
-    };
-
-    const extractFromLlmResult = (llm: any) => {
-      const msg = llm?.choices?.[0]?.message;
-      const toolCall = msg?.tool_calls?.[0];
-      if (toolCall?.function?.arguments) {
-        try {
-          return JSON.parse(toolCall.function.arguments);
-        } catch {
-          // fallthrough
-        }
-      }
-
-      // Fallback: sometimes the model returns JSON in message.content
-      const content = msg?.content;
-      if (typeof content === "string" && content.trim()) {
-        try {
-          return JSON.parse(stripJsonFences(content));
-        } catch {
-          // no-op
-        }
-      }
-
-      return null;
-    };
-
-    const callLLM = async (model: string) => {
-      const resp = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${LOVABLE_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model,
-          messages: [
-            { role: "system", content: OBSERVER_SYSTEM_PROMPT },
-            { role: "user", content: userPrompt },
-          ],
-          tools: [EXTRACTION_TOOL],
-          tool_choice: { type: "function", function: { name: "extract_turn_insight" } },
-          max_completion_tokens: 2000,
-        }),
-      });
-
-      if (!resp.ok) {
-        const errorText = await resp.text();
-        console.error("LLM error:", resp.status, errorText);
-        throw new Error(`LLM error: ${resp.status}`);
-      }
-
-      return resp.json();
-    };
-
-    let usedModel = "openai/gpt-5-mini";
-    let llmResult: any;
+    let usedModel = MODEL_ATTEMPTS[0].model;
     let extractedData: any = null;
+    let lastError: string | null = null;
 
-    try {
-      llmResult = await callLLM(usedModel);
-      console.log("LLM response received");
-      extractedData = extractFromLlmResult(llmResult);
+    for (const attempt of MODEL_ATTEMPTS) {
+      try {
+        console.log(`Attempt with ${attempt.model} (tools: ${attempt.useTools})`);
+        
+        let llmResult: any;
+        if (attempt.useTools) {
+          llmResult = await callLLMWithTools(attempt.model, OBSERVER_SYSTEM_PROMPT, userPromptForLLM, LOVABLE_API_KEY);
+        } else {
+          llmResult = await callLLMWithoutTools(attempt.model, OBSERVER_SYSTEM_PROMPT, userPromptForLLM, LOVABLE_API_KEY);
+        }
 
-      if (!extractedData) {
-        console.warn("No tool call/content JSON on first attempt; retrying with openai/gpt-5...");
-        usedModel = "openai/gpt-5";
-        llmResult = await callLLM(usedModel);
-        console.log("LLM response received (retry)");
         extractedData = extractFromLlmResult(llmResult);
-      }
-    } catch (err) {
-      await supabase
-        .from("turn_insights")
-        .update({
-          extraction_status: "failed",
-          extraction_error: err instanceof Error ? err.message : "LLM call failed",
-          observer_model_id: usedModel,
-        })
-        .eq("id", pendingRecord.id);
+        usedModel = attempt.model;
 
-      // Do not hard-fail the caller; telemetry can fail silently.
-      return new Response(
-        JSON.stringify({ status: "failed", error: err instanceof Error ? err.message : "LLM call failed" }),
-        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
+        if (extractedData) {
+          console.log(`Success with ${attempt.model}`);
+          break;
+        } else {
+          // Log raw response for debugging
+          const rawContent = llmResult?.choices?.[0]?.message?.content;
+          const rawToolCall = llmResult?.choices?.[0]?.message?.tool_calls?.[0]?.function?.arguments;
+          console.warn(`No valid JSON from ${attempt.model}. Raw content: ${rawContent?.substring(0, 300)}. Raw tool: ${rawToolCall?.substring(0, 300)}`);
+          lastError = `No valid JSON from ${attempt.model}`;
+        }
+      } catch (err) {
+        console.error(`Error with ${attempt.model}:`, err);
+        lastError = err instanceof Error ? err.message : `Error with ${attempt.model}`;
+        // Continue to next model
+      }
     }
 
+    // If all attempts failed
     if (!extractedData) {
-      console.error("No tool call in response");
+      console.error("All model attempts failed. Last error:", lastError);
 
       await supabase
         .from("turn_insights")
         .update({
           extraction_status: "failed",
-          extraction_error: "No tool call/content JSON in LLM response",
+          extraction_error: lastError || "All model attempts failed",
           observer_model_id: usedModel,
         })
         .eq("id", pendingRecord.id);
 
-      // Return 200 to avoid breaking the app flow; this is non-critical telemetry.
       return new Response(
-        JSON.stringify({ status: "failed", error: "No tool call in LLM response" }),
+        JSON.stringify({ status: "failed", error: lastError || "All model attempts failed" }),
         { headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -580,6 +704,7 @@ Analise este turno e extraia os insights estruturados.`;
         phase: extractedData.phase,
         overall_score: extractedData.overall_score,
         latency_ms: latencyMs,
+        model_used: usedModel,
         taxonomy: lieSecurityMatrix ? { scenario: lieScenario, center: lieCenter, security_matrix: lieSecurityMatrix } : null,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
