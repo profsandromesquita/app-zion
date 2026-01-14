@@ -116,6 +116,23 @@ serve(async (req) => {
 
           const feedbackLabel = feedbackToLabel[type];
           
+          // NOVO: Buscar fase do turn_insights
+          let phase: string | null = null;
+          try {
+            const { data: turnInsight } = await supabase
+              .from("turn_insights")
+              .select("phase")
+              .eq("message_assistant_id", message_id)
+              .maybeSingle();
+
+            if (turnInsight?.phase) {
+              phase = turnInsight.phase;
+              console.log("Phase captured from turn_insights:", phase);
+            }
+          } catch (phaseErr) {
+            console.error("Error fetching phase (non-fatal):", phaseErr);
+          }
+          
           // Preparar dados do dataset
           const datasetItem = {
             chat_session_id: session_id,
@@ -137,6 +154,8 @@ serve(async (req) => {
             retrieval_stats: typeof debugObj.retrieval_stats === 'object' ? debugObj.retrieval_stats : {},
             // Default: incluir apenas 'useful' no export
             include_in_export: type === "helpful",
+            // NOVO: Fase da jornada
+            phase,
           };
 
           // Upsert para evitar duplicação (atualiza se já existe)
@@ -150,7 +169,7 @@ serve(async (req) => {
           if (datasetError) {
             console.error("Error saving to dataset:", datasetError);
           } else {
-            console.log("Dataset item saved for feedback:", feedbackLabel);
+            console.log("Dataset item saved for feedback:", feedbackLabel, "phase:", phase);
           }
         }
       }
