@@ -21,6 +21,31 @@ interface ExportRequest {
   format: "jsonl" | "csv";
   filters?: ExportFilters;
   anonymize?: boolean;
+  useCorrectedResponses?: boolean;
+}
+
+interface Violation {
+  code: string;
+  description: string;
+}
+
+interface Diagnosis {
+  symptom?: string;
+  distorted_virtue?: string;
+  root_fear?: string;
+  security_matrix?: string;
+}
+
+interface CuratedCorrection {
+  id: string;
+  feedback_item_id: string;
+  status: string;
+  adherence_score: number | null;
+  violations: Violation[];
+  corrected_response: string | null;
+  diagnosis: Diagnosis;
+  notes: string | null;
+  include_in_training: boolean;
 }
 
 serve(async (req) => {
@@ -73,9 +98,9 @@ serve(async (req) => {
     }
 
     const body: ExportRequest = await req.json();
-    const { format = "jsonl", filters = {}, anonymize = true } = body;
+    const { format = "jsonl", filters = {}, anonymize = true, useCorrectedResponses = true } = body;
 
-    console.log("Export request from admin:", user.id, { format, filters, anonymize });
+    console.log("Export request from admin:", user.id, { format, filters, anonymize, useCorrectedResponses });
 
     // Construir query com filtros
     let query = supabase
@@ -123,12 +148,45 @@ serve(async (req) => {
       throw queryError;
     }
 
-    // Preparar dados para export (anonimizar se necessário)
+    // Buscar correções curadas se useCorrectedResponses estiver ativo
+    let curatedCorrections: CuratedCorrection[] = [];
+    if (useCorrectedResponses && items && items.length > 0) {
+      const itemIds = items.map((item) => item.id);
+      const { data: corrections, error: correctionsError } = await supabase
+        .from("curated_corrections")
+        .select("*")
+        .in("feedback_item_id", itemIds)
+        .eq("include_in_training", true);
+
+      if (correctionsError) {
+        console.error("Error fetching corrections:", correctionsError);
+      } else {
+        curatedCorrections = (corrections || []) as CuratedCorrection[];
+      }
+    }
+
+    // Criar mapa de correções por feedback_item_id
+    const correctionsMap = new Map<string, CuratedCorrection>();
+    curatedCorrections.forEach((c) => {
+      correctionsMap.set(c.feedback_item_id, c);
+    });
+
+    console.log(`Found ${curatedCorrections.length} curated corrections for ${items?.length || 0} items`);
+
+    // Preparar dados para export
     const exportData = (items || []).map((item) => {
+      const correction = correctionsMap.get(item.id);
+      
+      // Usar resposta corrigida se disponível e useCorrectedResponses estiver ativo
+      const responseToUse = useCorrectedResponses && correction?.corrected_response
+        ? correction.corrected_response
+        : item.assistant_answer_text;
+
       if (anonymize) {
-        return {
+        const baseData = {
           prompt: item.user_prompt_text,
-          response: item.assistant_answer_text,
+          response: responseToUse,
+          response_is_corrected: !!(correction?.corrected_response),
           label: item.feedback_label,
           intent: item.intent,
           model_id: item.model_id,
@@ -137,8 +195,31 @@ serve(async (req) => {
           rag_low_confidence: item.rag_low_confidence,
           created_at: item.created_at,
         };
+
+        // Adicionar dados de curadoria se disponíveis
+        if (correction) {
+          return {
+            ...baseData,
+            curation_status: correction.status,
+            adherence_score: correction.adherence_score,
+            violations: correction.violations,
+            diagnosis: correction.diagnosis,
+          };
+        }
+
+        return baseData;
       }
-      return item;
+
+      // Não anonimizado - retorna tudo
+      return {
+        ...item,
+        response_corrected: correction?.corrected_response || null,
+        response_is_corrected: !!(correction?.corrected_response),
+        curation_status: correction?.status || null,
+        adherence_score: correction?.adherence_score || null,
+        violations: correction?.violations || [],
+        diagnosis: correction?.diagnosis || null,
+      };
     });
 
     // Registrar audit log
@@ -152,6 +233,8 @@ serve(async (req) => {
           filters,
           count: exportData.length,
           anonymized: anonymize,
+          used_corrected_responses: useCorrectedResponses,
+          corrections_applied: curatedCorrections.length,
         },
         ip_address: req.headers.get("x-forwarded-for") || req.headers.get("cf-connecting-ip") || null,
       });
@@ -160,7 +243,7 @@ serve(async (req) => {
       console.error("Audit log error (non-fatal):", auditError);
     }
 
-    console.log("Exporting", exportData.length, "items in format:", format);
+    console.log("Exporting", exportData.length, "items in format:", format, "with", curatedCorrections.length, "corrections applied");
 
     // Formatar output
     if (format === "jsonl") {
@@ -200,7 +283,11 @@ function convertToCSV(data: Record<string, unknown>[], anonymize: boolean): stri
   if (data.length === 0) return "";
 
   const headers = anonymize
-    ? ["prompt", "response", "label", "intent", "model_id", "was_rewritten", "rag_used", "rag_low_confidence", "created_at"]
+    ? [
+        "prompt", "response", "response_is_corrected", "label", "intent", 
+        "model_id", "was_rewritten", "rag_used", "rag_low_confidence", 
+        "created_at", "curation_status", "adherence_score", "violations", "diagnosis"
+      ]
     : Object.keys(data[0]);
 
   const escapeCSV = (value: unknown): string => {

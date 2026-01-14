@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import AdminLayout from "@/components/admin/AdminLayout";
 import { supabase } from "@/integrations/supabase/client";
@@ -31,12 +31,39 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Download, Eye, Check, Search, RefreshCw, FileJson, FileSpreadsheet } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Download, Eye, Check, Search, RefreshCw, FileJson, FileSpreadsheet, Plus, Trash2, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 
 type DatasetLabel = "useful" | "not_useful" | "theology_report";
+type CurationStatus = "approved" | "rejected" | "needs_review";
+
+interface Violation {
+  code: string;
+  description: string;
+}
+
+interface Diagnosis {
+  symptom?: string;
+  distorted_virtue?: string;
+  root_fear?: string;
+  security_matrix?: string;
+}
+
+interface CuratedCorrection {
+  id: string;
+  feedback_item_id: string;
+  status: CurationStatus;
+  adherence_score: number | null;
+  violations: Violation[];
+  corrected_response: string | null;
+  diagnosis: Diagnosis;
+  notes: string | null;
+  include_in_training: boolean;
+  curated_at: string;
+}
 
 interface DatasetItem {
   id: string;
@@ -81,6 +108,58 @@ const LABEL_TEXT: Record<DatasetLabel, string> = {
   theology_report: "Teologia",
 };
 
+const STATUS_OPTIONS: { value: CurationStatus; label: string; color: string }[] = [
+  { value: "approved", label: "✅ Aprovado", color: "bg-green-100 text-green-800" },
+  { value: "rejected", label: "🔴 Reprovado", color: "bg-red-100 text-red-800" },
+  { value: "needs_review", label: "🟡 Revisar", color: "bg-yellow-100 text-yellow-800" },
+];
+
+const VIOLATION_CODES = [
+  { code: "PRESUMPTION", label: "Presunção/Interpretação" },
+  { code: "IMPURE_MIRRORING", label: "Espelhamento Impuro" },
+  { code: "MASK_VALIDATION", label: "Validação da Máscara" },
+  { code: "EXCESS_LENGTH", label: "Resposta Longa Demais" },
+  { code: "EXTERNAL_FOCUS", label: "Foco Cognitivo Externo" },
+  { code: "WEAK_MAIEUTICS", label: "Maiêutica Fraca" },
+  { code: "CAUSALITY_DIAGNOSTIC", label: "Diagnóstico Causal" },
+  { code: "MISSING_SENSATION", label: "Sem Pergunta de Sensação" },
+  { code: "THEORIZATION", label: "Teorização Excessiva" },
+  { code: "BIBLICAL_MISUSE", label: "Uso Indevido de Bíblia" },
+  { code: "OTHER", label: "Outro" },
+];
+
+const SECURITY_MATRICES = [
+  { value: "SOBREVIVENCIA", label: "Sobrevivência" },
+  { value: "IDENTIDADE", label: "Identidade" },
+  { value: "CAPACIDADE", label: "Capacidade" },
+];
+
+const DISTORTED_VIRTUES = [
+  "Trabalho/Esperança",
+  "Controle/Prudência",
+  "Imagem/Autenticidade",
+  "Singularidade/Equilíbrio",
+  "Conhecimento/Engajamento",
+  "Lealdade/Coragem",
+  "Liberdade/Moderação",
+  "Poder/Vulnerabilidade",
+  "Paz/Ação",
+];
+
+const ROOT_FEARS = [
+  "Abandono",
+  "Rejeição",
+  "Fracasso",
+  "Ser inútil",
+  "Invasão",
+  "Traição",
+  "Ser controlado",
+  "Ser fraco",
+  "Conflito",
+  "Não ser especial",
+  "Ser vazio",
+];
+
 const FeedbackDataset = () => {
   const queryClient = useQueryClient();
   
@@ -93,7 +172,16 @@ const FeedbackDataset = () => {
 
   // Modal de detalhe
   const [selectedItem, setSelectedItem] = useState<DatasetItem | null>(null);
+  
+  // Estado de curadoria estruturada
+  const [curationStatus, setCurationStatus] = useState<CurationStatus>("needs_review");
+  const [adherenceScore, setAdherenceScore] = useState<string>("");
+  const [violations, setViolations] = useState<Violation[]>([]);
+  const [correctedResponse, setCorrectedResponse] = useState("");
+  const [diagnosis, setDiagnosis] = useState<Diagnosis>({});
   const [curationNotes, setCurationNotes] = useState("");
+  const [includeInTraining, setIncludeInTraining] = useState(true);
+  const [existingCuration, setExistingCuration] = useState<CuratedCorrection | null>(null);
 
   // Modal de export
   const [showExportDialog, setShowExportDialog] = useState(false);
@@ -101,6 +189,7 @@ const FeedbackDataset = () => {
   const [exportAnonymize, setExportAnonymize] = useState(true);
   const [exportLabel, setExportLabel] = useState("__all__");
   const [exportOnlyIncluded, setExportOnlyIncluded] = useState(true);
+  const [exportUseCorrected, setExportUseCorrected] = useState(true);
   const [isExporting, setIsExporting] = useState(false);
 
   // Buscar dados
@@ -161,7 +250,48 @@ const FeedbackDataset = () => {
     },
   });
 
-  // Mutation para atualizar item
+  // Carregar curadoria existente quando item é selecionado
+  useEffect(() => {
+    if (selectedItem) {
+      loadExistingCuration(selectedItem.id);
+    }
+  }, [selectedItem?.id]);
+
+  const loadExistingCuration = async (feedbackItemId: string) => {
+    const { data, error } = await supabase
+      .from("curated_corrections")
+      .select("*")
+      .eq("feedback_item_id", feedbackItemId)
+      .maybeSingle();
+
+    if (error) {
+      console.error("Error loading curation:", error);
+      return;
+    }
+
+    if (data) {
+      setExistingCuration(data as unknown as CuratedCorrection);
+      setCurationStatus(data.status as CurationStatus);
+      setAdherenceScore(data.adherence_score?.toString() || "");
+      setViolations((data.violations as unknown as Violation[]) || []);
+      setCorrectedResponse(data.corrected_response || "");
+      setDiagnosis((data.diagnosis as unknown as Diagnosis) || {});
+      setCurationNotes(data.notes || "");
+      setIncludeInTraining(data.include_in_training ?? true);
+    } else {
+      // Reset form para novo item
+      setExistingCuration(null);
+      setCurationStatus("needs_review");
+      setAdherenceScore("");
+      setViolations([]);
+      setCorrectedResponse("");
+      setDiagnosis({});
+      setCurationNotes("");
+      setIncludeInTraining(true);
+    }
+  };
+
+  // Mutation para atualizar feedback_dataset_items
   const updateMutation = useMutation({
     mutationFn: async (updates: { id: string; include_in_export?: boolean; curation_notes?: string; reviewed_at?: string; reviewed_by?: string }) => {
       const { error } = await supabase
@@ -173,10 +303,52 @@ const FeedbackDataset = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["feedback-dataset"] });
       queryClient.invalidateQueries({ queryKey: ["feedback-dataset-stats"] });
-      toast.success("Item atualizado");
     },
     onError: (error) => {
       toast.error("Erro ao atualizar: " + error.message);
+    },
+  });
+
+  // Mutation para salvar curadoria estruturada
+  const saveCurationMutation = useMutation({
+    mutationFn: async (curationData: {
+      feedback_item_id: string;
+      status: CurationStatus;
+      adherence_score: number | null;
+      violations: Violation[];
+      corrected_response: string | null;
+      diagnosis: Diagnosis;
+      notes: string | null;
+      include_in_training: boolean;
+    }) => {
+      const { data: userData } = await supabase.auth.getUser();
+      
+      const payload = {
+        feedback_item_id: curationData.feedback_item_id,
+        status: curationData.status,
+        adherence_score: curationData.adherence_score,
+        violations: curationData.violations as unknown as Record<string, unknown>[],
+        corrected_response: curationData.corrected_response,
+        diagnosis: curationData.diagnosis as unknown as Record<string, unknown>,
+        notes: curationData.notes,
+        include_in_training: curationData.include_in_training,
+        curator_id: userData.user?.id,
+        curated_at: new Date().toISOString(),
+      };
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const { error } = await supabase
+        .from("curated_corrections")
+        .upsert(payload as any, { onConflict: "feedback_item_id" });
+
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["feedback-dataset"] });
+      toast.success("Curadoria salva com sucesso!");
+    },
+    onError: (error) => {
+      toast.error("Erro ao salvar curadoria: " + error.message);
     },
   });
 
@@ -188,20 +360,49 @@ const FeedbackDataset = () => {
     });
   };
 
-  // Marcar como revisado
-  const handleMarkReviewed = async () => {
+  // Salvar curadoria estruturada
+  const handleSaveCuration = async () => {
     if (!selectedItem) return;
 
-    const { data: { user } } = await supabase.auth.getUser();
-    
+    const { data: user } = await supabase.auth.getUser();
+
+    // Atualizar reviewed_at no feedback_dataset_items
     updateMutation.mutate({
       id: selectedItem.id,
-      curation_notes: curationNotes || null,
       reviewed_at: new Date().toISOString(),
-      reviewed_by: user?.id,
+      reviewed_by: user.user?.id,
+    });
+
+    // Salvar curadoria estruturada
+    saveCurationMutation.mutate({
+      feedback_item_id: selectedItem.id,
+      status: curationStatus,
+      adherence_score: adherenceScore ? parseInt(adherenceScore) : null,
+      violations,
+      corrected_response: correctedResponse || null,
+      diagnosis,
+      notes: curationNotes || null,
+      include_in_training: includeInTraining,
     });
 
     setSelectedItem(null);
+  };
+
+  // Adicionar violação
+  const handleAddViolation = () => {
+    setViolations([...violations, { code: "", description: "" }]);
+  };
+
+  // Remover violação
+  const handleRemoveViolation = (index: number) => {
+    setViolations(violations.filter((_, i) => i !== index));
+  };
+
+  // Atualizar violação
+  const handleUpdateViolation = (index: number, field: keyof Violation, value: string) => {
+    const updated = [...violations];
+    updated[index] = { ...updated[index], [field]: value };
+    setViolations(updated);
   };
 
   // Export
@@ -227,6 +428,7 @@ const FeedbackDataset = () => {
           format: exportFormat,
           filters,
           anonymize: exportAnonymize,
+          useCorrectedResponses: exportUseCorrected,
         },
       });
 
@@ -478,10 +680,7 @@ const FeedbackDataset = () => {
                       <Button
                         variant="ghost"
                         size="sm"
-                        onClick={() => {
-                          setSelectedItem(item);
-                          setCurationNotes(item.curation_notes || "");
-                        }}
+                        onClick={() => setSelectedItem(item)}
                       >
                         <Eye className="h-4 w-4" />
                       </Button>
@@ -493,9 +692,9 @@ const FeedbackDataset = () => {
           </Table>
         </div>
 
-        {/* Modal de Detalhe */}
+        {/* Modal de Detalhe com Curadoria Estruturada */}
         <Dialog open={!!selectedItem} onOpenChange={() => setSelectedItem(null)}>
-          <DialogContent className="max-w-3xl max-h-[80vh] overflow-y-auto">
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 Detalhes do Feedback
@@ -504,86 +703,286 @@ const FeedbackDataset = () => {
                     {LABEL_TEXT[selectedItem.feedback_label]}
                   </Badge>
                 )}
+                {existingCuration && (
+                  <Badge className={STATUS_OPTIONS.find(s => s.value === existingCuration.status)?.color}>
+                    {STATUS_OPTIONS.find(s => s.value === existingCuration.status)?.label}
+                  </Badge>
+                )}
               </DialogTitle>
             </DialogHeader>
 
             {selectedItem && (
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <Label className="text-muted-foreground">Data</Label>
-                    <p>{format(new Date(selectedItem.created_at), "PPpp", { locale: ptBR })}</p>
-                  </div>
-                  <div>
-                    <Label className="text-muted-foreground">Intent</Label>
-                    <p>{selectedItem.intent || "-"}</p>
-                  </div>
-                  <div>
-                    <Label className="text-muted-foreground">Modelo</Label>
-                    <p>{selectedItem.model_id || "-"}</p>
-                  </div>
-                  <div>
-                    <Label className="text-muted-foreground">Risk Level</Label>
-                    <p>{selectedItem.risk_level || "-"}</p>
-                  </div>
-                  <div>
-                    <Label className="text-muted-foreground">RAG Usado</Label>
-                    <p>{selectedItem.rag_used ? "Sim" : "Não"}</p>
-                  </div>
-                  <div>
-                    <Label className="text-muted-foreground">Reescrito</Label>
-                    <p>{selectedItem.was_rewritten ? "Sim" : "Não"}</p>
-                  </div>
-                </div>
+              <Tabs defaultValue="content" className="w-full">
+                <TabsList className="grid w-full grid-cols-3">
+                  <TabsTrigger value="content">Conteúdo</TabsTrigger>
+                  <TabsTrigger value="curation">Curadoria</TabsTrigger>
+                  <TabsTrigger value="diagnosis">Diagnóstico</TabsTrigger>
+                </TabsList>
 
-                <div>
-                  <Label className="text-muted-foreground">Prompt do Usuário</Label>
-                  <div className="mt-1 p-3 bg-muted rounded-lg text-sm whitespace-pre-wrap">
-                    {selectedItem.user_prompt_text}
-                  </div>
-                </div>
-
-                <div>
-                  <Label className="text-muted-foreground">Resposta do Assistente</Label>
-                  <div className="mt-1 p-3 bg-muted rounded-lg text-sm whitespace-pre-wrap max-h-60 overflow-y-auto">
-                    {selectedItem.assistant_answer_text}
-                  </div>
-                </div>
-
-                {selectedItem.feedback_note && (
-                  <div>
-                    <Label className="text-muted-foreground">Nota do Usuário</Label>
-                    <div className="mt-1 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg text-sm">
-                      {selectedItem.feedback_note}
+                {/* Tab: Conteúdo */}
+                <TabsContent value="content" className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <Label className="text-muted-foreground">Data</Label>
+                      <p>{format(new Date(selectedItem.created_at), "PPpp", { locale: ptBR })}</p>
+                    </div>
+                    <div>
+                      <Label className="text-muted-foreground">Intent</Label>
+                      <p>{selectedItem.intent || "-"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-muted-foreground">Modelo</Label>
+                      <p>{selectedItem.model_id || "-"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-muted-foreground">Risk Level</Label>
+                      <p>{selectedItem.risk_level || "-"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-muted-foreground">RAG Usado</Label>
+                      <p>{selectedItem.rag_used ? "Sim" : "Não"}</p>
+                    </div>
+                    <div>
+                      <Label className="text-muted-foreground">Reescrito</Label>
+                      <p>{selectedItem.was_rewritten ? "Sim" : "Não"}</p>
                     </div>
                   </div>
-                )}
 
-                <div>
-                  <Label>Notas de Curadoria</Label>
-                  <Textarea
-                    value={curationNotes}
-                    onChange={(e) => setCurationNotes(e.target.value)}
-                    placeholder="Adicionar observações sobre este item..."
-                    className="mt-1"
-                  />
-                </div>
+                  <div>
+                    <Label className="text-muted-foreground">Prompt do Usuário</Label>
+                    <div className="mt-1 p-3 bg-muted rounded-lg text-sm whitespace-pre-wrap">
+                      {selectedItem.user_prompt_text}
+                    </div>
+                  </div>
 
-                {selectedItem.reviewed_at && (
-                  <p className="text-xs text-muted-foreground">
-                    Revisado em {format(new Date(selectedItem.reviewed_at), "PPpp", { locale: ptBR })}
+                  <div>
+                    <Label className="text-muted-foreground">Resposta do Assistente (Original)</Label>
+                    <div className="mt-1 p-3 bg-muted rounded-lg text-sm whitespace-pre-wrap max-h-60 overflow-y-auto">
+                      {selectedItem.assistant_answer_text}
+                    </div>
+                  </div>
+
+                  {selectedItem.feedback_note && (
+                    <div>
+                      <Label className="text-muted-foreground">Nota do Usuário (Feedback)</Label>
+                      <div className="mt-1 p-3 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg text-sm">
+                        {selectedItem.feedback_note}
+                      </div>
+                    </div>
+                  )}
+                </TabsContent>
+
+                {/* Tab: Curadoria */}
+                <TabsContent value="curation" className="space-y-4">
+                  {/* Status e Score */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <Label>Status da Curadoria</Label>
+                      <div className="flex gap-2">
+                        {STATUS_OPTIONS.map((opt) => (
+                          <Button
+                            key={opt.value}
+                            variant={curationStatus === opt.value ? "default" : "outline"}
+                            size="sm"
+                            onClick={() => setCurationStatus(opt.value)}
+                            className={curationStatus === opt.value ? "" : ""}
+                          >
+                            {opt.label}
+                          </Button>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label>Nota de Aderência (%)</Label>
+                      <Input
+                        type="number"
+                        min="0"
+                        max="100"
+                        value={adherenceScore}
+                        onChange={(e) => setAdherenceScore(e.target.value)}
+                        placeholder="0-100"
+                        className="w-32"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Violações */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label className="flex items-center gap-2">
+                        <AlertTriangle className="h-4 w-4 text-destructive" />
+                        Violações Detectadas
+                      </Label>
+                      <Button variant="outline" size="sm" onClick={handleAddViolation}>
+                        <Plus className="h-4 w-4 mr-1" />
+                        Adicionar
+                      </Button>
+                    </div>
+                    
+                    {violations.length === 0 ? (
+                      <p className="text-sm text-muted-foreground italic">Nenhuma violação registrada</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {violations.map((violation, index) => (
+                          <div key={index} className="flex gap-2 items-start p-2 bg-muted/50 rounded-lg">
+                            <Select
+                              value={violation.code}
+                              onValueChange={(value) => handleUpdateViolation(index, "code", value)}
+                            >
+                              <SelectTrigger className="w-48">
+                                <SelectValue placeholder="Tipo..." />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {VIOLATION_CODES.map((v) => (
+                                  <SelectItem key={v.code} value={v.code}>
+                                    {v.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                            <Input
+                              placeholder="Descrição da violação..."
+                              value={violation.description}
+                              onChange={(e) => handleUpdateViolation(index, "description", e.target.value)}
+                              className="flex-1"
+                            />
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleRemoveViolation(index)}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Reescrita Corrigida */}
+                  <div className="space-y-1.5">
+                    <Label>Reescrita Corrigida (ZION PERFECT TONE)</Label>
+                    <Textarea
+                      value={correctedResponse}
+                      onChange={(e) => setCorrectedResponse(e.target.value)}
+                      placeholder="Cole aqui a resposta correta que o modelo deveria ter dado..."
+                      className="min-h-[120px]"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Esta reescrita será usada no fine-tuning no lugar da resposta original
+                    </p>
+                  </div>
+
+                  {/* Notas Livres */}
+                  <div className="space-y-1.5">
+                    <Label>Notas Adicionais (Opcional)</Label>
+                    <Textarea
+                      value={curationNotes}
+                      onChange={(e) => setCurationNotes(e.target.value)}
+                      placeholder="Observações gerais sobre este item..."
+                      className="min-h-[80px]"
+                    />
+                  </div>
+
+                  {/* Incluir no Training */}
+                  <div className="flex items-center space-x-2">
+                    <Checkbox
+                      id="includeInTraining"
+                      checked={includeInTraining}
+                      onCheckedChange={(checked) => setIncludeInTraining(checked as boolean)}
+                    />
+                    <Label htmlFor="includeInTraining">
+                      Incluir esta correção no dataset de fine-tuning
+                    </Label>
+                  </div>
+                </TabsContent>
+
+                {/* Tab: Diagnóstico */}
+                <TabsContent value="diagnosis" className="space-y-4">
+                  <p className="text-sm text-muted-foreground">
+                    Análise do bastidor: o que a IA deveria ter identificado sobre o usuário
                   </p>
-                )}
-              </div>
+
+                  <div className="space-y-1.5">
+                    <Label>Sintoma Observado</Label>
+                    <Input
+                      value={diagnosis.symptom || ""}
+                      onChange={(e) => setDiagnosis({ ...diagnosis, symptom: e.target.value })}
+                      placeholder="Ex: Discussões frequentes, irritação, ameaça de abandono"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5">
+                      <Label>Virtude Distorcida</Label>
+                      <Select
+                        value={diagnosis.distorted_virtue || ""}
+                        onValueChange={(value) => setDiagnosis({ ...diagnosis, distorted_virtue: value })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {DISTORTED_VIRTUES.map((v) => (
+                            <SelectItem key={v} value={v}>
+                              {v}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <Label>Medo Raiz</Label>
+                      <Select
+                        value={diagnosis.root_fear || ""}
+                        onValueChange={(value) => setDiagnosis({ ...diagnosis, root_fear: value })}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Selecione..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {ROOT_FEARS.map((f) => (
+                            <SelectItem key={f} value={f}>
+                              {f}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <Label>Matriz de Segurança</Label>
+                    <div className="flex gap-2">
+                      {SECURITY_MATRICES.map((m) => (
+                        <Button
+                          key={m.value}
+                          variant={diagnosis.security_matrix === m.value ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => setDiagnosis({ ...diagnosis, security_matrix: m.value })}
+                        >
+                          {m.label}
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                </TabsContent>
+              </Tabs>
             )}
 
             <DialogFooter>
+              {selectedItem?.reviewed_at && (
+                <p className="text-xs text-muted-foreground mr-auto">
+                  Revisado em {format(new Date(selectedItem.reviewed_at), "PPpp", { locale: ptBR })}
+                </p>
+              )}
               <Button variant="outline" onClick={() => setSelectedItem(null)}>
                 Fechar
               </Button>
-              <Button onClick={handleMarkReviewed}>
+              <Button onClick={handleSaveCuration} disabled={saveCurationMutation.isPending}>
                 <Check className="mr-2 h-4 w-4" />
-                Marcar como Revisado
+                {saveCurationMutation.isPending ? "Salvando..." : "Salvar Curadoria"}
               </Button>
             </DialogFooter>
           </DialogContent>
@@ -642,6 +1041,17 @@ const FeedbackDataset = () => {
                 />
                 <Label htmlFor="exportOnlyIncluded">
                   Exportar apenas itens marcados para export
+                </Label>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <Checkbox
+                  id="exportUseCorrected"
+                  checked={exportUseCorrected}
+                  onCheckedChange={(checked) => setExportUseCorrected(checked as boolean)}
+                />
+                <Label htmlFor="exportUseCorrected">
+                  Usar respostas corrigidas (quando disponíveis)
                 </Label>
               </div>
 
