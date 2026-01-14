@@ -47,7 +47,40 @@ ISSUES COMUNS:
 - BIBLE_WITHOUT_PERMISSION: Usou Bíblia sem pedido
 - TOO_LONG: Resposta muito longa (>10 linhas)
 - FEW_QUESTIONS: Poucas perguntas abertas
-- CONFLICT_CONFIRMED: Confirmou conflito externo como fato`;
+- CONFLICT_CONFIRMED: Confirmou conflito externo como fato
+
+## TAXONOMIA ZION (Obrigatório quando identificar lie_active)
+
+Ao identificar uma mentira (lie_active), classifique OBRIGATORIAMENTE usando a Matriz de Seguranças:
+
+### CENÁRIO (Onde dói) - Tagging Livre:
+Casamento, Carreira, Paternidade, Maternidade, Sexualidade, Vida Social, Saúde, Família, Ministério, Finanças, etc.
+Nota: Isso é o que o usuário ACHA que é o problema.
+
+### CENTRO (Como reage) - 3 Opções OBRIGATÓRIAS:
+- INSTINTIVO: Reage com Raiva/Ação/Controle (problemas de território, justiça, autonomia)
+- EMOCIONAL: Reage com Mágoa/Vergonha/Drama (problemas de imagem, afeto, rejeição)
+- MENTAL: Reage com Ansiedade/Dúvida/Paralisia (problemas de medo, planejamento, segurança)
+
+### MATRIZ DE SEGURANÇA (Raiz Teológica) - 3 Opções OBRIGATÓRIAS:
+- SOBREVIVENCIA (Eu estou seguro?): Medo de morrer, faltar, ser ferido. Distorção da Proteção Divina.
+  - Traumas: Abuso físico, miséria, violência
+  - Mentiras típicas: "O mundo é perigoso", "Dinheiro é a única proteção", "Preciso matar para não morrer"
+  - Ídolos: Riqueza, Poder, Força Bruta
+  
+- IDENTIDADE (Eu sou amado?): Medo de rejeição, não ter valor. Distorção do Amor Divino.
+  - Traumas: Abandono afetivo, humilhação, amor condicional
+  - Mentiras típicas: "Só tenho valor se for útil", "Sou um erro", "Preciso agradar para ficar"
+  - Ídolos: Relacionamentos, Fama, Beleza, "Ser bonzinho"
+  
+- CAPACIDADE (Eu sou capaz?): Medo de falhar, ser inútil. Distorção do Propósito Divino.
+  - Traumas: Crítica excessiva, perfeição, falhas expostas
+  - Mentiras típicas: "Se eu errar, acabou", "Não posso confiar em ninguém", "Tenho que saber tudo"
+  - Ídolos: Conhecimento, Controle, Perfeccionismo, Cargos
+
+EXEMPLO DE SAÍDA:
+"Usuário reclama do marido (Cenário: Casamento). Sente que se ele for embora, ela não é nada (Centro: EMOCIONAL). Raiz: IDENTIDADE (Ídolo do Relacionamento)."`;
+
 
 // ============================================
 // EXTRACTION TOOL SCHEMA
@@ -132,7 +165,22 @@ const EXTRACTION_TOOL = {
           properties: {
             text: { type: "string", description: "A mentira que o usuário está acreditando" },
             confidence: { type: "number" },
-            evidence_quotes: { type: "array", items: { type: "string" } }
+            evidence_quotes: { type: "array", items: { type: "string" } },
+            // TAXONOMIA ZION
+            scenario: { 
+              type: "string",
+              description: "Cenário onde dói (tagging livre): Casamento, Carreira, Paternidade, Sexualidade, Saúde, Vida Social, Família, Ministério, Finanças, etc."
+            },
+            center: { 
+              type: "string", 
+              enum: ["INSTINTIVO", "EMOCIONAL", "MENTAL"],
+              description: "Centro dominante na reação: INSTINTIVO (raiva/controle), EMOCIONAL (mágoa/vergonha), MENTAL (ansiedade/paralisia)"
+            },
+            security_matrix: { 
+              type: "string", 
+              enum: ["SOBREVIVENCIA", "IDENTIDADE", "CAPACIDADE"],
+              description: "Matriz de Segurança ZION: SOBREVIVENCIA (Eu estou seguro?), IDENTIDADE (Eu sou amado?), CAPACIDADE (Eu sou capaz?)"
+            }
           }
         },
         truth_target: { 
@@ -432,6 +480,12 @@ Analise este turno e extraia os insights estruturados.`;
 
     console.log("Extracted data:", JSON.stringify(extractedData).substring(0, 200));
 
+    // Extract taxonomy from lie_active if present
+    const lieActive = extractedData.lie_active || {};
+    const lieScenario = lieActive.scenario || null;
+    const lieCenter = lieActive.center || null;
+    const lieSecurityMatrix = lieActive.security_matrix || null;
+
     // Update record with extracted data
     const { error: updateError } = await supabase
       .from("turn_insights")
@@ -456,12 +510,64 @@ Analise este turno e extraia os insights estruturados.`;
         extraction_status: "completed",
         extraction_error: null,
         observer_model_id: usedModel,
+        // ZION Taxonomy columns
+        lie_scenario: lieScenario,
+        lie_center: lieCenter,
+        lie_security_matrix: lieSecurityMatrix,
       })
       .eq("id", pendingRecord.id);
 
     if (updateError) {
       console.error("Failed to update record:", updateError);
       throw updateError;
+    }
+
+    // Get user_id from session
+    let userId: string | null = null;
+    if (session_id) {
+      const { data: sessionData } = await supabase
+        .from("chat_sessions")
+        .select("user_id")
+        .eq("id", session_id)
+        .maybeSingle();
+      userId = sessionData?.user_id || null;
+    }
+
+    // Call aggregate-user-journey if we have taxonomy data and a user
+    if (userId && lieSecurityMatrix && lieScenario) {
+      console.log("Calling aggregate-user-journey for user:", userId);
+      try {
+        const aggregateResponse = await fetch(
+          `${supabaseUrl}/functions/v1/aggregate-user-journey`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${supabaseServiceKey}`,
+            },
+            body: JSON.stringify({
+              user_id: userId,
+              session_id,
+              insight_id: pendingRecord.id,
+              lie_active: lieActive,
+              phase: extractedData.phase,
+              phase_confidence: extractedData.phase_confidence,
+              shift_detected: extractedData.shift_detected || false,
+              overall_score: extractedData.overall_score,
+              truth_target: extractedData.truth_target || {},
+            }),
+          }
+        );
+        
+        if (!aggregateResponse.ok) {
+          console.error("Aggregate call failed:", await aggregateResponse.text());
+        } else {
+          console.log("Aggregate call succeeded");
+        }
+      } catch (aggErr) {
+        console.error("Error calling aggregate:", aggErr);
+        // Non-critical, don't fail the main flow
+      }
     }
 
     const latencyMs = Date.now() - startTime;
@@ -474,6 +580,7 @@ Analise este turno e extraia os insights estruturados.`;
         phase: extractedData.phase,
         overall_score: extractedData.overall_score,
         latency_ms: latencyMs,
+        taxonomy: lieSecurityMatrix ? { scenario: lieScenario, center: lieCenter, security_matrix: lieSecurityMatrix } : null,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
