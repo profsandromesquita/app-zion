@@ -653,11 +653,21 @@ const JourneyMap = () => {
   };
 
   // Refetch all data
-  const handleRefresh = () => {
-    refetchUsers();
-    refetchSessions();
-    queryClient.invalidateQueries({ queryKey: ["journey-all-themes"] });
-    queryClient.invalidateQueries({ queryKey: ["journey-stats"] });
+  const handleRefresh = async () => {
+    try {
+      await Promise.all([
+        refetchUsers(),
+        refetchSessions(),
+        queryClient.invalidateQueries({ queryKey: ["journey-all-themes"] }),
+        queryClient.invalidateQueries({ queryKey: ["journey-stats"] }),
+        queryClient.invalidateQueries({ queryKey: ["journey-timeline"] }),
+        queryClient.invalidateQueries({ queryKey: ["journey-theme-insights"] }),
+        queryClient.invalidateQueries({ queryKey: ["journey-messages"] }),
+      ]);
+      toast.success("Dados atualizados!");
+    } catch (error) {
+      toast.error("Erro ao atualizar dados");
+    }
   };
 
   // Render insight card (reusable)
