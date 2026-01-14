@@ -866,136 +866,300 @@ async function fetchSessionInsights(
 }
 
 // ============================================
-// FEW-SHOT LEARNING FROM CURATED CORRECTIONS
+// FEW-SHOT LEARNING FROM CURATED CORRECTIONS (HYBRID: Phase + Intent + Positive/Negative)
 // ============================================
 
 interface CuratedCorrectionWithItem {
-  corrected_response: string;
+  id: string;
+  status: 'approved' | 'rejected' | 'needs_review';
+  corrected_response: string | null;
   violations: { code: string; description?: string }[];
   diagnosis: { root_fear?: string; security_matrix?: string } | null;
+  notes: string | null;
   feedback_dataset_items: {
     user_prompt_text: string;
     assistant_answer_text: string;
     intent: string | null;
+    phase: string | null;
   };
 }
+
+interface FewShotResult {
+  positives: CuratedCorrectionWithItem[];
+  negatives: CuratedCorrectionWithItem[];
+}
+
+type RelevanceLevel = 'SAME_PHASE_INTENT' | 'SAME_PHASE' | 'SAME_INTENT' | 'GENERAL';
 
 async function fetchRecentCorrections(
   supabase: any,
   currentIntent: string,
-  limit: number = 3
-): Promise<CuratedCorrectionWithItem[]> {
+  currentPhase: string | null,
+  positiveLimit: number = 2,
+  negativeLimit: number = 2
+): Promise<FewShotResult> {
+  const result: FewShotResult = { positives: [], negatives: [] };
+  
   try {
-    // STEP 1: Fetch corrections for the SAME INTENT (up to 2)
-    const intentLimit = Math.min(2, limit);
-    const { data: intentCorrections, error: intentError } = await supabase
-      .from('curated_corrections')
-      .select(`
-        corrected_response,
-        violations,
-        diagnosis,
-        feedback_dataset_items!inner(
-          user_prompt_text,
-          assistant_answer_text,
-          intent
-        )
-      `)
-      .eq('status', 'rejected')
-      .not('corrected_response', 'is', null)
-      .eq('include_in_training', true)
-      .eq('feedback_dataset_items.intent', currentIntent)
-      .order('curated_at', { ascending: false })
-      .limit(intentLimit);
+    // ===============================
+    // PARTE 1: EXEMPLOS POSITIVOS (Aprovados com notas)
+    // ===============================
     
-    if (intentError) {
-      console.error("Error fetching intent corrections:", intentError);
+    // 1A. Buscar aprovados da MESMA FASE + INTENT
+    if (currentPhase) {
+      const { data: phaseIntentApproved } = await supabase
+        .from('curated_corrections')
+        .select(`
+          id, status, corrected_response, violations, diagnosis, notes,
+          feedback_dataset_items!inner(
+            user_prompt_text, assistant_answer_text, intent, phase
+          )
+        `)
+        .eq('status', 'approved')
+        .eq('include_in_training', true)
+        .eq('feedback_dataset_items.phase', currentPhase)
+        .eq('feedback_dataset_items.intent', currentIntent)
+        .not('notes', 'is', null)
+        .order('curated_at', { ascending: false })
+        .limit(1);
+      
+      if (phaseIntentApproved?.length) {
+        result.positives.push(...(phaseIntentApproved as CuratedCorrectionWithItem[]));
+      }
     }
     
-    const foundIntentCorrections = (intentCorrections || []) as CuratedCorrectionWithItem[];
-    console.log(`Few-shot: ${foundIntentCorrections.length} by intent "${currentIntent}"`);
-    
-    // If we have enough, return them
-    if (foundIntentCorrections.length >= limit) {
-      return foundIntentCorrections.slice(0, limit);
+    // 1B. Se precisa mais, buscar aprovados gerais (com notas)
+    if (result.positives.length < positiveLimit) {
+      const remaining = positiveLimit - result.positives.length;
+      const existingIds = result.positives.map(p => p.id);
+      
+      const { data: generalApproved } = await supabase
+        .from('curated_corrections')
+        .select(`
+          id, status, corrected_response, violations, diagnosis, notes,
+          feedback_dataset_items!inner(
+            user_prompt_text, assistant_answer_text, intent, phase
+          )
+        `)
+        .eq('status', 'approved')
+        .eq('include_in_training', true)
+        .not('notes', 'is', null)
+        .order('curated_at', { ascending: false })
+        .limit(remaining + existingIds.length);
+      
+      const filtered = ((generalApproved || []) as CuratedCorrectionWithItem[])
+        .filter(c => !existingIds.includes(c.id))
+        .slice(0, remaining);
+      
+      result.positives.push(...filtered);
     }
     
-    // STEP 2: Fetch GENERAL corrections to complement
-    const remaining = limit - foundIntentCorrections.length;
+    console.log(`Few-shot positives: ${result.positives.length} loaded`);
     
-    const { data: generalCorrections, error: generalError } = await supabase
-      .from('curated_corrections')
-      .select(`
-        corrected_response,
-        violations,
-        diagnosis,
-        feedback_dataset_items!inner(
-          user_prompt_text,
-          assistant_answer_text,
-          intent
-        )
-      `)
-      .eq('status', 'rejected')
-      .not('corrected_response', 'is', null)
-      .eq('include_in_training', true)
-      .neq('feedback_dataset_items.intent', currentIntent)
-      .order('curated_at', { ascending: false })
-      .limit(remaining);
+    // ===============================
+    // PARTE 2: EXEMPLOS NEGATIVOS (Reprovados com correção)
+    // ===============================
     
-    if (generalError) {
-      console.error("Error fetching general corrections:", generalError);
+    // 2A. Buscar reprovados da MESMA FASE + INTENT
+    if (currentPhase) {
+      const { data: phaseIntentRejected } = await supabase
+        .from('curated_corrections')
+        .select(`
+          id, status, corrected_response, violations, diagnosis, notes,
+          feedback_dataset_items!inner(
+            user_prompt_text, assistant_answer_text, intent, phase
+          )
+        `)
+        .eq('status', 'rejected')
+        .not('corrected_response', 'is', null)
+        .eq('include_in_training', true)
+        .eq('feedback_dataset_items.phase', currentPhase)
+        .eq('feedback_dataset_items.intent', currentIntent)
+        .order('curated_at', { ascending: false })
+        .limit(1);
+      
+      if (phaseIntentRejected?.length) {
+        result.negatives.push(...(phaseIntentRejected as CuratedCorrectionWithItem[]));
+      }
     }
     
-    const foundGeneralCorrections = (generalCorrections || []) as CuratedCorrectionWithItem[];
-    console.log(`Few-shot: ${foundGeneralCorrections.length} general corrections`);
+    // 2B. Buscar reprovados da MESMA FASE (qualquer intent)
+    if (result.negatives.length < negativeLimit && currentPhase) {
+      const existingIds = result.negatives.map(n => n.id);
+      const remaining = negativeLimit - result.negatives.length;
+      
+      const { data: phaseRejected } = await supabase
+        .from('curated_corrections')
+        .select(`
+          id, status, corrected_response, violations, diagnosis, notes,
+          feedback_dataset_items!inner(
+            user_prompt_text, assistant_answer_text, intent, phase
+          )
+        `)
+        .eq('status', 'rejected')
+        .not('corrected_response', 'is', null)
+        .eq('include_in_training', true)
+        .eq('feedback_dataset_items.phase', currentPhase)
+        .order('curated_at', { ascending: false })
+        .limit(remaining + existingIds.length);
+      
+      const filtered = ((phaseRejected || []) as CuratedCorrectionWithItem[])
+        .filter(c => !existingIds.includes(c.id))
+        .slice(0, remaining);
+      
+      result.negatives.push(...filtered);
+    }
     
-    // COMBINE: Intent first, then general
-    return [...foundIntentCorrections, ...foundGeneralCorrections];
+    // 2C. Buscar reprovados do MESMO INTENT (qualquer fase)
+    if (result.negatives.length < negativeLimit) {
+      const existingIds = result.negatives.map(n => n.id);
+      const remaining = negativeLimit - result.negatives.length;
+      
+      const { data: intentRejected } = await supabase
+        .from('curated_corrections')
+        .select(`
+          id, status, corrected_response, violations, diagnosis, notes,
+          feedback_dataset_items!inner(
+            user_prompt_text, assistant_answer_text, intent, phase
+          )
+        `)
+        .eq('status', 'rejected')
+        .not('corrected_response', 'is', null)
+        .eq('include_in_training', true)
+        .eq('feedback_dataset_items.intent', currentIntent)
+        .order('curated_at', { ascending: false })
+        .limit(remaining + existingIds.length);
+      
+      const filtered = ((intentRejected || []) as CuratedCorrectionWithItem[])
+        .filter(c => !existingIds.includes(c.id))
+        .slice(0, remaining);
+      
+      result.negatives.push(...filtered);
+    }
+    
+    // 2D. Fallback: Gerais
+    if (result.negatives.length < negativeLimit) {
+      const existingIds = result.negatives.map(n => n.id);
+      const remaining = negativeLimit - result.negatives.length;
+      
+      const { data: generalRejected } = await supabase
+        .from('curated_corrections')
+        .select(`
+          id, status, corrected_response, violations, diagnosis, notes,
+          feedback_dataset_items!inner(
+            user_prompt_text, assistant_answer_text, intent, phase
+          )
+        `)
+        .eq('status', 'rejected')
+        .not('corrected_response', 'is', null)
+        .eq('include_in_training', true)
+        .order('curated_at', { ascending: false })
+        .limit(remaining + existingIds.length);
+      
+      const filtered = ((generalRejected || []) as CuratedCorrectionWithItem[])
+        .filter(c => !existingIds.includes(c.id))
+        .slice(0, remaining);
+      
+      result.negatives.push(...filtered);
+    }
+    
+    console.log(`Few-shot negatives: ${result.negatives.length} loaded`);
+    console.log(`Few-shot total: ${result.positives.length} positives, ${result.negatives.length} negatives (phase: ${currentPhase}, intent: ${currentIntent})`);
+    
+    return result;
     
   } catch (err) {
     console.error("Exception fetching corrections:", err);
-    return [];
+    return { positives: [], negatives: [] };
   }
 }
 
-function buildFewShotBlock(
-  corrections: CuratedCorrectionWithItem[],
-  currentIntent: string
-): string {
-  if (corrections.length === 0) return '';
+function getRelevanceTag(
+  item: CuratedCorrectionWithItem,
+  currentIntent: string,
+  currentPhase: string | null
+): { tag: string; level: RelevanceLevel } {
+  const itemIntent = item.feedback_dataset_items.intent;
+  const itemPhase = item.feedback_dataset_items.phase;
   
-  const examples = corrections.map((c, i) => {
-    const violations = c.violations?.map(v => v.code).join(', ') || 'N/A';
-    const rootFear = c.diagnosis?.root_fear || 'N/A';
-    const matrix = c.diagnosis?.security_matrix || 'N/A';
-    const itemIntent = c.feedback_dataset_items.intent || 'GERAL';
+  const matchesPhase = currentPhase && itemPhase === currentPhase;
+  const matchesIntent = itemIntent === currentIntent;
+  
+  if (matchesPhase && matchesIntent) {
+    return { tag: '🎯 MESMA FASE + INTENT', level: 'SAME_PHASE_INTENT' };
+  } else if (matchesPhase) {
+    return { tag: '📍 MESMA FASE', level: 'SAME_PHASE' };
+  } else if (matchesIntent) {
+    return { tag: '🔀 MESMO INTENT', level: 'SAME_INTENT' };
+  }
+  return { tag: '📚 EXEMPLO GERAL', level: 'GENERAL' };
+}
+
+function buildFewShotBlock(
+  positives: CuratedCorrectionWithItem[],
+  negatives: CuratedCorrectionWithItem[],
+  currentIntent: string,
+  currentPhase: string | null
+): string {
+  if (positives.length === 0 && negatives.length === 0) return '';
+  
+  let block = `\n## EXEMPLOS DE REFERÊNCIA (ESTUDE ANTES DE RESPONDER)\n`;
+  block += `Fase atual: ${currentPhase || 'N/A'} | Intent: ${currentIntent}\n\n`;
+  
+  // SEÇÃO POSITIVA
+  if (positives.length > 0) {
+    block += `### ✅ RESPOSTAS MODELO (siga este padrão)\n\n`;
     
-    // Indicate if it's from the same intent or general
-    const relevanceTag = itemIntent === currentIntent 
-      ? '🎯 MESMO CONTEXTO' 
-      : '📚 ERRO GERAL';
+    positives.forEach((c, i) => {
+      const { tag } = getRelevanceTag(c, currentIntent, currentPhase);
+      const notes = c.notes || '';
+      
+      block += `#### Exemplo Positivo ${i + 1} (${tag})
+CONTEXTO: Fase = ${c.feedback_dataset_items.phase || 'N/A'}, Intent = ${c.feedback_dataset_items.intent || 'N/A'}
+USUÁRIO: "${c.feedback_dataset_items.user_prompt_text.substring(0, 200)}${c.feedback_dataset_items.user_prompt_text.length > 200 ? '...' : ''}"
+
+🌟 RESPOSTA IDEAL:
+"${c.feedback_dataset_items.assistant_answer_text.substring(0, 400)}${c.feedback_dataset_items.assistant_answer_text.length > 400 ? '...' : ''}"
+
+📝 POR QUE FUNCIONA: ${notes.substring(0, 200)}${notes.length > 200 ? '...' : ''}
+
+---
+
+`;
+    });
+  }
+  
+  // SEÇÃO NEGATIVA
+  if (negatives.length > 0) {
+    block += `### ❌ ERROS A EVITAR (aprenda com estes)\n\n`;
     
-    return `### Exemplo ${i + 1} (${relevanceTag})
-CONTEXTO: Intent = ${itemIntent}
-USUÁRIO: "${c.feedback_dataset_items.user_prompt_text}"
+    negatives.forEach((c, i) => {
+      const { tag } = getRelevanceTag(c, currentIntent, currentPhase);
+      const violations = c.violations?.map(v => v.code).join(', ') || 'N/A';
+      const rootFear = c.diagnosis?.root_fear || 'N/A';
+      const matrix = c.diagnosis?.security_matrix || 'N/A';
+      
+      block += `#### Erro ${i + 1} (${tag})
+CONTEXTO: Fase = ${c.feedback_dataset_items.phase || 'N/A'}, Intent = ${c.feedback_dataset_items.intent || 'N/A'}
+USUÁRIO: "${c.feedback_dataset_items.user_prompt_text.substring(0, 200)}${c.feedback_dataset_items.user_prompt_text.length > 200 ? '...' : ''}"
 
 ❌ RESPOSTA INCORRETA (violações: ${violations}):
 "${c.feedback_dataset_items.assistant_answer_text.substring(0, 300)}${c.feedback_dataset_items.assistant_answer_text.length > 300 ? '...' : ''}"
 
-✅ RESPOSTA CORRIGIDA (ZION PERFECT TONE):
-"${c.corrected_response.substring(0, 500)}${c.corrected_response.length > 500 ? '...' : ''}"
+✅ RESPOSTA CORRIGIDA:
+"${(c.corrected_response || '').substring(0, 400)}${(c.corrected_response || '').length > 400 ? '...' : ''}"
 
-DIAGNÓSTICO: Medo raiz = ${rootFear}, Matriz = ${matrix}`;
-  }).join('\n\n---\n\n');
+DIAGNÓSTICO: Medo raiz = ${rootFear}, Matriz = ${matrix}
 
-  return `
-## EXEMPLOS DE CORREÇÕES RECENTES (APRENDA COM ESTES ERROS)
+---
 
-Os exemplos marcados com 🎯 MESMO CONTEXTO são mais relevantes para esta conversa.
-
-${examples}
-
-⚠️ Estude os exemplos acima e NÃO repita os mesmos erros. Priorize o tom e estrutura das respostas corrigidas.
 `;
+    });
+  }
+  
+  block += `⚠️ ESTUDOU OS EXEMPLOS ACIMA? Agora responda seguindo o padrão dos exemplos positivos e evitando os erros listados.\n`;
+  
+  return block;
 }
 
 // ============================================
@@ -1276,13 +1440,22 @@ serve(async (req) => {
     // ========================================
     console.log("Step 5: Prompt Assembly (with Few-Shot)");
     
-    // Fetch recent corrections for few-shot learning (HYBRID by intent)
+    // Fetch recent corrections for few-shot learning (HYBRID by phase + intent + positive/negative)
     let fewShotBlock = "";
     if (supabase) {
-      const recentCorrections = await fetchRecentCorrections(supabase, intent, 3);
-      if (recentCorrections.length > 0) {
-        fewShotBlock = buildFewShotBlock(recentCorrections, intent);
-        console.log(`Few-shot loaded: ${recentCorrections.length} corrections (hybrid by intent: ${intent})`);
+      const currentPhase = sessionContext?.currentPhase || null;
+      
+      const { positives, negatives } = await fetchRecentCorrections(
+        supabase, 
+        intent, 
+        currentPhase,
+        2,  // positiveLimit
+        2   // negativeLimit
+      );
+      
+      if (positives.length > 0 || negatives.length > 0) {
+        fewShotBlock = buildFewShotBlock(positives, negatives, intent, currentPhase);
+        console.log(`Few-shot loaded: ${positives.length} positives, ${negatives.length} negatives (phase: ${currentPhase}, intent: ${intent})`);
       }
     }
     

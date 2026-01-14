@@ -79,6 +79,7 @@ interface DatasetItem {
   feedback_note: string | null;
   model_id: string | null;
   intent: string | null;
+  phase: string | null;
   risk_level: string | null;
   was_rewritten: boolean;
   rag_used: boolean;
@@ -160,11 +161,21 @@ const ROOT_FEARS = [
   "Ser vazio",
 ];
 
+const PHASE_OPTIONS = [
+  { value: "__all__", label: "Todas as fases" },
+  { value: "CAOS", label: "Caos" },
+  { value: "PADROES", label: "Padrões" },
+  { value: "INTEGRACAO", label: "Integração" },
+  { value: "ACOLHIMENTO", label: "Acolhimento" },
+  { value: "CLARIFICACAO", label: "Clarificação" },
+];
+
 const FeedbackDataset = () => {
   const queryClient = useQueryClient();
   
   // Filtros
   const [labelFilter, setLabelFilter] = useState("__all__");
+  const [phaseFilter, setPhaseFilter] = useState("__all__");
   const [searchTerm, setSearchTerm] = useState("");
   const [includeFilter, setIncludeFilter] = useState<string>("__all__");
   const [rewrittenFilter, setRewrittenFilter] = useState<string>("__all__");
@@ -194,7 +205,7 @@ const FeedbackDataset = () => {
 
   // Buscar dados
   const { data: items = [], isLoading, refetch } = useQuery({
-    queryKey: ["feedback-dataset", labelFilter, searchTerm, includeFilter, rewrittenFilter, ragLowFilter],
+    queryKey: ["feedback-dataset", labelFilter, phaseFilter, searchTerm, includeFilter, rewrittenFilter, ragLowFilter],
     queryFn: async () => {
       let query = supabase
         .from("feedback_dataset_items")
@@ -204,6 +215,10 @@ const FeedbackDataset = () => {
 
       if (labelFilter !== "__all__") {
         query = query.eq("feedback_label", labelFilter as DatasetLabel);
+      }
+
+      if (phaseFilter !== "__all__") {
+        query = query.eq("phase", phaseFilter);
       }
 
       if (includeFilter !== "__all__") {
@@ -603,6 +618,22 @@ const FeedbackDataset = () => {
               </SelectContent>
             </Select>
           </div>
+
+          <div className="space-y-1.5">
+            <Label>Fase</Label>
+            <Select value={phaseFilter} onValueChange={setPhaseFilter}>
+              <SelectTrigger className="w-36">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {PHASE_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         {/* Tabela */}
@@ -613,6 +644,7 @@ const FeedbackDataset = () => {
                 <TableHead className="w-10">Export</TableHead>
                 <TableHead className="w-28">Data</TableHead>
                 <TableHead className="w-24">Label</TableHead>
+                <TableHead className="w-24">Fase</TableHead>
                 <TableHead>Prompt</TableHead>
                 <TableHead>Resposta</TableHead>
                 <TableHead className="w-24">Intent</TableHead>
@@ -624,13 +656,13 @@ const FeedbackDataset = () => {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                     Carregando...
                   </TableCell>
                 </TableRow>
               ) : items.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={9} className="text-center py-8 text-muted-foreground">
+                  <TableCell colSpan={10} className="text-center py-8 text-muted-foreground">
                     Nenhum item encontrado
                   </TableCell>
                 </TableRow>
@@ -649,6 +681,11 @@ const FeedbackDataset = () => {
                     <TableCell>
                       <Badge className={LABEL_COLORS[item.feedback_label]}>
                         {LABEL_TEXT[item.feedback_label]}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className="text-xs">
+                        {item.phase || "-"}
                       </Badge>
                     </TableCell>
                     <TableCell className="max-w-[200px]">

@@ -481,6 +481,7 @@ export type Database = {
           message_assistant_id: string
           message_user_id: string
           model_id: string | null
+          phase: string | null
           rag_low_confidence: boolean | null
           rag_used: boolean | null
           retrieval_stats: Json | null
@@ -507,6 +508,7 @@ export type Database = {
           message_assistant_id: string
           message_user_id: string
           model_id?: string | null
+          phase?: string | null
           rag_low_confidence?: boolean | null
           rag_used?: boolean | null
           retrieval_stats?: Json | null
@@ -533,6 +535,7 @@ export type Database = {
           message_assistant_id?: string
           message_user_id?: string
           model_id?: string | null
+          phase?: string | null
           rag_low_confidence?: boolean | null
           rag_used?: boolean | null
           retrieval_stats?: Json | null
