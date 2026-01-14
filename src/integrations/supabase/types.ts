@@ -782,6 +782,9 @@ export type Database = {
           include_in_training: boolean | null
           issues_detected: string[] | null
           lie_active: Json | null
+          lie_center: string | null
+          lie_scenario: string | null
+          lie_security_matrix: string | null
           mentor_model_id: string | null
           message_assistant_id: string
           message_user_id: string
@@ -822,6 +825,9 @@ export type Database = {
           include_in_training?: boolean | null
           issues_detected?: string[] | null
           lie_active?: Json | null
+          lie_center?: string | null
+          lie_scenario?: string | null
+          lie_security_matrix?: string | null
           mentor_model_id?: string | null
           message_assistant_id: string
           message_user_id: string
@@ -862,6 +868,9 @@ export type Database = {
           include_in_training?: boolean | null
           issues_detected?: string[] | null
           lie_active?: Json | null
+          lie_center?: string | null
+          lie_scenario?: string | null
+          lie_security_matrix?: string | null
           mentor_model_id?: string | null
           message_assistant_id?: string
           message_user_id?: string
@@ -897,44 +906,59 @@ export type Database = {
       }
       user_profiles: {
         Row: {
+          active_themes_count: number | null
           centros: Json | null
           created_at: string
           dom_original: string | null
           eneagrama: string | null
           fase_jornada: string | null
+          global_avg_score: number | null
           id: string
           mecanismo_defesa_padrao: string | null
           medo_raiz_dominante: string | null
           perfil_disc: string | null
+          primary_center: string | null
+          primary_security_matrix: string | null
           seguranca_quebrada_primaria: string | null
+          total_shifts: number | null
           updated_at: string
           virtude_hiperdesenvolvida: string | null
         }
         Insert: {
+          active_themes_count?: number | null
           centros?: Json | null
           created_at?: string
           dom_original?: string | null
           eneagrama?: string | null
           fase_jornada?: string | null
+          global_avg_score?: number | null
           id: string
           mecanismo_defesa_padrao?: string | null
           medo_raiz_dominante?: string | null
           perfil_disc?: string | null
+          primary_center?: string | null
+          primary_security_matrix?: string | null
           seguranca_quebrada_primaria?: string | null
+          total_shifts?: number | null
           updated_at?: string
           virtude_hiperdesenvolvida?: string | null
         }
         Update: {
+          active_themes_count?: number | null
           centros?: Json | null
           created_at?: string
           dom_original?: string | null
           eneagrama?: string | null
           fase_jornada?: string | null
+          global_avg_score?: number | null
           id?: string
           mecanismo_defesa_padrao?: string | null
           medo_raiz_dominante?: string | null
           perfil_disc?: string | null
+          primary_center?: string | null
+          primary_security_matrix?: string | null
           seguranca_quebrada_primaria?: string | null
+          total_shifts?: number | null
           updated_at?: string
           virtude_hiperdesenvolvida?: string | null
         }
@@ -965,6 +989,78 @@ export type Database = {
           created_at?: string
           id?: string
           role?: Database["public"]["Enums"]["app_role"]
+          user_id?: string
+        }
+        Relationships: []
+      }
+      user_themes: {
+        Row: {
+          avg_score: number | null
+          center: string
+          created_at: string | null
+          current_phase: string | null
+          first_detected_at: string | null
+          id: string
+          last_activity_at: string | null
+          phase_confidence: number | null
+          primary_lie: Json | null
+          resolved_at: string | null
+          scenario: string
+          secondary_lies: Json[] | null
+          security_matrix: string
+          session_ids: string[] | null
+          status: Database["public"]["Enums"]["theme_status"] | null
+          target_truth: Json | null
+          theme_label: string
+          total_shifts: number | null
+          turn_count: number | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          avg_score?: number | null
+          center: string
+          created_at?: string | null
+          current_phase?: string | null
+          first_detected_at?: string | null
+          id?: string
+          last_activity_at?: string | null
+          phase_confidence?: number | null
+          primary_lie?: Json | null
+          resolved_at?: string | null
+          scenario: string
+          secondary_lies?: Json[] | null
+          security_matrix: string
+          session_ids?: string[] | null
+          status?: Database["public"]["Enums"]["theme_status"] | null
+          target_truth?: Json | null
+          theme_label: string
+          total_shifts?: number | null
+          turn_count?: number | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          avg_score?: number | null
+          center?: string
+          created_at?: string | null
+          current_phase?: string | null
+          first_detected_at?: string | null
+          id?: string
+          last_activity_at?: string | null
+          phase_confidence?: number | null
+          primary_lie?: Json | null
+          resolved_at?: string | null
+          scenario?: string
+          secondary_lies?: Json[] | null
+          security_matrix?: string
+          session_ids?: string[] | null
+          status?: Database["public"]["Enums"]["theme_status"] | null
+          target_truth?: Json | null
+          theme_label?: string
+          total_shifts?: number | null
+          turn_count?: number | null
+          updated_at?: string | null
           user_id?: string
         }
         Relationships: []
@@ -1025,6 +1121,7 @@ export type Database = {
         | "TRUTH"
         | "PRACTICE"
       risk_level: "none" | "low" | "medium" | "high"
+      theme_status: "active" | "in_progress" | "resolved" | "dormant"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1175,6 +1272,7 @@ export const Constants = {
         "PRACTICE",
       ],
       risk_level: ["none", "low", "medium", "high"],
+      theme_status: ["active", "in_progress", "resolved", "dormant"],
     },
   },
 } as const

@@ -26,3 +26,6 @@ verify_jwt = false
 
 [functions.journey-export]
 verify_jwt = false
+
+[functions.aggregate-user-journey]
+verify_jwt = false
