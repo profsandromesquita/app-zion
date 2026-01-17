@@ -79,7 +79,32 @@ Nota: Isso é o que o usuário ACHA que é o problema.
   - Ídolos: Conhecimento, Controle, Perfeccionismo, Cargos
 
 EXEMPLO DE SAÍDA:
-"Usuário reclama do marido (Cenário: Casamento). Sente que se ele for embora, ela não é nada (Centro: EMOCIONAL). Raiz: IDENTIDADE (Ídolo do Relacionamento)."`;
+"Usuário reclama do marido (Cenário: Casamento). Sente que se ele for embora, ela não é nada (Centro: EMOCIONAL). Raiz: IDENTIDADE (Ídolo do Relacionamento)."
+
+## EXTRAÇÃO DE FATOS (memory_items) - OBRIGATÓRIO
+
+Identifique informações FACTUAIS mencionadas EXPLICITAMENTE pelo usuário:
+
+TIPOS DE FATOS (key):
+- family_member: {"name": "...", "relation": "esposa/filho/pai/etc"}
+- important_person: {"name": "...", "role": "pastor/amigo/chefe/etc", "context": "..."}
+- life_event: {"event": "divórcio/demissão/morte/etc", "date": "há 2 meses/2023/etc", "impact": "..."}
+- preference: {"type": "bible_version/prayer_style/etc", "value": "NVI/contemplativa/etc"}
+- commitment: {"description": "...", "deadline": "..."}
+- struggle: {"area": "raiva/ansiedade/vício/etc", "frequency": "diária/semanal/etc", "context": "..."}
+- victory: {"description": "...", "date": "..."}
+
+REGRAS CRÍTICAS:
+1. Só extraia fatos EXPLICITAMENTE mencionados - NUNCA infira
+2. confidence >= 0.8 para salvar (seja conservador)
+3. is_permanent: true para fatos permanentes (nomes, relações, eventos de vida)
+4. is_permanent: false para temporários (compromissos, lutas atuais, preferências)
+
+EXEMPLOS:
+- "Minha esposa Maria está doente" → family_member: {name: "Maria", relation: "esposa"}, confidence: 0.95, is_permanent: true
+- "Fui demitido há 3 meses" → life_event: {event: "demissão", date: "há 3 meses"}, confidence: 0.9, is_permanent: true
+- "Estou tentando orar todo dia" → commitment: {description: "orar diariamente"}, confidence: 0.85, is_permanent: false`;
+
 
 
 // ============================================
@@ -231,6 +256,36 @@ const EXTRACTION_TOOL = {
         quality_rationale: { 
           type: "string",
           description: "Breve justificativa da avaliação (1-3 linhas)" 
+        },
+        // NEW: Extracted facts for memory_items
+        extracted_facts: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              key: { 
+                type: "string",
+                enum: ["family_member", "important_person", "life_event", "preference", "commitment", "struggle", "victory"],
+                description: "Tipo do fato extraído"
+              },
+              value: { 
+                type: "object",
+                description: "Dados estruturados do fato (ex: {name: 'Maria', relation: 'esposa'})"
+              },
+              confidence: { 
+                type: "number", 
+                minimum: 0, 
+                maximum: 1,
+                description: "Confiança na extração (0-1)"
+              },
+              is_permanent: { 
+                type: "boolean",
+                description: "Se é um fato permanente (nomes, eventos de vida) ou temporário (compromissos, lutas atuais)"
+              }
+            },
+            required: ["key", "value", "confidence", "is_permanent"]
+          },
+          description: "Fatos pontuais mencionados: nomes, eventos, preferências. Só extraia fatos EXPLÍCITOS com confidence >= 0.8"
         }
       },
       required: ["phase", "phase_confidence", "rubric_scores", "overall_score", "quality_rationale"]
@@ -282,6 +337,9 @@ RESPONDA SOMENTE UM JSON VÁLIDO seguindo exatamente este schema (sem markdown, 
   },
   "overall_score": 0 a 5,
   "issues_detected": [],
+  "extracted_facts": [
+    {"key": "family_member", "value": {"name": "...", "relation": "..."}, "confidence": 0.9, "is_permanent": true}
+  ],
   "quality_rationale": "Justificativa curta"
 }`;
 
@@ -694,6 +752,97 @@ Analise este turno e extraia os insights estruturados.`;
       }
     }
 
+    // ============================================
+    // NEW: PERSIST EXTRACTED FACTS TO memory_items
+    // ============================================
+    let factsStored = 0;
+    if (userId && extractedData.extracted_facts && extractedData.extracted_facts.length > 0) {
+      console.log(`Processing ${extractedData.extracted_facts.length} extracted facts for user ${userId}`);
+      
+      for (const fact of extractedData.extracted_facts) {
+        // Only store facts with high confidence
+        if (fact.confidence >= 0.8 && fact.key && fact.value) {
+          try {
+            // Create a unique identifier for deduplication based on key + value structure
+            const valueHash = JSON.stringify(fact.value);
+            
+            // Check if similar fact already exists
+            const { data: existing } = await supabase
+              .from("memory_items")
+              .select("id, value, confidence")
+              .eq("user_id", userId)
+              .eq("key", fact.key)
+              .maybeSingle();
+
+            // Calculate TTL based on permanence
+            const ttl = fact.is_permanent 
+              ? null 
+              : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(); // 30 days
+
+            if (existing) {
+              // Update if new fact has higher confidence or different value
+              const existingHash = JSON.stringify(existing.value);
+              if (fact.confidence > (existing.confidence || 0) || valueHash !== existingHash) {
+                const { error: updateError } = await supabase
+                  .from("memory_items")
+                  .update({ 
+                    value: fact.value, 
+                    confidence: fact.confidence,
+                    ttl,
+                    updated_at: new Date().toISOString()
+                  })
+                  .eq("id", existing.id);
+                  
+                if (!updateError) {
+                  factsStored++;
+                  console.log(`Updated memory_item: ${fact.key}`);
+                }
+              }
+            } else {
+              // Insert new fact
+              const { error: insertError } = await supabase
+                .from("memory_items")
+                .insert({
+                  user_id: userId,
+                  session_id: session_id,
+                  key: fact.key,
+                  value: fact.value,
+                  confidence: fact.confidence,
+                  ttl,
+                });
+                
+              if (!insertError) {
+                factsStored++;
+                console.log(`Inserted memory_item: ${fact.key}`);
+              }
+            }
+          } catch (factErr) {
+            console.error(`Error storing fact ${fact.key}:`, factErr);
+            // Non-critical, continue with other facts
+          }
+        }
+      }
+      
+      console.log(`Stored ${factsStored} memory_items`);
+    }
+
+    // Cleanup expired memory items (5% chance to run)
+    if (Math.random() < 0.05) {
+      try {
+        const { error: cleanupError } = await supabase
+          .from("memory_items")
+          .delete()
+          .lt("ttl", new Date().toISOString())
+          .not("ttl", "is", null);
+          
+        if (!cleanupError) {
+          console.log("Cleaned up expired memory_items");
+        }
+      } catch (cleanupErr) {
+        console.error("Error cleaning up memory_items:", cleanupErr);
+      }
+    }
+
     const latencyMs = Date.now() - startTime;
     console.log(`=== OBSERVER COMPLETE (${latencyMs}ms) ===`);
 
@@ -706,6 +855,7 @@ Analise este turno e extraia os insights estruturados.`;
         latency_ms: latencyMs,
         model_used: usedModel,
         taxonomy: lieSecurityMatrix ? { scenario: lieScenario, center: lieCenter, security_matrix: lieSecurityMatrix } : null,
+        facts_stored: factsStored,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
