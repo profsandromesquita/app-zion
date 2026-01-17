@@ -1543,6 +1543,62 @@ serve(async (req) => {
         } catch (err) {
           console.error("Error fetching user profile:", err);
         }
+
+        // ============================================
+        // NEW: FETCH LONG-TERM MEMORY ITEMS
+        // ============================================
+        try {
+          const { data: memoryItems } = await supabase
+            .from("memory_items")
+            .select("key, value, confidence, created_at")
+            .eq("user_id", userId)
+            .or("ttl.is.null,ttl.gt.now()")
+            .order("confidence", { ascending: false })
+            .limit(15);
+
+          if (memoryItems && memoryItems.length > 0) {
+            // Group by key type for organized presentation
+            const grouped = memoryItems.reduce((acc, item) => {
+              if (!acc[item.key]) acc[item.key] = [];
+              acc[item.key].push(item.value);
+              return acc;
+            }, {} as Record<string, any[]>);
+
+            const keyLabels: Record<string, string> = {
+              family_member: "Família",
+              important_person: "Pessoas importantes",
+              life_event: "Eventos de vida",
+              preference: "Preferências",
+              commitment: "Compromissos",
+              struggle: "Lutas atuais",
+              victory: "Vitórias recentes"
+            };
+
+            const memoryLines = Object.entries(grouped).map(([key, values]) => {
+              const label = keyLabels[key] || key;
+              // Format values nicely
+              const formattedValues = values.map(v => {
+                if (typeof v === 'object') {
+                  // Extract key info based on type
+                  if (v.name && v.relation) return `${v.name} (${v.relation})`;
+                  if (v.name && v.role) return `${v.name} - ${v.role}`;
+                  if (v.event && v.date) return `${v.event} (${v.date})`;
+                  if (v.description) return v.description;
+                  if (v.area) return v.area;
+                  return JSON.stringify(v);
+                }
+                return String(v);
+              }).join(", ");
+              return `- ${label}: ${formattedValues}`;
+            }).join("\n");
+
+            diaryContext += `\n\n## MEMÓRIA DE LONGO PRAZO (use naturalmente, sem mencionar que você "lembra")
+${memoryLines}`;
+            console.log("Memory context loaded:", memoryItems.length, "items");
+          }
+        } catch (err) {
+          console.error("Error fetching memory items:", err);
+        }
       }
     }
 
@@ -1681,10 +1737,32 @@ ${chunksText}`;
 
     console.log("System prompt length:", systemPrompt.length);
 
-    // Build messages array
+    // ============================================
+    // NEW: SUMMARIZE OLDER HISTORY (Beyond last 8)
+    // ============================================
+    const recentHistory = history.slice(-8);
+    const olderHistory = history.slice(0, -8);
+    
+    let historySummary = "";
+    if (olderHistory.length > 0) {
+      // Create a simple summary of older messages (themes discussed)
+      const userMsgs = olderHistory
+        .filter((m: { role: string }) => m.role === "user")
+        .map((m: { content: string }) => m.content.substring(0, 80))
+        .join(" | ");
+      
+      if (userMsgs.length > 0) {
+        historySummary = `\n\n## RESUMO DO INÍCIO DA CONVERSA (${olderHistory.length} mensagens anteriores)
+Temas abordados: ${userMsgs.substring(0, 400)}...`;
+        systemPrompt += historySummary;
+        console.log(`History summary added: ${olderHistory.length} older messages`);
+      }
+    }
+
+    // Build messages array with recent history only (but summary is in system prompt)
     const messages = [
       { role: "system", content: systemPrompt },
-      ...history.slice(-8),
+      ...recentHistory,
       { role: "user", content: message },
     ];
 
