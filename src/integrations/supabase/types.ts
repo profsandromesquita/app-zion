@@ -714,6 +714,7 @@ export type Database = {
         Row: {
           created_at: string
           email: string | null
+          grammar_gender: string | null
           id: string
           nome: string | null
           updated_at: string
@@ -721,6 +722,7 @@ export type Database = {
         Insert: {
           created_at?: string
           email?: string | null
+          grammar_gender?: string | null
           id: string
           nome?: string | null
           updated_at?: string
@@ -728,6 +730,7 @@ export type Database = {
         Update: {
           created_at?: string
           email?: string | null
+          grammar_gender?: string | null
           id?: string
           nome?: string | null
           updated_at?: string
@@ -980,12 +983,15 @@ export type Database = {
           fase_jornada: string | null
           global_avg_score: number | null
           id: string
+          initial_pain_focus: string[] | null
           mecanismo_defesa_padrao: string | null
           medo_raiz_dominante: string | null
+          onboarding_completed_at: string | null
           perfil_disc: string | null
           primary_center: string | null
           primary_security_matrix: string | null
           seguranca_quebrada_primaria: string | null
+          spiritual_maturity: string | null
           total_shifts: number | null
           updated_at: string
           virtude_hiperdesenvolvida: string | null
@@ -999,12 +1005,15 @@ export type Database = {
           fase_jornada?: string | null
           global_avg_score?: number | null
           id: string
+          initial_pain_focus?: string[] | null
           mecanismo_defesa_padrao?: string | null
           medo_raiz_dominante?: string | null
+          onboarding_completed_at?: string | null
           perfil_disc?: string | null
           primary_center?: string | null
           primary_security_matrix?: string | null
           seguranca_quebrada_primaria?: string | null
+          spiritual_maturity?: string | null
           total_shifts?: number | null
           updated_at?: string
           virtude_hiperdesenvolvida?: string | null
@@ -1018,12 +1027,15 @@ export type Database = {
           fase_jornada?: string | null
           global_avg_score?: number | null
           id?: string
+          initial_pain_focus?: string[] | null
           mecanismo_defesa_padrao?: string | null
           medo_raiz_dominante?: string | null
+          onboarding_completed_at?: string | null
           perfil_disc?: string | null
           primary_center?: string | null
           primary_security_matrix?: string | null
           seguranca_quebrada_primaria?: string | null
+          spiritual_maturity?: string | null
           total_shifts?: number | null
           updated_at?: string
           virtude_hiperdesenvolvida?: string | null

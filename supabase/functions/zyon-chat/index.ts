@@ -195,7 +195,7 @@ A jornada humana segue o ciclo: PERDA → MEDO → INSEGURANÇA → FALSO DESEJO
 ### 3. ESTRUTURA DAS RESPOSTAS
 1) **Acolhimento**: Validar o que a pessoa sente
 2) **Investigação Silenciosa**: Use a hipótese interna APENAS para formular a pergunta (NUNCA explique a hipótese ao utilizador)
-3) **Perguntas**: 1-3 perguntas para aprofundar
+3) **Perguntas**: 1-2 perguntas curtas para aprofundar (NUNCA mais que 2)
 4) **Passos práticos**: Quando apropriado, sugerir ações concretas
 
 ### 4. REFERÊNCIAS BÍBLICAS
@@ -456,7 +456,8 @@ function validateResponseComplete(
   response: string, 
   intent: string, 
   userContext: UserContext,
-  turnCount: number
+  turnCount: number,
+  spiritualMaturity: string = 'SEEKER'  // Default to most restrictive
 ): ValidationResult {
   const issues: ValidationIssue[] = [];
   const rewriteInstructions: string[] = [];
@@ -474,9 +475,13 @@ function validateResponseComplete(
     issues.push({ code: 'TOO_MANY_LINES', severity: 'FORMAT', message: 'Mais de 7 linhas' });
     rewriteInstructions.push('Reduza para no máximo 7 linhas');
   }
-  if (questions < 2) {
-    issues.push({ code: 'TOO_FEW_QUESTIONS', severity: 'FORMAT', message: 'Menos de 2 perguntas' });
-    rewriteInstructions.push('Inclua 2-4 perguntas abertas e curtas');
+  if (questions < 1) {
+    issues.push({ code: 'TOO_FEW_QUESTIONS', severity: 'FORMAT', message: 'Menos de 1 pergunta' });
+    rewriteInstructions.push('Inclua 1-2 perguntas abertas e curtas');
+  }
+  if (questions > 2 && intent !== 'EXEGESE_DUVIDA_BIBLICA') {
+    issues.push({ code: 'TOO_MANY_QUESTIONS', severity: 'FORMAT', message: 'Mais de 2 perguntas' });
+    rewriteInstructions.push('Reduza para no máximo 2 perguntas curtas');
   }
   
   // === MEDIUM ===
@@ -589,28 +594,41 @@ NÃO confirme inveja como fato.`);
     }
   }
   
-  // BIBLIA - Recusa prevalece
+  // BIBLIA - Cascata de permissões por maturidade espiritual
   const biblePattern = /\b([1-3]?\s?[A-Za-zÀ-ú]+)\s+(\d+)[:\.](\d+)/;
   const biblePhrase = /\b(a b[ií]blia diz|est[aá] escrito|a escritura diz|tanakh|brit hadashah)\b/i;
   const hasBible = biblePattern.test(response) || biblePhrase.test(response);
   
   if (hasBible) {
-    // Recusa EXPLICITA prevalece sobre tudo
+    // 1. Recusa EXPLÍCITA prevalece sobre TUDO (highest priority)
     if (userContext.refusedBible) {
       issues.push({ code: 'BIBLE_REFUSED', severity: 'CRITICAL', message: 'Usuário recusou Bíblia' });
       rewriteInstructions.push('Remova toda citação bíblica - o usuário pediu explicitamente sem Bíblia');
     }
-    // Usuario NAO pediu biblia? CRITICAL
-    else if (!userContext.askedForBible) {
-      issues.push({ code: 'BIBLE_WITHOUT_PERMISSION', severity: 'CRITICAL', message: 'Bíblia sem pedido explícito' });
-      rewriteInstructions.push('Remova toda citação bíblica - o usuário não pediu');
+    // 2. CONSOLIDATED: Pode usar livremente (apenas verificar versículos inventados via guardrails)
+    else if (spiritualMaturity === 'CONSOLIDATED') {
+      // Permitido - guardrails já cuida de versículos inventados
+      console.log("Bible allowed for CONSOLIDATED user");
     }
-    // Usuario pediu MAS esta em revolta? Precisa perguntar permissao
+    // 3. DISTANT: Linguagem teológica OK, versículos específicos precisam de pedido
+    else if (spiritualMaturity === 'DISTANT') {
+      // Verifica se tem versículo específico (padrão "Livro X:Y")
+      if (biblePattern.test(response) && !userContext.askedForBible) {
+        issues.push({ code: 'BIBLE_VERSE_WITHOUT_PERMISSION', severity: 'HIGH', message: 'Versículo específico sem pedido (usuário distante)' });
+        rewriteInstructions.push('Remova versículos específicos (Livro X:Y) - usuário distante não pediu. Linguagem teológica geral é OK.');
+      }
+    }
+    // 4. CRISIS, SEEKER, SKEPTIC: Bíblia PROIBIDA sem pedido explícito
+    else if (!userContext.askedForBible) {
+      issues.push({ code: 'BIBLE_WITHOUT_PERMISSION', severity: 'CRITICAL', message: `Bíblia proibida para perfil ${spiritualMaturity}` });
+      rewriteInstructions.push('Remova toda referência bíblica - usuário não tem maturidade/abertura para isso. Use linguagem universal.');
+    }
+    // 5. Usuário pediu MAS está em revolta? Perguntar permissão primeiro
     else if (userContext.hasRevolt) {
       const permissionQuestion = /voc[eê] quer (s[oó] ser ouvid|que eu procure uma palavra|uma perspectiva b[ií]blica)/i;
       if (!permissionQuestion.test(response)) {
         issues.push({ code: 'BIBLE_REVOLT_NO_PERMISSION', severity: 'CRITICAL', message: 'Bíblia em revolta sem pergunta de permissão' });
-        rewriteInstructions.push('Remova a citação e adicione: "Você quer só ser ouvido(a) agora — ou quer que eu procure uma palavra bíblica, bem curta, que não minimize a dor?"');
+        rewriteInstructions.push('Adicione: "Você quer só ser ouvido(a) agora — ou quer que eu procure uma palavra bíblica, bem curta, que não minimize a dor?"');
       }
     }
   }
@@ -663,7 +681,7 @@ function buildRewritePrompt(response: string, validation: ValidationResult): str
   const instructions = [
     'Reescreva a resposta mantendo tom acolhedor:',
     '- 3-7 linhas curtas',
-    '- 2-4 perguntas abertas',
+    '- 1-2 perguntas abertas e curtas (NUNCA mais que 2)',
     '- Sem presunções ou diagnósticos',
     '',
     '- Se o texto contém "Entendo que...", "Isso mostra que...", "A sua necessidade de...", "A sua busca por...", "A sua raiva vem de...": REMOVA IMEDIATAMENTE e substitua por pergunta aberta',
@@ -755,6 +773,16 @@ const SYNONYM_MAP: Record<string, string[]> = {
   'fracasso': ['valor', 'identidade', 'miséria'],
   'incapaz': ['valor', 'identidade', 'competência'],
   'impotente': ['controle', 'segurança', 'medo'],
+  // Tags de dor do onboarding
+  'vício': ['dependência', 'compulsão', 'hábito', 'idolatria', 'desejo'],
+  'vicio': ['dependência', 'compulsão', 'hábito', 'idolatria', 'desejo'],
+  'propósito': ['sentido', 'vocação', 'missão', 'chamado', 'vazio'],
+  'proposito': ['sentido', 'vocação', 'missão', 'chamado', 'vazio'],
+  'luto': ['morte', 'perda', 'falecimento', 'saudade', 'vazio'],
+  'hábito': ['rotina', 'repetição', 'padrão', 'ciclo', 'vício'],
+  'habito': ['rotina', 'repetição', 'padrão', 'ciclo', 'vício'],
+  'casamento': ['relacionamento', 'família', 'amor', 'compromisso'],
+  'injustica': ['justiça', 'ira', 'raiva', 'medo'],
 };
 
 // ============================================
@@ -1398,6 +1426,7 @@ serve(async (req) => {
     let constitutionInstructions = "";
     let customInstructions = "";
     let diaryContext = "";
+    let userProfile: any = null;  // Declared at higher scope for spiritualMaturity access
 
     if (supabase) {
       // Fetch pinned constitution (always)
@@ -1498,13 +1527,18 @@ serve(async (req) => {
         }
       }
 
-      // Fetch diary context for personalization (if authenticated)
+      // Fetch diary context for personalization (if authenticated) - FILTERED BY 30 DAYS
       if (userId) {
         try {
+          // Only fetch diary entries from the last 30 days for relevance
+          const thirtyDaysAgo = new Date();
+          thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+          
           const { data: diaryEntries } = await supabase
             .from("diary_entries")
             .select("content, created_at")
             .eq("user_id", userId)
+            .gte("created_at", thirtyDaysAgo.toISOString())
             .order("created_at", { ascending: false })
             .limit(3);
 
@@ -1513,20 +1547,24 @@ serve(async (req) => {
               const date = new Date(e.created_at).toLocaleDateString("pt-BR");
               return `- ${date}: "${e.content.substring(0, 150)}..."`;
             }).join("\n");
-            diaryContext = `\n\nCONTEXTO PESSOAL (use discretamente):\n${entries}`;
-            console.log("Diary context loaded");
+            diaryContext = `\n\nCONTEXTO PESSOAL (use discretamente, últimos 30 dias):\n${entries}`;
+            console.log("Diary context loaded (30-day filter)");
           }
         } catch (err) {
           console.error("Error fetching diary:", err);
         }
 
-        // Fetch user profile for personalization
+        // Fetch user profile for personalization (expanded with onboarding fields)
+        let basicProfile: any = null;
+        
         try {
           const { data: profile } = await supabase
             .from("user_profiles")
-            .select("eneagrama, perfil_disc, medo_raiz_dominante, fase_jornada")
+            .select("eneagrama, perfil_disc, medo_raiz_dominante, fase_jornada, spiritual_maturity, initial_pain_focus")
             .eq("id", userId)
             .maybeSingle();
+          
+          userProfile = profile;
 
           if (profile) {
             const profileParts = [];
@@ -1542,6 +1580,58 @@ serve(async (req) => {
           }
         } catch (err) {
           console.error("Error fetching user profile:", err);
+        }
+        
+        // Fetch basic profile for name and grammar gender (onboarding)
+        try {
+          const { data: basic } = await supabase
+            .from("profiles")
+            .select("nome, grammar_gender")
+            .eq("id", userId)
+            .maybeSingle();
+          
+          basicProfile = basic;
+        } catch (err) {
+          console.error("Error fetching basic profile:", err);
+        }
+        
+        // ============================================
+        // ONBOARDING CONTEXT INJECTION
+        // ============================================
+        let onboardingContext = "";
+        
+        if (basicProfile?.nome) {
+          onboardingContext += `\n\n## IDENTIFICAÇÃO DO USUÁRIO
+- Nome: ${basicProfile.nome}`;
+          
+          if (basicProfile.grammar_gender) {
+            const genderGuide: Record<string, string> = {
+              'M': 'Use concordância MASCULINA (cansado, amado, filho, ele)',
+              'F': 'Use concordância FEMININA (cansada, amada, filha, ela)',
+              'N': 'Use linguagem neutra quando possível'
+            };
+            onboardingContext += `\n- Gênero gramatical: ${genderGuide[basicProfile.grammar_gender] || 'Não especificado'}`;
+          }
+        }
+        
+        if (userProfile?.spiritual_maturity) {
+          const maturityGuide: Record<string, string> = {
+            'CONSOLIDATED': 'Usuário maduro espiritualmente. Pode usar linguagem teológica ("graça", "propósito") e citações bíblicas ocasionais SEM PEDIR PERMISSÃO.',
+            'DISTANT': 'Usuário distante da fé. Use termos como "filho amado"/"filha amada" mas EVITE versículos sem pedido explícito.',
+            'CRISIS': 'Usuário em CRISE de fé. PROIBIDO citar Bíblia ou usar linguagem religiosa. Apenas ACOLHA.',
+            'SEEKER': 'Usuário buscador/curioso. PROIBIDO citar Bíblia. Use linguagem universal e acessível.',
+            'SKEPTIC': 'Usuário cético. PROIBIDO qualquer referência religiosa direta. Foque em psicologia e empatia.'
+          };
+          onboardingContext += `\n- Maturidade espiritual: ${maturityGuide[userProfile.spiritual_maturity] || 'Não especificado'}`;
+        }
+        
+        if (userProfile?.initial_pain_focus?.length > 0) {
+          onboardingContext += `\n- Foco inicial de dor: ${userProfile.initial_pain_focus.join(', ')} (use como PISTA inicial, não como certeza - explore se ainda é relevante)`;
+        }
+        
+        if (onboardingContext) {
+          diaryContext += onboardingContext;
+          console.log("Onboarding context injected");
         }
 
         // ============================================
@@ -1811,7 +1901,14 @@ Temas abordados: ${userMsgs.substring(0, 400)}...`;
     // ========================================
     console.log("Step 7: Guardrails & Output Validation (Complete)");
     const guardrailResult = applyGuardrails(aiResponse, chunks);
-    const validationResult = validateResponseComplete(aiResponse, intent, userContext, turnCount);
+    
+    // Get spiritualMaturity from profile (need to retrieve it from earlier fetch)
+    // Note: userProfile was set in the profile fetch section above
+    const spiritualMaturity = (typeof userProfile !== 'undefined' && userProfile?.spiritual_maturity) 
+      ? userProfile.spiritual_maturity 
+      : 'SEEKER';
+    
+    const validationResult = validateResponseComplete(aiResponse, intent, userContext, turnCount, spiritualMaturity);
     
     let didRewrite = false;
     const MAX_REWRITE_ATTEMPTS = 1;
