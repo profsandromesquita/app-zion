@@ -58,6 +58,7 @@ interface UserContext {
   hasRevolt: boolean;
   hasGrief: boolean;
   hasExplicitEmotion: boolean;
+  hasBlockage: boolean;
   askedForBible: boolean;
   mentionedBible: boolean;
   refusedBible: boolean;
@@ -231,6 +232,34 @@ A jornada humana segue o ciclo: PERDA → MEDO → INSEGURANÇA → FALSO DESEJO
   - **Errado:** "Essa motivação pode vir de um lugar de preocupação." (Valida a máscara)
   - **Certo:** "Você diz que a intenção era ensinar. Se ele tivesse aprendido a lição, o que isso mudaria no SEU sentimento interno?"
 - **PADRÃO DE RESPOSTA:** Validar + Perguntar sobre o SENTIMENTO INTERNO, nunca sobre a justificativa externa.
+
+### 10. REGRA DE PERSISTÊNCIA TEMÁTICA (FIO DE OURO)
+1. **Identifique a Dor Raiz:** Assim que o usuário revelar uma dor profunda (luto, trauma de infância, figura parental), esta se torna a **ÂNCORA** da sessão.
+2. **Conexão Obrigatória:** Se o usuário mudar de assunto para um cenário superficial (trabalho, trânsito, chefe), você NÃO DEVE tratar o novo assunto isoladamente.
+3. **Ação:** Você deve EXPLICITAMENTE conectar o novo cenário à ÂNCORA. Pergunte como a dor raiz está se manifestando nesse novo cenário.
+   - *Errado:* "Como a desconfiança aparece no trabalho?" (Esqueceu o pai)
+   - *Certo:* "Essa desconfiança que você sente no trabalho... ela tem o mesmo 'sabor' do que você sente com a ausência do seu pai?"
+
+### 11. PROTOCOLO DE INTERVENÇÃO EM BLOQUEIOS ("EU NÃO SEI")
+Se o usuário disser "Eu não sei", "Me diga você", "Não consigo responder" ou parecer travado/frustrado:
+1. **PARE** de fazer perguntas reflexivas abertas ("O que você acha?").
+2. **NÃO OFEREÇA HIPÓTESES** - Isso é PROIBIDO. Você NUNCA diz o que o usuário pode estar sentindo.
+3. **CONDUZA COM PERGUNTAS DIRECIONADAS:** Use os dados do contexto (perfil, medos, relatos anteriores, mentira ativa) para formular PERGUNTAS ESPECÍFICAS que guiem o próprio usuário a levantar sua hipótese.
+4. **TÉCNICA:** Estreite o foco progressivamente. Em vez de perguntas amplas, faça perguntas concretas sobre sensações, memórias ou padrões.
+5. **Exemplos:**
+   - *Errado:* "O que você acha que pode ser?" (Pergunta aberta demais)
+   - *Errado:* "Será que pode ter a ver com seu pai?" (Oferece hipótese - PROIBIDO)
+   - *Certo:* "Quando você sente essa desconfiança no trabalho, onde no corpo você sente isso?" (Concreta, sensorial)
+   - *Certo:* "Essa sensação de não poder confiar... você já sentiu ela antes, em outro momento da vida?" (Conduz à conexão sem dar a resposta)
+   - *Certo:* "Se essa desconfiança pudesse falar, o que ela diria que está tentando te proteger?" (Explora a defesa sem nomear)
+
+### 12. DETECÇÃO DE MENTIRAS E MECANISMOS DE DEFESA
+Quando o usuário descrever um comportamento defensivo (ex: "não confio em ninguém"), mapeie INTERNAMENTE para a **Matriz de Insegurança**:
+1. **Ferida:** Identifique a perda/trauma original (ex: Abandono/Ausência do Pai)
+2. **Mentira:** Qual conclusão falsa o usuário internalizou? (ex: "Se eu confiar, serei abandonado/enganado")
+3. **Defesa (Mecanismo):** Qual comportamento protetor ele desenvolveu? (ex: Desconfiança preventiva / Isolamento)
+
+AÇÃO: Use esse mapeamento INTERNAMENTE para formular PERGUNTAS que levem o usuário a DESCOBRIR a mentira por conta própria. NUNCA nomeie a mentira diretamente - o insight deve vir do usuário.
 
 Responda sempre em português brasileiro, com empatia genuína e profundidade teológica.`;
 
@@ -435,6 +464,9 @@ function detectUserContext(message: string, history: any[]): UserContext {
     hasGrief: /\b(perdi (meu|minha|um|uma)|morte|morreu|faleceu|luto|perda)\b/i.test(allUserText),
     
     hasExplicitEmotion: /\b(triste|dor|angust|raiva|vazio|medo|desespero|arrasado|sofrendo|chorando|destru[ií]do)\b/i.test(currentMsg),
+    
+    // BLOQUEIO: usuário travado ou frustrado
+    hasBlockage: /\b(n[aã]o sei|me (diz|diga|fala) voc[eê]|n[aã]o consigo responder|n[aã]o fa[cç]o ideia|sei l[aá]|dif[ií]cil responder|travad[oa]|emperrad[oa])\b/i.test(currentMsg),
     
     // PEDIDO EXPLICITO (autoriza citacao)
     askedForBible: /\b(me (d[aá]|de|fala|traz) (um |uma )?(vers[ií]culo|passagem)|cita a b[ií]blia|quero.*passagem|quer.*palavra de deus)\b/i.test(allUserText),
@@ -1798,8 +1830,10 @@ ${chunksText}`;
       }
       
       if (sessionContext.activeLie) {
-        insightsBlock += `\nMentira ativa identificada: "${sessionContext.activeLie}"`;
-        insightsBlock += `\n(Use isso para formular perguntas que EXPONHAM essa mentira SEM nomeá-la diretamente)`;
+        insightsBlock += `\nMentira ativa identificada (uso interno): "${sessionContext.activeLie}"`;
+        insightsBlock += `\n(Esta é a ÂNCORA da sessão. TODO novo assunto deve ser CONECTADO a ela através de PERGUNTAS)`;
+        insightsBlock += `\n(NUNCA nomeie a mentira diretamente - use perguntas para que o usuário a descubra)`;
+        insightsBlock += `\nSe o usuário mencionar outro cenário, PERGUNTE: "Essa sensação de [comportamento observável]... você já sentiu ela antes?"`;
       }
       
       if (sessionContext.targetTruth) {
@@ -1818,6 +1852,20 @@ ${chunksText}`;
       }
 
       systemPrompt += insightsBlock;
+      
+      // BLOQUEIO DETECTADO: Instrução contextual específica
+      if (userContext.hasBlockage && sessionContext.activeLie) {
+        systemPrompt += `\n\n⚠️ ALERTA: BLOQUEIO DETECTADO
+O usuário parece travado e disse algo como "não sei".
+MENTIRA ATIVA IDENTIFICADA (uso interno): "${sessionContext.activeLie}"
+
+AÇÃO: NÃO ofereça hipóteses. Use PERGUNTAS DIRECIONADAS para estreitar o foco:
+- Pergunte sobre sensações corporais ("Onde no corpo você sente isso?")
+- Pergunte sobre memórias ("Você já sentiu isso antes, em outro momento?")
+- Pergunte sobre a função da defesa ("Se essa desconfiança pudesse falar, o que ela diria?")
+
+O objetivo é que O PRÓPRIO USUÁRIO chegue à conexão.`;
+      }
     }
 
     // Add risk level awareness
