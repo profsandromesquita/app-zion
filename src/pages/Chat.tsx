@@ -17,7 +17,7 @@ import { useUserRole } from "@/hooks/useUserRole";
 import { supabase } from "@/integrations/supabase/client";
 import SafetyExit from "@/components/SafetyExit";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
-
+import { OnboardingFlow, OnboardingData } from "@/components/onboarding/OnboardingFlow";
 interface Message {
   id: string;
   sender: "user" | "ai";
@@ -52,6 +52,8 @@ const Chat = () => {
   const [isFirstMessage, setIsFirstMessage] = useState(true);
   const [showCrisisBanner, setShowCrisisBanner] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [onboardingChecked, setOnboardingChecked] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const refreshSidebarRef = useRef<(() => void) | null>(null);
 
@@ -80,10 +82,30 @@ const Chat = () => {
     if (isNicodemosMode && anonSessionId) {
       setChatSessionId(anonSessionId);
       loadMessages(anonSessionId);
+      setOnboardingChecked(true); // Skip onboarding for anonymous users
     } else if (user) {
-      initAuthenticatedSession();
+      checkOnboardingAndInit();
     }
   }, [user, loading, isNicodemosMode, anonSessionId]);
+
+  // Check if user has completed onboarding
+  const checkOnboardingAndInit = async () => {
+    if (!user) return;
+
+    const { data } = await supabase
+      .from("user_profiles")
+      .select("onboarding_completed_at")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    if (!data?.onboarding_completed_at) {
+      setShowOnboarding(true);
+      setOnboardingChecked(true);
+    } else {
+      setOnboardingChecked(true);
+      initAuthenticatedSession();
+    }
+  };
 
   const initAuthenticatedSession = async () => {
     if (!user) return;
@@ -165,6 +187,36 @@ const Chat = () => {
   const handleSidebarReady = useCallback((refresh: () => void) => {
     refreshSidebarRef.current = refresh;
   }, []);
+
+  // Handle onboarding completion
+  const handleOnboardingComplete = async (data: OnboardingData) => {
+    if (!user) return;
+
+    try {
+      // Save name and gender to profiles
+      await supabase.from("profiles").upsert({
+        id: user.id,
+        nome: data.name,
+        grammar_gender: data.grammar_gender,
+      });
+
+      // Save maturity and pain focus to user_profiles
+      await supabase.from("user_profiles").upsert({
+        id: user.id,
+        spiritual_maturity: data.spiritual_maturity,
+        initial_pain_focus: data.initial_pain_focus.length > 0 ? data.initial_pain_focus : null,
+        onboarding_completed_at: new Date().toISOString(),
+      });
+
+      // Hide onboarding and start chat
+      setShowOnboarding(false);
+
+      // Initialize authenticated session after onboarding
+      await initAuthenticatedSession();
+    } catch (error) {
+      console.error("Error saving onboarding data:", error);
+    }
+  };
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -373,7 +425,7 @@ const Chat = () => {
     </div>
   );
 
-  if (loading) {
+  if (loading || (!onboardingChecked && user && !isNicodemosMode)) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <div className="animate-pulse-soft text-primary">
@@ -381,6 +433,11 @@ const Chat = () => {
         </div>
       </div>
     );
+  }
+
+  // Show onboarding for authenticated users who haven't completed it
+  if (showOnboarding && user && !isNicodemosMode) {
+    return <OnboardingFlow onComplete={handleOnboardingComplete} />;
   }
 
   // Anonymous mode (Nicodemos) - no sidebar
