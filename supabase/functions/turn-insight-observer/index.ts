@@ -697,9 +697,20 @@ Analise este turno e extraia os insights estruturados.`;
 
     // Extract taxonomy from lie_active if present
     const lieActive = extractedData.lie_active || {};
-    const lieScenario = lieActive.scenario || null;
-    const lieCenter = lieActive.center || null;
-    const lieSecurityMatrix = lieActive.security_matrix || null;
+    
+    // Valid values for CHECK constraints - sanitize "N/A", empty strings, or invalid values to null
+    const VALID_CENTERS = ['MENTE', 'CORACAO', 'INSTINTO'];
+    const VALID_SCENARIOS = ['AUTONOMIA', 'CONEXAO', 'SEGURANCA'];
+    const VALID_SECURITY_MATRICES = ['SELF', 'OTHERS', 'WORLD', 'GOD'];
+    
+    const rawScenario = lieActive.scenario;
+    const rawCenter = lieActive.center;
+    const rawSecurityMatrix = lieActive.security_matrix;
+    
+    // Sanitize: only accept valid enum values, otherwise null
+    const lieScenario = (rawScenario && VALID_SCENARIOS.includes(rawScenario)) ? rawScenario : null;
+    const lieCenter = (rawCenter && VALID_CENTERS.includes(rawCenter)) ? rawCenter : null;
+    const lieSecurityMatrix = (rawSecurityMatrix && VALID_SECURITY_MATRICES.includes(rawSecurityMatrix)) ? rawSecurityMatrix : null;
 
     // Update record with extracted data
     const { error: updateError } = await supabase
