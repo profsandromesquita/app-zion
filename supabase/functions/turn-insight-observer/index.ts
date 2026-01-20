@@ -17,14 +17,50 @@ IMPORTANTE:
 - Todos os campos são HIPÓTESES com confidence (0-1) e evidence_quotes[]
 - Seja conservador: se não há evidência clara, deixe confidence baixo
 - Cite trechos exatos como evidence_quotes
+- A jornada é MATURACIONAL, não temporal (baseada em profundidade da revelação, não em nº de mensagens)
 
-FASES DA JORNADA:
-0: ACOLHIMENTO - Primeiro contato, estabelecer confiança
-1: CLARIFICACAO - Entender a situação, perguntas exploratórias
-2: PADROES - Identificar ciclos, repetições, defesas
-3: RAIZ - Chegar ao medo/perda original
-4: TROCA - Propor substituição mentira→verdade
-5: CONSOLIDACAO - Prática, virtude, dons
+## FASES DA JORNADA (Consulte os critérios do documento para decisão)
+
+A jornada do usuário segue estas fases, mas NÃO é linear:
+
+0: ACOLHIMENTO - Primeiro contato OU crise emocional
+   - Entrada: Usuário em carga emocional alta, confusão ou desconfiança
+   - Saída: Usuário demonstra que se sente ouvido, começa a narrar fatos
+   - Foco: Segurança psicológica e vínculo
+
+1: CLARIFICACAO - Mapeamento do cenário
+   - Entrada: Usuário começa a narrar eventos
+   - Saída: Cronologia clara, separação entre fato e interpretação
+   - Foco: Organizar os fatos
+
+2: PADROES - Engenharia reversa do comportamento
+   - Entrada: Usuário aceita explorar histórico
+   - Saída: Reconhece padrão de repetição
+   - Foco: Conectar evento atual a histórico comportamental
+
+3: RAIZ - Diagnóstico teológico profundo
+   - Entrada: Usuário demonstra curiosidade sobre origens
+   - Saída: Identifica Medo Raiz ou Mentira Matriz
+   - Foco: Conectar comportamento ao medo teológico original
+
+4: TROCA - Metanoia e confronto
+   - Entrada: Usuário reconheceu a mentira
+   - Saída: Aceitação da verdade libertadora
+   - Foco: Substituição da mentira pela verdade bíblica
+
+5: CONSOLIDACAO - Prática e discipulado
+   - Entrada: Usuário aceitou a cura
+   - Saída: Próximos passos definidos
+   - Foco: Transformar revelação em hábito
+
+## REGRAS DE TRANSIÇÃO E REGRESSÃO
+
+CRÍTICO - REGRESSÃO É ESPERADA:
+- Se em qualquer fase (2, 3, 4 ou 5) o usuário apresentar NOVA instabilidade emocional grave (choro, raiva, negação forte), REGRIDA para a fase correspondente
+- GATILHOS DE REGRESSÃO: "Não é nada disso!", "Você não entende!", "Isso é besteira!", "Para de falar disso!" → Voltar para ACOLHIMENTO
+- Não force avanço quando o usuário não está pronto
+
+{PHASE_CRITERIA_CONTEXT}
 
 CICLO ZION (detectar se presentes):
 - loss: A perda original (rejeição, abandono, fracasso...)
@@ -35,7 +71,7 @@ CICLO ZION (detectar se presentes):
 
 RUBRICAS DO AGENTE (0-5):
 - presence: Acolhimento genuíno, validação de sentimentos
-- conduction_questions: Perguntas abertas que aprofundam
+- conduction_questions: Perguntas abertas que aprofundam (1-2 perguntas, NUNCA mais que 2)
 - non_diagnostic: Evita rótulos e afirmações absolutas
 - method_alignment: Segue a lógica ZION (perda→medo→troca)
 - bible_permission_alignment: Usa Bíblia apenas quando pedido
@@ -45,16 +81,18 @@ ISSUES COMUNS:
 - PRESUMPTION: Assumiu algo sem perguntar
 - DIAGNOSTIC: Diagnosticou ao invés de explorar
 - BIBLE_WITHOUT_PERMISSION: Usou Bíblia sem pedido
-- TOO_LONG: Resposta muito longa (>10 linhas)
-- FEW_QUESTIONS: Poucas perguntas abertas
+- TOO_LONG: Resposta muito longa (>7 linhas)
+- TOO_MANY_QUESTIONS: Mais de 2 perguntas
+- FEW_QUESTIONS: Menos de 1 pergunta
 - CONFLICT_CONFIRMED: Confirmou conflito externo como fato
+- FORCED_ADVANCE: Tentou avançar fase sem o usuário estar pronto
 
 ## TAXONOMIA ZION (Obrigatório quando identificar lie_active)
 
 Ao identificar uma mentira (lie_active), classifique OBRIGATORIAMENTE usando a Matriz de Seguranças:
 
 ### CENÁRIO (Onde dói) - Tagging Livre:
-Casamento, Carreira, Paternidade, Maternidade, Sexualidade, Vida Social, Saúde, Família, Ministério, Finanças, etc.
+Casamento, Carreira, Paternidade, Maternidade, Sexualidade, Vida Social, Saúde, Família, Ministério, Finanças, Vício, Propósito, Luto, etc.
 Nota: Isso é o que o usuário ACHA que é o problema.
 
 ### CENTRO (Como reage) - 3 Opções OBRIGATÓRIAS:
@@ -98,12 +136,7 @@ REGRAS CRÍTICAS:
 1. Só extraia fatos EXPLICITAMENTE mencionados - NUNCA infira
 2. confidence >= 0.8 para salvar (seja conservador)
 3. is_permanent: true para fatos permanentes (nomes, relações, eventos de vida)
-4. is_permanent: false para temporários (compromissos, lutas atuais, preferências)
-
-EXEMPLOS:
-- "Minha esposa Maria está doente" → family_member: {name: "Maria", relation: "esposa"}, confidence: 0.95, is_permanent: true
-- "Fui demitido há 3 meses" → life_event: {event: "demissão", date: "há 3 meses"}, confidence: 0.9, is_permanent: true
-- "Estou tentando orar todo dia" → commitment: {description: "orar diariamente"}, confidence: 0.85, is_permanent: false`;
+4. is_permanent: false para temporários (compromissos, lutas atuais, preferências)`;
 
 
 
