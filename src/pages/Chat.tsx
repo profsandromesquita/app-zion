@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Heart, Send, Menu, ArrowLeft, Bug } from "lucide-react";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
@@ -6,6 +6,8 @@ import { VoiceMicButton } from "@/components/chat/VoiceMicButton";
 import { MessageFeedback } from "@/components/chat/MessageFeedback";
 import { CrisisBanner } from "@/components/chat/CrisisBanner";
 import { DebugPanel } from "@/components/chat/DebugPanel";
+import { ConversationStarters } from "@/components/chat/ConversationStarters";
+import { WelcomeBackBanner } from "@/components/chat/WelcomeBackBanner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -54,6 +56,11 @@ const Chat = () => {
   const [showDebug, setShowDebug] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [onboardingChecked, setOnboardingChecked] = useState(false);
+  const [showWelcomeBack, setShowWelcomeBack] = useState(false);
+  const [userName, setUserName] = useState<string>("");
+  const [userProfile, setUserProfile] = useState<{ name: string; initial_pain_focus: string[] } | null>(null);
+  const [isFirstTimeUser, setIsFirstTimeUser] = useState(false);
+  const [welcomeMessageSent, setWelcomeMessageSent] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const refreshSidebarRef = useRef<(() => void) | null>(null);
 
@@ -88,20 +95,36 @@ const Chat = () => {
     }
   }, [user, loading, isNicodemosMode, anonSessionId]);
 
-  // Check if user has completed onboarding
+  // Check if user has completed onboarding and fetch profile
   const checkOnboardingAndInit = async () => {
     if (!user) return;
 
-    const { data } = await supabase
+    // Fetch user_profiles for onboarding check
+    const { data: userProfileData } = await supabase
       .from("user_profiles")
-      .select("onboarding_completed_at")
+      .select("onboarding_completed_at, initial_pain_focus")
       .eq("id", user.id)
       .maybeSingle();
 
-    if (!data?.onboarding_completed_at) {
+    // Fetch profiles for name
+    const { data: profileData } = await supabase
+      .from("profiles")
+      .select("nome")
+      .eq("id", user.id)
+      .maybeSingle();
+
+    const name = profileData?.nome || "";
+    setUserName(name);
+
+    if (!userProfileData?.onboarding_completed_at) {
       setShowOnboarding(true);
       setOnboardingChecked(true);
+      setIsFirstTimeUser(true);
     } else {
+      setUserProfile({
+        name,
+        initial_pain_focus: userProfileData?.initial_pain_focus || [],
+      });
       setOnboardingChecked(true);
       initAuthenticatedSession();
     }
@@ -109,6 +132,15 @@ const Chat = () => {
 
   const initAuthenticatedSession = async () => {
     if (!user) return;
+
+    // Count total sessions to determine if returning user
+    const { count: sessionCount } = await supabase
+      .from("chat_sessions")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .eq("is_anonymous", false);
+
+    const hasMultipleSessions = (sessionCount || 0) > 1;
 
     // Check for existing session
     const { data: existingSession } = await supabase
@@ -122,13 +154,56 @@ const Chat = () => {
 
     if (existingSession) {
       setChatSessionId(existingSession.id);
-      loadMessages(existingSession.id);
+      await loadMessages(existingSession.id);
+      
+      // Show welcome back banner for returning users with existing messages
+      if (hasMultipleSessions && userName) {
+        setShowWelcomeBack(true);
+      }
     } else {
-      await createNewSession();
+      await createNewSession(true);
     }
   };
 
-  const createNewSession = async () => {
+  // Send automated welcome message from Zion
+  const sendWelcomeMessage = async (sessionId: string, isFirstTime: boolean, profile: { name: string; initial_pain_focus: string[] } | null) => {
+    if (welcomeMessageSent) return;
+    
+    const name = profile?.name || userName || "";
+    let welcomeText: string;
+
+    if (isFirstTime && profile?.initial_pain_focus && profile.initial_pain_focus.length > 0) {
+      // First time user with pain focus from onboarding
+      const painFocus = profile.initial_pain_focus[0].toLowerCase();
+      welcomeText = `Olá${name ? `, ${name}` : ""}! Fico feliz que você esteja aqui.\n\nVocê mencionou que ${painFocus} tem pesado. Quer me contar um pouco sobre como isso tem aparecido no seu dia?`;
+    } else if (isFirstTime) {
+      // First time user without specific pain focus
+      welcomeText = `Olá${name ? `, ${name}` : ""}! Fico feliz que você esteja aqui.\n\nNão precisa ter pressa nem saber exatamente o que dizer.\n\nPodemos começar de um jeito simples:\nComo você está se sentindo agora, neste momento?`;
+    } else {
+      // Returning user starting a new chat
+      welcomeText = `Olá${name ? `, ${name}` : ""}! Que bom conversar com você de novo.\n\nEste é um novo espaço para você.\nO que está no seu coração hoje?`;
+    }
+
+    // Save welcome message to DB
+    const { data: savedMsg } = await supabase.from("chat_messages").insert({
+      session_id: sessionId,
+      sender: "ai",
+      content: welcomeText,
+    }).select("id").single();
+
+    if (savedMsg) {
+      const welcomeMsg: Message = {
+        id: savedMsg.id,
+        sender: "ai",
+        content: welcomeText,
+        created_at: new Date().toISOString(),
+      };
+      setMessages([welcomeMsg]);
+      setWelcomeMessageSent(true);
+    }
+  };
+
+  const createNewSession = async (sendWelcome: boolean = false) => {
     if (!user) return null;
 
     const { data: newSession, error } = await supabase
@@ -145,6 +220,12 @@ const Chat = () => {
       setChatSessionId(newSession.id);
       setMessages([]);
       setIsFirstMessage(true);
+      setWelcomeMessageSent(false);
+      
+      if (sendWelcome) {
+        await sendWelcomeMessage(newSession.id, isFirstTimeUser, userProfile);
+      }
+      
       return newSession.id;
     }
     return null;
@@ -178,11 +259,12 @@ const Chat = () => {
   }, []);
 
   const handleNewChat = useCallback(async () => {
-    const newId = await createNewSession();
+    setWelcomeMessageSent(false);
+    const newId = await createNewSession(true);
     if (newId) {
       refreshSidebarRef.current?.();
     }
-  }, [user]);
+  }, [user, isFirstTimeUser, userProfile]);
 
   const handleSidebarReady = useCallback((refresh: () => void) => {
     refreshSidebarRef.current = refresh;
@@ -208,11 +290,25 @@ const Chat = () => {
         onboarding_completed_at: new Date().toISOString(),
       });
 
+      // Update local state
+      setUserName(data.name);
+      setUserProfile({
+        name: data.name,
+        initial_pain_focus: data.initial_pain_focus,
+      });
+      setIsFirstTimeUser(true);
+
       // Hide onboarding and start chat
       setShowOnboarding(false);
 
-      // Initialize authenticated session after onboarding
-      await initAuthenticatedSession();
+      // Create new session and send welcome message
+      const newSessionId = await createNewSession(false);
+      if (newSessionId) {
+        await sendWelcomeMessage(newSessionId, true, {
+          name: data.name,
+          initial_pain_focus: data.initial_pain_focus,
+        });
+      }
     } catch (error) {
       console.error("Error saving onboarding data:", error);
     }
@@ -379,6 +475,21 @@ const Chat = () => {
     navigate("/");
   };
 
+  // Handle conversation starter selection
+  const handleStarterSelect = (text: string) => {
+    setInput(text);
+    // Auto-send after a brief moment to let user see what was selected
+    setTimeout(() => {
+      const event = { key: "Enter", shiftKey: false, preventDefault: () => {} } as React.KeyboardEvent;
+      handleKeyDown(event);
+    }, 100);
+  };
+
+  // Determine if we should show conversation starters
+  const shouldShowStarters = messages.length === 1 && 
+    messages[0].sender === "ai" && 
+    !isLoading;
+
   // Message rendering component
   const renderMessage = (message: Message) => (
     <div
@@ -491,22 +602,15 @@ const Chat = () => {
         {/* Messages */}
         <ScrollArea className="flex-1 px-4">
           <div className="mx-auto max-w-2xl py-4">
-            {messages.length === 0 && (
-              <div className="flex flex-col items-center justify-center py-16 text-center">
-                <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
-                  <Heart className="h-8 w-8 text-primary" />
-                </div>
-                <h2 className="mb-2 text-lg font-medium text-foreground">
-                  Olá, estou aqui para você
-                </h2>
-                <p className="max-w-sm text-sm text-muted-foreground">
-                  Este é um espaço seguro. Compartilhe o que está em seu coração, 
-                  sem julgamentos. Estou aqui para ouvir e acolher.
-                </p>
-              </div>
-            )}
-
             {messages.map(renderMessage)}
+
+            {/* Show conversation starters after welcome message */}
+            {shouldShowStarters && (
+              <ConversationStarters
+                onSelect={handleStarterSelect}
+                disabled={isLoading}
+              />
+            )}
 
             {isLoading && (
               <div className="mb-4 flex justify-start">
@@ -573,6 +677,16 @@ const Chat = () => {
         />
 
         <div className="relative z-0 flex flex-1 flex-col">
+          {/* Welcome Back Banner */}
+          {user && userName && (
+            <WelcomeBackBanner
+              userId={user.id}
+              userName={userName}
+              visible={showWelcomeBack}
+              onDismiss={() => setShowWelcomeBack(false)}
+            />
+          )}
+
           {/* Crisis Banner */}
           <CrisisBanner
             visible={showCrisisBanner}
@@ -610,22 +724,15 @@ const Chat = () => {
           {/* Messages */}
           <ScrollArea className="flex-1 px-4">
             <div className="mx-auto max-w-2xl py-4">
-              {messages.length === 0 && (
-                <div className="flex flex-col items-center justify-center py-16 text-center">
-                  <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
-                    <Heart className="h-8 w-8 text-primary" />
-                  </div>
-                  <h2 className="mb-2 text-lg font-medium text-foreground">
-                    Olá, estou aqui para você
-                  </h2>
-                  <p className="max-w-sm text-sm text-muted-foreground">
-                    Este é um espaço seguro. Compartilhe o que está em seu coração, 
-                    sem julgamentos. Estou aqui para ouvir e acolher.
-                  </p>
-                </div>
-              )}
-
               {messages.map(renderMessage)}
+
+              {/* Show conversation starters after welcome message */}
+              {shouldShowStarters && (
+                <ConversationStarters
+                  onSelect={handleStarterSelect}
+                  disabled={isLoading}
+                />
+              )}
 
               {isLoading && (
                 <div className="mb-4 flex justify-start">
