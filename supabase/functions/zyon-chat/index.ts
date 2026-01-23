@@ -929,12 +929,37 @@ async function fetchSessionInsights(
 // FEW-SHOT LEARNING FROM CURATED CORRECTIONS (HYBRID: Phase + Intent + Positive/Negative)
 // ============================================
 
+// Mapa de descrições completas das violações
+const VIOLATION_DESCRIPTIONS: Record<string, string> = {
+  PRESUMPTION: "Fez interpretações ou presunções sem perguntar ao usuário",
+  IMPURE_MIRRORING: "Espelhou emoções de forma imprecisa ou contaminada",
+  MASK_VALIDATION: "Validou comportamentos de defesa ao invés de questionar",
+  EXCESS_LENGTH: "Resposta muito longa, perdeu foco e objetividade",
+  EXTERNAL_FOCUS: "Focou em aspectos cognitivos/externos ao invés de sensações",
+  WEAK_MAIEUTICS: "Perguntas fracas que não aprofundam a reflexão",
+  CAUSALITY_DIAGNOSTIC: "Tentou diagnosticar causas ao invés de explorar",
+  MISSING_SENSATION: "Não fez pergunta sobre sensações corporais",
+  THEORIZATION: "Excesso de teoria/conceitos, pouca prática",
+  BIBLICAL_MISUSE: "Uso inadequado de referências bíblicas",
+  PREMATURE_TRUTH: "Apresentou verdade antes do usuário estar preparado",
+  EMOTIONAL_BYPASS: "Ignorou ou minimizou emoções do usuário",
+  ADVICE_GIVING: "Deu conselhos diretos ao invés de perguntas maiêuticas",
+  MISSING_EMPATHY: "Faltou validação empática inicial",
+  OTHER: "Outra violação não categorizada",
+};
+
 interface CuratedCorrectionWithItem {
   id: string;
   status: 'approved' | 'rejected' | 'needs_review';
+  adherence_score: number | null;
   corrected_response: string | null;
   violations: { code: string; description?: string }[];
-  diagnosis: { root_fear?: string; security_matrix?: string } | null;
+  diagnosis: { 
+    symptom?: string;
+    distorted_virtue?: string;
+    root_fear?: string; 
+    security_matrix?: string;
+  } | null;
   notes: string | null;
   feedback_dataset_items: {
     user_prompt_text: string;
@@ -956,9 +981,9 @@ async function fetchRecentCorrections(
   supabase: any,
   currentIntent: string,
   currentPhase: string | null,
-  positiveLimit: number = 2,
-  negativeLimit: number = 2,
-  refinementLimit: number = 1
+  positiveLimit: number = 3,
+  negativeLimit: number = 3,
+  refinementLimit: number = 2
 ): Promise<FewShotResult> {
   const result: FewShotResult = { positives: [], negatives: [], refinements: [] };
   
@@ -972,7 +997,7 @@ async function fetchRecentCorrections(
       const { data: phaseIntentApproved } = await supabase
         .from('curated_corrections')
         .select(`
-          id, status, corrected_response, violations, diagnosis, notes,
+          id, status, adherence_score, corrected_response, violations, diagnosis, notes,
           feedback_dataset_items!inner(
             user_prompt_text, assistant_answer_text, intent, phase
           )
@@ -982,8 +1007,9 @@ async function fetchRecentCorrections(
         .eq('feedback_dataset_items.phase', currentPhase)
         .eq('feedback_dataset_items.intent', currentIntent)
         .not('notes', 'is', null)
+        .order('adherence_score', { ascending: false, nullsFirst: false })
         .order('curated_at', { ascending: false })
-        .limit(1);
+        .limit(2);
       
       if (phaseIntentApproved?.length) {
         result.positives.push(...(phaseIntentApproved as CuratedCorrectionWithItem[]));
@@ -998,7 +1024,7 @@ async function fetchRecentCorrections(
       const { data: generalApproved } = await supabase
         .from('curated_corrections')
         .select(`
-          id, status, corrected_response, violations, diagnosis, notes,
+          id, status, adherence_score, corrected_response, violations, diagnosis, notes,
           feedback_dataset_items!inner(
             user_prompt_text, assistant_answer_text, intent, phase
           )
@@ -1006,6 +1032,7 @@ async function fetchRecentCorrections(
         .eq('status', 'approved')
         .eq('include_in_training', true)
         .not('notes', 'is', null)
+        .order('adherence_score', { ascending: false, nullsFirst: false })
         .order('curated_at', { ascending: false })
         .limit(remaining + existingIds.length);
       
@@ -1027,7 +1054,7 @@ async function fetchRecentCorrections(
       const { data: phaseIntentRejected } = await supabase
         .from('curated_corrections')
         .select(`
-          id, status, corrected_response, violations, diagnosis, notes,
+          id, status, adherence_score, corrected_response, violations, diagnosis, notes,
           feedback_dataset_items!inner(
             user_prompt_text, assistant_answer_text, intent, phase
           )
@@ -1037,8 +1064,9 @@ async function fetchRecentCorrections(
         .eq('include_in_training', true)
         .eq('feedback_dataset_items.phase', currentPhase)
         .eq('feedback_dataset_items.intent', currentIntent)
+        .order('adherence_score', { ascending: true, nullsFirst: false })
         .order('curated_at', { ascending: false })
-        .limit(1);
+        .limit(2);
       
       if (phaseIntentRejected?.length) {
         result.negatives.push(...(phaseIntentRejected as CuratedCorrectionWithItem[]));
@@ -1053,7 +1081,7 @@ async function fetchRecentCorrections(
       const { data: phaseRejected } = await supabase
         .from('curated_corrections')
         .select(`
-          id, status, corrected_response, violations, diagnosis, notes,
+          id, status, adherence_score, corrected_response, violations, diagnosis, notes,
           feedback_dataset_items!inner(
             user_prompt_text, assistant_answer_text, intent, phase
           )
@@ -1062,6 +1090,7 @@ async function fetchRecentCorrections(
         .not('corrected_response', 'is', null)
         .eq('include_in_training', true)
         .eq('feedback_dataset_items.phase', currentPhase)
+        .order('adherence_score', { ascending: true, nullsFirst: false })
         .order('curated_at', { ascending: false })
         .limit(remaining + existingIds.length);
       
@@ -1080,7 +1109,7 @@ async function fetchRecentCorrections(
       const { data: intentRejected } = await supabase
         .from('curated_corrections')
         .select(`
-          id, status, corrected_response, violations, diagnosis, notes,
+          id, status, adherence_score, corrected_response, violations, diagnosis, notes,
           feedback_dataset_items!inner(
             user_prompt_text, assistant_answer_text, intent, phase
           )
@@ -1089,6 +1118,7 @@ async function fetchRecentCorrections(
         .not('corrected_response', 'is', null)
         .eq('include_in_training', true)
         .eq('feedback_dataset_items.intent', currentIntent)
+        .order('adherence_score', { ascending: true, nullsFirst: false })
         .order('curated_at', { ascending: false })
         .limit(remaining + existingIds.length);
       
@@ -1107,7 +1137,7 @@ async function fetchRecentCorrections(
       const { data: generalRejected } = await supabase
         .from('curated_corrections')
         .select(`
-          id, status, corrected_response, violations, diagnosis, notes,
+          id, status, adherence_score, corrected_response, violations, diagnosis, notes,
           feedback_dataset_items!inner(
             user_prompt_text, assistant_answer_text, intent, phase
           )
@@ -1115,6 +1145,7 @@ async function fetchRecentCorrections(
         .eq('status', 'rejected')
         .not('corrected_response', 'is', null)
         .eq('include_in_training', true)
+        .order('adherence_score', { ascending: true, nullsFirst: false })
         .order('curated_at', { ascending: false })
         .limit(remaining + existingIds.length);
       
@@ -1136,7 +1167,7 @@ async function fetchRecentCorrections(
       const { data: phaseIntentReview } = await supabase
         .from('curated_corrections')
         .select(`
-          id, status, corrected_response, violations, diagnosis, notes,
+          id, status, adherence_score, corrected_response, violations, diagnosis, notes,
           feedback_dataset_items!inner(
             user_prompt_text, assistant_answer_text, intent, phase
           )
@@ -1147,7 +1178,7 @@ async function fetchRecentCorrections(
         .eq('feedback_dataset_items.phase', currentPhase)
         .eq('feedback_dataset_items.intent', currentIntent)
         .order('curated_at', { ascending: false })
-        .limit(1);
+        .limit(2);
       
       if (phaseIntentReview?.length) {
         result.refinements.push(...(phaseIntentReview as CuratedCorrectionWithItem[]));
@@ -1162,7 +1193,7 @@ async function fetchRecentCorrections(
       const { data: intentReview } = await supabase
         .from('curated_corrections')
         .select(`
-          id, status, corrected_response, violations, diagnosis, notes,
+          id, status, adherence_score, corrected_response, violations, diagnosis, notes,
           feedback_dataset_items!inner(
             user_prompt_text, assistant_answer_text, intent, phase
           )
@@ -1189,7 +1220,7 @@ async function fetchRecentCorrections(
       const { data: generalReview } = await supabase
         .from('curated_corrections')
         .select(`
-          id, status, corrected_response, violations, diagnosis, notes,
+          id, status, adherence_score, corrected_response, violations, diagnosis, notes,
           feedback_dataset_items!inner(
             user_prompt_text, assistant_answer_text, intent, phase
           )
@@ -1306,21 +1337,38 @@ USUÁRIO: "${c.feedback_dataset_items.user_prompt_text.substring(0, 200)}${c.fee
     
     negatives.forEach((c, i) => {
       const { tag } = getRelevanceTag(c, currentIntent, currentPhase);
-      const violations = c.violations?.map(v => v.code).join(', ') || 'N/A';
+      
+      // Violações com descrição completa
+      const violationsList = c.violations?.map(v => {
+        const desc = v.description || VIOLATION_DESCRIPTIONS[v.code] || v.code;
+        return `  - ${v.code}: ${desc}`;
+      }).join('\n') || '  - Nenhuma';
+      
+      // Diagnóstico expandido
+      const symptom = c.diagnosis?.symptom || 'N/A';
+      const distortedVirtue = c.diagnosis?.distorted_virtue || 'N/A';
       const rootFear = c.diagnosis?.root_fear || 'N/A';
       const matrix = c.diagnosis?.security_matrix || 'N/A';
+      const adherence = c.adherence_score !== null ? `${c.adherence_score}%` : 'N/A';
       
-      block += `#### Erro ${i + 1} (${tag})
+      block += `#### Erro ${i + 1} (${tag}) — Aderência: ${adherence}
 CONTEXTO: Fase = ${c.feedback_dataset_items.phase || 'N/A'}, Intent = ${c.feedback_dataset_items.intent || 'N/A'}
 USUÁRIO: "${c.feedback_dataset_items.user_prompt_text.substring(0, 200)}${c.feedback_dataset_items.user_prompt_text.length > 200 ? '...' : ''}"
 
-❌ RESPOSTA INCORRETA (violações: ${violations}):
+❌ RESPOSTA INCORRETA:
 "${c.feedback_dataset_items.assistant_answer_text.substring(0, 300)}${c.feedback_dataset_items.assistant_answer_text.length > 300 ? '...' : ''}"
+
+VIOLAÇÕES DETECTADAS:
+${violationsList}
+
+DIAGNÓSTICO:
+- Sintoma observado: ${symptom}
+- Virtude distorcida: ${distortedVirtue}
+- Medo raiz: ${rootFear}
+- Matriz de segurança: ${matrix}
 
 ✅ RESPOSTA CORRIGIDA:
 "${(c.corrected_response || '').substring(0, 400)}${(c.corrected_response || '').length > 400 ? '...' : ''}"
-
-DIAGNÓSTICO: Medo raiz = ${rootFear}, Matriz = ${matrix}
 
 ---
 
