@@ -1,26 +1,24 @@
 import { Button } from "@/components/ui/button";
+import { DEFAULT_STARTERS, StarterItem } from "@/hooks/usePersonalizedStarters";
 
 interface ConversationStartersProps {
   onSelect: (text: string) => void;
   disabled?: boolean;
+  starters?: StarterItem[];
 }
 
-const STARTERS = [
-  { text: "Estou me sentindo ansioso(a)", emoji: "😰" },
-  { text: "Tenho um peso no coração", emoji: "💔" },
-  { text: "Preciso desabafar sobre algo", emoji: "💬" },
-  { text: "Não sei por onde começar...", emoji: "🤔" },
-  { text: "Só preciso de alguém para ouvir", emoji: "👂" },
-];
-
-export const ConversationStarters = ({ onSelect, disabled }: ConversationStartersProps) => {
+export const ConversationStarters = ({ 
+  onSelect, 
+  disabled, 
+  starters = DEFAULT_STARTERS 
+}: ConversationStartersProps) => {
   return (
     <div className="mt-4 space-y-3">
       <p className="text-sm text-muted-foreground text-center">
         💭 Você pode responder ou clicar aqui:
       </p>
       <div className="flex flex-wrap justify-center gap-2">
-        {STARTERS.map((starter) => (
+        {starters.map((starter) => (
           <Button
             key={starter.text}
             variant="outline"

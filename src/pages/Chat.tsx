@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Heart, Send, Menu, ArrowLeft, Bug } from "lucide-react";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
+import { usePersonalizedStarters } from "@/hooks/usePersonalizedStarters";
 import { VoiceMicButton } from "@/components/chat/VoiceMicButton";
 import { MessageFeedback } from "@/components/chat/MessageFeedback";
 import { CrisisBanner } from "@/components/chat/CrisisBanner";
@@ -60,9 +61,16 @@ const Chat = () => {
   const [userName, setUserName] = useState<string>("");
   const [userProfile, setUserProfile] = useState<{ name: string; initial_pain_focus: string[] } | null>(null);
   const [isFirstTimeUser, setIsFirstTimeUser] = useState(false);
+  const [isReturningUser, setIsReturningUser] = useState(false);
   const [welcomeMessageSent, setWelcomeMessageSent] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const refreshSidebarRef = useRef<(() => void) | null>(null);
+
+  // Hook for personalized starters for returning users
+  const { starters: personalizedStarters } = usePersonalizedStarters(
+    user?.id || null,
+    isReturningUser
+  );
 
   const {
     isListening,
@@ -141,6 +149,7 @@ const Chat = () => {
       .eq("is_anonymous", false);
 
     const hasMultipleSessions = (sessionCount || 0) > 1;
+    setIsReturningUser(hasMultipleSessions);
 
     // Check for existing session
     const { data: existingSession } = await supabase
@@ -604,13 +613,14 @@ const Chat = () => {
           <div className="mx-auto max-w-2xl py-4">
             {messages.map(renderMessage)}
 
-            {/* Show conversation starters after welcome message */}
-            {shouldShowStarters && (
-              <ConversationStarters
-                onSelect={handleStarterSelect}
-                disabled={isLoading}
-              />
-            )}
+              {/* Show conversation starters after welcome message */}
+              {shouldShowStarters && (
+                <ConversationStarters
+                  onSelect={handleStarterSelect}
+                  disabled={isLoading}
+                  starters={undefined} // Anonymous mode uses defaults
+                />
+              )}
 
             {isLoading && (
               <div className="mb-4 flex justify-start">
@@ -726,11 +736,12 @@ const Chat = () => {
             <div className="mx-auto max-w-2xl py-4">
               {messages.map(renderMessage)}
 
-              {/* Show conversation starters after welcome message */}
+              {/* Show conversation starters after welcome message - personalized for returning users */}
               {shouldShowStarters && (
                 <ConversationStarters
                   onSelect={handleStarterSelect}
                   disabled={isLoading}
+                  starters={isReturningUser ? personalizedStarters ?? undefined : undefined}
                 />
               )}
 
