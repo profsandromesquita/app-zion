@@ -698,19 +698,43 @@ Analise este turno e extraia os insights estruturados.`;
     // Extract taxonomy from lie_active if present
     const lieActive = extractedData.lie_active || {};
     
-    // Valid values for CHECK constraints - sanitize "N/A", empty strings, or invalid values to null
-    const VALID_CENTERS = ['MENTE', 'CORACAO', 'INSTINTO'];
-    const VALID_SCENARIOS = ['AUTONOMIA', 'CONEXAO', 'SEGURANCA'];
-    const VALID_SECURITY_MATRICES = ['SELF', 'OTHERS', 'WORLD', 'GOD'];
-    
+    // ============================================
+    // VALID VALUES FOR ZION TAXONOMY
+    // Must match exactly what the LLM is instructed to extract in OBSERVER_SYSTEM_PROMPT
+    // ============================================
+
+    // Centers (Como o usuário reage) - Linhas 98-101 do prompt
+    const VALID_CENTERS = ['INSTINTIVO', 'EMOCIONAL', 'MENTAL'];
+
+    // Security Matrix (Raiz teológica) - Linhas 103-117 do prompt  
+    const VALID_SECURITY_MATRICES = ['SOBREVIVENCIA', 'IDENTIDADE', 'CAPACIDADE'];
+
+    // Scenarios: Tagging Livre - NÃO RESTRINGIR
+    // O prompt (linhas 94-96) permite qualquer cenário: Casamento, Carreira, Família, etc.
+    // Apenas sanitizar strings vazias ou "N/A"
+
     const rawScenario = lieActive.scenario;
     const rawCenter = lieActive.center;
     const rawSecurityMatrix = lieActive.security_matrix;
-    
-    // Sanitize: only accept valid enum values, otherwise null
-    const lieScenario = (rawScenario && VALID_SCENARIOS.includes(rawScenario)) ? rawScenario : null;
-    const lieCenter = (rawCenter && VALID_CENTERS.includes(rawCenter)) ? rawCenter : null;
-    const lieSecurityMatrix = (rawSecurityMatrix && VALID_SECURITY_MATRICES.includes(rawSecurityMatrix)) ? rawSecurityMatrix : null;
+
+    // Sanitize center: must be one of the 3 valid values
+    const lieCenter = (rawCenter && VALID_CENTERS.includes(rawCenter.toUpperCase())) 
+      ? rawCenter.toUpperCase() 
+      : null;
+
+    // Sanitize security_matrix: must be one of the 3 valid values
+    const lieSecurityMatrix = (rawSecurityMatrix && VALID_SECURITY_MATRICES.includes(rawSecurityMatrix.toUpperCase())) 
+      ? rawSecurityMatrix.toUpperCase() 
+      : null;
+
+    // Sanitize scenario: allow any non-empty string (tagging livre)
+    // Only reject empty strings, "N/A", null, or undefined
+    const lieScenario = (rawScenario && 
+      typeof rawScenario === 'string' && 
+      rawScenario.trim() !== '' && 
+      rawScenario.toUpperCase() !== 'N/A')
+      ? rawScenario.trim()
+      : null;
 
     // Update record with extracted data
     const { error: updateError } = await supabase
@@ -760,7 +784,8 @@ Analise este turno e extraia os insights estruturados.`;
     }
 
     // Call aggregate-user-journey if we have taxonomy data and a user
-    if (userId && lieSecurityMatrix && lieScenario) {
+    // Cenário é secundário - basta ter security_matrix para agregar
+    if (userId && lieSecurityMatrix) {
       console.log("Calling aggregate-user-journey for user:", userId);
       try {
         const aggregateResponse = await fetch(
