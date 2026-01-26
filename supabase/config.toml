@@ -29,3 +29,6 @@ verify_jwt = false
 
 [functions.aggregate-user-journey]
 verify_jwt = false
+
+[functions.resync-taxonomy]
+verify_jwt = false
