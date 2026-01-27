@@ -91,8 +91,24 @@ ISSUES COMUNS:
 
 Ao identificar uma mentira (lie_active), classifique OBRIGATORIAMENTE usando a Matriz de Seguranças:
 
-### CENÁRIO (Onde dói) - Tagging Livre:
-Casamento, Carreira, Paternidade, Maternidade, Sexualidade, Vida Social, Saúde, Família, Ministério, Finanças, Vício, Propósito, Luto, etc.
+### CENÁRIO (Onde dói) - OBRIGATÓRIO escolher UM da lista:
+- CASAMENTO: Conflitos conjugais, intimidade, expectativas do parceiro
+- CARREIRA: Trabalho, performance, propósito profissional, acadêmico
+- FAMILIA: Relações familiares gerais (pais, irmãos, família de origem)
+- VIDA_SOCIAL: Amizades, aceitação social, pertencimento, rejeição
+- AUTOESTIMA: Valor próprio, autoimagem, identidade pessoal
+- SAUDE: Saúde física e mental, ansiedade, depressão, vícios
+- FINANCAS: Dinheiro, provisão, segurança material
+- MINISTERIO: Servir a Deus, liderança espiritual, igreja
+- LUTO: Perdas, morte de entes, separações, término
+- SEXUALIDADE: Identidade sexual, pornografia, pureza
+- PATERNIDADE: Ser pai, relação com filhos (perspectiva masculina)
+- MATERNIDADE: Ser mãe, relação com filhos (perspectiva feminina)
+
+REGRA: Escolha o cenário PRINCIPAL. Se múltiplos contextos estão presentes,
+liste os secundários em "related_scenarios" (array).
+Exemplo: Usuário fala de problema no casamento que afeta trabalho
+→ scenario: "CASAMENTO", related_scenarios: ["CARREIRA"]
 Nota: Isso é o que o usuário ACHA que é o problema.
 
 ### CENTRO (Como reage) - 3 Opções OBRIGATÓRIAS:
@@ -226,8 +242,21 @@ const EXTRACTION_TOOL = {
             evidence_quotes: { type: "array", items: { type: "string" } },
             // TAXONOMIA ZION
             scenario: { 
-              type: "string",
-              description: "Cenário onde dói (tagging livre): Casamento, Carreira, Paternidade, Sexualidade, Saúde, Vida Social, Família, Ministério, Finanças, etc."
+              type: "string", 
+              enum: ["CASAMENTO", "CARREIRA", "FAMILIA", "VIDA_SOCIAL", "AUTOESTIMA", 
+                     "SAUDE", "FINANCAS", "MINISTERIO", "LUTO", "SEXUALIDADE", 
+                     "PATERNIDADE", "MATERNIDADE"],
+              description: "Cenário PRINCIPAL onde a dor se manifesta"
+            },
+            related_scenarios: {
+              type: "array",
+              items: { 
+                type: "string",
+                enum: ["CASAMENTO", "CARREIRA", "FAMILIA", "VIDA_SOCIAL", "AUTOESTIMA", 
+                       "SAUDE", "FINANCAS", "MINISTERIO", "LUTO", "SEXUALIDADE", 
+                       "PATERNIDADE", "MATERNIDADE"]
+              },
+              description: "Cenários secundários afetados (opcional)"
             },
             center: { 
               type: "string", 
@@ -350,7 +379,8 @@ RESPONDA SOMENTE UM JSON VÁLIDO seguindo exatamente este schema (sem markdown, 
     "text": "",
     "confidence": 0.0,
     "evidence_quotes": [],
-    "scenario": "Casamento | Carreira | Família | etc",
+    "scenario": "CASAMENTO | CARREIRA | FAMILIA | VIDA_SOCIAL | AUTOESTIMA | SAUDE | FINANCAS | MINISTERIO | LUTO | SEXUALIDADE | PATERNIDADE | MATERNIDADE",
+    "related_scenarios": ["CARREIRA"],
     "center": "INSTINTIVO" | "EMOCIONAL" | "MENTAL",
     "security_matrix": "SOBREVIVENCIA" | "IDENTIDADE" | "CAPACIDADE"
   },
@@ -709,13 +739,114 @@ Analise este turno e extraia os insights estruturados.`;
     // Security Matrix (Raiz teológica) - Linhas 103-117 do prompt  
     const VALID_SECURITY_MATRICES = ['SOBREVIVENCIA', 'IDENTIDADE', 'CAPACIDADE'];
 
-    // Scenarios: Tagging Livre - NÃO RESTRINGIR
-    // O prompt (linhas 94-96) permite qualquer cenário: Casamento, Carreira, Família, etc.
-    // Apenas sanitizar strings vazias ou "N/A"
+    // Cenários canônicos ZION - Lista fixa de 12 opções
+    const VALID_SCENARIOS = [
+      'CASAMENTO', 'CARREIRA', 'FAMILIA', 'VIDA_SOCIAL', 'AUTOESTIMA',
+      'SAUDE', 'FINANCAS', 'MINISTERIO', 'LUTO', 'SEXUALIDADE',
+      'PATERNIDADE', 'MATERNIDADE'
+    ];
+
+    // Mapeamento de variações comuns para cenários canônicos
+    const SCENARIO_ALIASES: Record<string, string> = {
+      'RELACIONAMENTO': 'CASAMENTO',
+      'RELACIONAMENTOS': 'VIDA_SOCIAL',
+      'TRABALHO': 'CARREIRA',
+      'PROFISSIONAL': 'CARREIRA',
+      'ACADÊMICA': 'CARREIRA',
+      'ACADEMICA': 'CARREIRA',
+      'AUTOIMAGEM': 'AUTOESTIMA',
+      'IDENTIDADE': 'AUTOESTIMA',
+      'PROPÓSITO': 'CARREIRA',
+      'PROPOSITO': 'CARREIRA',
+      'VÍCIO': 'SAUDE',
+      'VICIO': 'SAUDE',
+      'ANSIEDADE': 'SAUDE',
+      'DEPRESSÃO': 'SAUDE',
+      'DEPRESSAO': 'SAUDE',
+      'MENTAL': 'SAUDE',
+      'FÍSICA': 'SAUDE',
+      'FISICA': 'SAUDE',
+      'FILHOS': 'PATERNIDADE',
+      'EXISTENCIAL': 'AUTOESTIMA',
+      'GERAL': 'AUTOESTIMA',
+      'VIDA SOCIAL': 'VIDA_SOCIAL',
+      'VIDA_PESSOAL': 'AUTOESTIMA',
+    };
+
+    // Função para normalizar cenário
+    const normalizeScenario = (rawScenario: string | undefined): string | null => {
+      if (!rawScenario || typeof rawScenario !== 'string') return null;
+      
+      // Limpar e uppercase
+      let scenario = rawScenario.trim().toUpperCase().replace(/[\-\s]+/g, '_');
+      
+      // Se já é válido, retornar
+      if (VALID_SCENARIOS.includes(scenario)) {
+        return scenario;
+      }
+      
+      // Tentar alias direto
+      if (SCENARIO_ALIASES[scenario]) {
+        return SCENARIO_ALIASES[scenario];
+      }
+      
+      // Se é composto (contém vírgula, barra, etc.), extrair primeiro
+      const separators = /[,\/\|]+/;
+      if (separators.test(rawScenario)) {
+        const parts = rawScenario.split(separators).map(p => p.trim().toUpperCase().replace(/[\-\s]+/g, '_'));
+        for (const part of parts) {
+          if (VALID_SCENARIOS.includes(part)) {
+            return part;
+          }
+          if (SCENARIO_ALIASES[part]) {
+            return SCENARIO_ALIASES[part];
+          }
+        }
+      }
+      
+      // Busca parcial em VALID_SCENARIOS
+      for (const valid of VALID_SCENARIOS) {
+        if (scenario.includes(valid) || valid.includes(scenario)) {
+          return valid;
+        }
+      }
+      
+      // Fallback: se contém palavras-chave
+      const keywords: Record<string, string> = {
+        'CASAMENT': 'CASAMENTO',
+        'CARREIR': 'CARREIRA',
+        'TRABALH': 'CARREIRA',
+        'FAMILI': 'FAMILIA',
+        'SOCIAL': 'VIDA_SOCIAL',
+        'AMIZAD': 'VIDA_SOCIAL',
+        'AUTOESTIM': 'AUTOESTIMA',
+        'IMAGEM': 'AUTOESTIMA',
+        'SAUD': 'SAUDE',
+        'FINANC': 'FINANCAS',
+        'DINHEIR': 'FINANCAS',
+        'MINISTER': 'MINISTERIO',
+        'IGREJA': 'MINISTERIO',
+        'LUTO': 'LUTO',
+        'MORT': 'LUTO',
+        'SEXUAL': 'SEXUALIDADE',
+        'PATERN': 'PATERNIDADE',
+        'MATERN': 'MATERNIDADE',
+      };
+      
+      for (const [keyword, canonical] of Object.entries(keywords)) {
+        if (scenario.includes(keyword)) {
+          return canonical;
+        }
+      }
+      
+      console.log(`Unable to normalize scenario: "${rawScenario}"`);
+      return null;
+    };
 
     const rawScenario = lieActive.scenario;
     const rawCenter = lieActive.center;
     const rawSecurityMatrix = lieActive.security_matrix;
+    const relatedScenarios = lieActive.related_scenarios || [];
 
     // Sanitize center: must be one of the 3 valid values
     const lieCenter = (rawCenter && VALID_CENTERS.includes(rawCenter.toUpperCase())) 
@@ -727,14 +858,19 @@ Analise este turno e extraia os insights estruturados.`;
       ? rawSecurityMatrix.toUpperCase() 
       : null;
 
-    // Sanitize scenario: allow any non-empty string (tagging livre)
-    // Only reject empty strings, "N/A", null, or undefined
-    const lieScenario = (rawScenario && 
-      typeof rawScenario === 'string' && 
-      rawScenario.trim() !== '' && 
-      rawScenario.toUpperCase() !== 'N/A')
-      ? rawScenario.trim()
-      : null;
+    // Sanitize scenario: normalize to canonical values
+    const lieScenario = normalizeScenario(rawScenario);
+
+    // Sanitize related_scenarios
+    const normalizedRelatedScenarios = Array.isArray(relatedScenarios)
+      ? relatedScenarios.map(s => normalizeScenario(s)).filter(Boolean)
+      : [];
+
+    // Update lie_active with normalized related_scenarios
+    const enrichedLieActive = {
+      ...extractedData.lie_active,
+      related_scenarios: normalizedRelatedScenarios,
+    };
 
     // Update record with extracted data
     const { error: updateError } = await supabase
@@ -746,7 +882,7 @@ Analise este turno e extraia os insights estruturados.`;
         emotion_intensity: extractedData.emotion_intensity,
         emotion_stability: extractedData.emotion_stability,
         zion_cycle: extractedData.zion_cycle || {},
-        lie_active: extractedData.lie_active || {},
+        lie_active: enrichedLieActive,
         truth_target: extractedData.truth_target || {},
         shift_detected: extractedData.shift_detected || false,
         shift_description: extractedData.shift_description,
