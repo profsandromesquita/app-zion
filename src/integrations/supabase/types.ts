@@ -208,6 +208,117 @@ export type Database = {
           },
         ]
       }
+      church_members: {
+        Row: {
+          added_by: string | null
+          church_id: string
+          created_at: string | null
+          id: string
+          joined_at: string | null
+          member_role: string
+          status: string | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          added_by?: string | null
+          church_id: string
+          created_at?: string | null
+          id?: string
+          joined_at?: string | null
+          member_role?: string
+          status?: string | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          added_by?: string | null
+          church_id?: string
+          created_at?: string | null
+          id?: string
+          joined_at?: string | null
+          member_role?: string
+          status?: string | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "church_members_added_by_fkey"
+            columns: ["added_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "church_members_church_id_fkey"
+            columns: ["church_id"]
+            isOneToOne: false
+            referencedRelation: "churches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "church_members_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      churches: {
+        Row: {
+          address: string | null
+          city: string | null
+          created_at: string | null
+          email: string | null
+          id: string
+          is_active: boolean | null
+          name: string
+          pastor_id: string | null
+          phone: string | null
+          state: string | null
+          updated_at: string | null
+          website: string | null
+        }
+        Insert: {
+          address?: string | null
+          city?: string | null
+          created_at?: string | null
+          email?: string | null
+          id?: string
+          is_active?: boolean | null
+          name: string
+          pastor_id?: string | null
+          phone?: string | null
+          state?: string | null
+          updated_at?: string | null
+          website?: string | null
+        }
+        Update: {
+          address?: string | null
+          city?: string | null
+          created_at?: string | null
+          email?: string | null
+          id?: string
+          is_active?: boolean | null
+          name?: string
+          pastor_id?: string | null
+          phone?: string | null
+          state?: string | null
+          updated_at?: string | null
+          website?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "churches_pastor_id_fkey"
+            columns: ["pastor_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       crisis_events: {
         Row: {
           admin_notified: boolean | null
@@ -710,29 +821,98 @@ export type Database = {
           },
         ]
       }
+      professional_credentials: {
+        Row: {
+          created_at: string | null
+          documents_url: string[] | null
+          id: string
+          license_number: string
+          license_state: string
+          profession: string
+          updated_at: string | null
+          user_id: string
+          verified: boolean | null
+          verified_at: string | null
+          verified_by: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          documents_url?: string[] | null
+          id?: string
+          license_number: string
+          license_state: string
+          profession: string
+          updated_at?: string | null
+          user_id: string
+          verified?: boolean | null
+          verified_at?: string | null
+          verified_by?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          documents_url?: string[] | null
+          id?: string
+          license_number?: string
+          license_state?: string
+          profession?: string
+          updated_at?: string | null
+          user_id?: string
+          verified?: boolean | null
+          verified_at?: string | null
+          verified_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "professional_credentials_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "professional_credentials_verified_by_fkey"
+            columns: ["verified_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
+          avatar_url: string | null
+          bio: string | null
           created_at: string
           email: string | null
           grammar_gender: string | null
           id: string
+          is_public_profile: boolean | null
           nome: string | null
+          phone: string | null
           updated_at: string
         }
         Insert: {
+          avatar_url?: string | null
+          bio?: string | null
           created_at?: string
           email?: string | null
           grammar_gender?: string | null
           id: string
+          is_public_profile?: boolean | null
           nome?: string | null
+          phone?: string | null
           updated_at?: string
         }
         Update: {
+          avatar_url?: string | null
+          bio?: string | null
           created_at?: string
           email?: string | null
           grammar_gender?: string | null
           id?: string
+          is_public_profile?: boolean | null
           nome?: string | null
+          phone?: string | null
           updated_at?: string
         }
         Relationships: []
@@ -793,6 +973,74 @@ export type Database = {
             columns: ["session_id"]
             isOneToOne: false
             referencedRelation: "chat_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      soldado_assignments: {
+        Row: {
+          assigned_at: string | null
+          assigned_by: string | null
+          buscador_id: string
+          church_id: string | null
+          created_at: string | null
+          id: string
+          notes: string | null
+          soldado_id: string
+          status: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          assigned_at?: string | null
+          assigned_by?: string | null
+          buscador_id: string
+          church_id?: string | null
+          created_at?: string | null
+          id?: string
+          notes?: string | null
+          soldado_id: string
+          status?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          assigned_at?: string | null
+          assigned_by?: string | null
+          buscador_id?: string
+          church_id?: string | null
+          created_at?: string | null
+          id?: string
+          notes?: string | null
+          soldado_id?: string
+          status?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "soldado_assignments_assigned_by_fkey"
+            columns: ["assigned_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "soldado_assignments_buscador_id_fkey"
+            columns: ["buscador_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "soldado_assignments_church_id_fkey"
+            columns: ["church_id"]
+            isOneToOne: false
+            referencedRelation: "churches"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "soldado_assignments_soldado_id_fkey"
+            columns: ["soldado_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
         ]
@@ -1149,11 +1397,28 @@ export type Database = {
     }
     Functions: {
       calculate_content_hash: { Args: { content: string }; Returns: string }
+      can_accept_assignment: { Args: { _soldado_id: string }; Returns: boolean }
+      count_active_assignments: {
+        Args: { _soldado_id: string }
+        Returns: number
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
           _user_id: string
         }
+        Returns: boolean
+      }
+      is_church_member_of: {
+        Args: { _member_id: string; _user_id: string }
+        Returns: boolean
+      }
+      is_pastor_of_church: {
+        Args: { _church_id: string; _user_id: string }
+        Returns: boolean
+      }
+      is_soldado_of: {
+        Args: { _buscador_id: string; _soldado_id: string }
         Returns: boolean
       }
       search_chunks: {
@@ -1178,7 +1443,15 @@ export type Database = {
       }
     }
     Enums: {
-      app_role: "admin" | "soldado" | "buscador"
+      app_role:
+        | "admin"
+        | "soldado"
+        | "buscador"
+        | "pastor"
+        | "igreja"
+        | "profissional"
+        | "auditor"
+        | "desenvolvedor"
       dataset_label: "useful" | "not_useful" | "theology_report"
       doc_layer: "CONSTITUICAO" | "NUCLEO" | "BIBLIOTECA"
       doc_status: "draft" | "review" | "published"
@@ -1327,7 +1600,16 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "soldado", "buscador"],
+      app_role: [
+        "admin",
+        "soldado",
+        "buscador",
+        "pastor",
+        "igreja",
+        "profissional",
+        "auditor",
+        "desenvolvedor",
+      ],
       dataset_label: ["useful", "not_useful", "theology_report"],
       doc_layer: ["CONSTITUICAO", "NUCLEO", "BIBLIOTECA"],
       doc_status: ["draft", "review", "published"],
