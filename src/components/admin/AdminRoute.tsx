@@ -7,15 +7,19 @@ interface AdminRouteProps {
   children: React.ReactNode;
 }
 
+/**
+ * Rota protegida para administradores e desenvolvedores.
+ * Usa o hook useUserRole para verificar permissões de acesso total ao admin.
+ */
 const AdminRoute = ({ children }: AdminRouteProps) => {
-  const { isAdmin, loading } = useUserRole();
+  const { canAccessFullAdmin, loading } = useUserRole();
   const navigate = useNavigate();
 
   useEffect(() => {
-    if (!loading && !isAdmin) {
+    if (!loading && !canAccessFullAdmin) {
       navigate("/");
     }
-  }, [isAdmin, loading, navigate]);
+  }, [canAccessFullAdmin, loading, navigate]);
 
   if (loading) {
     return (
@@ -25,7 +29,7 @@ const AdminRoute = ({ children }: AdminRouteProps) => {
     );
   }
 
-  if (!isAdmin) {
+  if (!canAccessFullAdmin) {
     return null;
   }
 
