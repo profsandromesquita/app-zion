@@ -1,498 +1,651 @@
 
-# Plano de Implementação: Padronização de Cenários Individuais
+# Relatório Completo: Arquitetura de Usuários da Plataforma ZION
 
-## Resumo Executivo
+## Sumário Executivo
 
-Este plano implementa a padronização de cenários do Observer para usar uma **lista canônica fixa de 12 cenários**, eliminando a fragmentação causada pelo "tagging livre" e aumentando a precisão na detecção da raiz da dor.
+Este relatório documenta o estado atual do sistema de roles/perfis da plataforma ZION e propõe uma nova arquitetura para implementar os 8 tipos de usuários solicitados.
 
-## Problema Atual (Evidência nos Dados)
+---
 
-```text
-CENÁRIOS FRAGMENTADOS (dados reais da query):
-─────────────────────────────────────────────
-Vida Social                      → 24 ocorrências ✓
-Carreira                         → 19 ocorrências ✓
-Família                          →  5 ocorrências ✓
-Casamento                        →  4 ocorrências ✓
-Ministério                       →  4 ocorrências ✓
-Autoestima                       →  3 ocorrências ⚠️
-Luto                             →  2 ocorrências ✓
-Autoimagem                       →  2 ocorrências ⚠️
-Paternidade                      →  2 ocorrências ✓
-─────────────────────────────────────────────
-FRAGMENTAÇÕES (compostos/variações):
-─────────────────────────────────────────────
-"Casamento, Carreira"            →  1 ❌
-"Relacionamento (casamento), Vida Social" → 1 ❌
-"Vida Pessoal / Propósito / Carreira"     → 1 ❌
-"Acadêmica, Identidade Pessoal, Vida Social" → 1 ❌
-"Geral/Existencial"              →  1 ❌
-"Saúde/Mental"                   →  1 ❌
-[+15 outras variações]
+## PARTE 1: DIAGNÓSTICO DO ESTADO ATUAL
+
+### 1.1 Estrutura de Roles Atual
+
+#### Enum `app_role` existente no banco:
+```sql
+CREATE TYPE public.app_role AS ENUM ('admin', 'soldado', 'buscador');
 ```
 
-**Impacto:** 19 variações únicas para ~12 cenários reais = ~60% de fragmentação
+#### Tabela `user_roles` (funcional):
+| Coluna | Tipo | Descrição |
+|--------|------|-----------|
+| id | uuid | PK |
+| user_id | uuid | FK para auth.users |
+| role | app_role | Enum de roles |
+| created_at | timestamp | Data de criação |
 
-## Lista Canônica Proposta
+#### RLS Policies atuais em `user_roles`:
+- `Users can view their own roles` - SELECT apenas para o próprio usuário
 
-Baseada em: dados reais + metodologia ZION + onboarding
+#### Distribuição atual de roles:
+| Role | Quantidade |
+|------|------------|
+| buscador | 7 |
+| admin | 2 |
+| soldado | 0 (definido mas sem uso) |
 
+---
+
+### 1.2 Tabelas de Perfil Existentes
+
+#### Tabela `profiles` (dados básicos):
 ```text
-┌──────────────────────────────────────────────────────────────────────┐
-│                    CENÁRIOS CANÔNICOS (12)                           │
-├──────────────────────────────────────────────────────────────────────┤
-│  CASAMENTO      │ Conflitos conjugais, intimidade, expectativas      │
-│  CARREIRA       │ Trabalho, performance, propósito profissional      │
-│  FAMILIA        │ Relações familiares gerais (pais, irmãos)          │
-│  VIDA_SOCIAL    │ Amizades, aceitação social, pertencimento          │
-│  AUTOESTIMA     │ Valor próprio, autoimagem, identidade pessoal      │
-│  SAUDE          │ Física e mental, ansiedade, depressão              │
-│  FINANCAS       │ Dinheiro, provisão, segurança material             │
-│  MINISTERIO     │ Servir, liderança espiritual, igreja               │
-│  LUTO           │ Perdas, morte, separações                          │
-│  SEXUALIDADE    │ Identidade sexual, pornografia, pureza             │
-│  PATERNIDADE    │ Ser pai, relação com filhos (homens)               │
-│  MATERNIDADE    │ Ser mãe, relação com filhos (mulheres)             │
-└──────────────────────────────────────────────────────────────────────┘
+├── id (uuid, PK, FK auth.users)
+├── email (text)
+├── nome (text)
+├── grammar_gender (text) - M/F/N
+├── created_at (timestamp)
+└── updated_at (timestamp)
 ```
 
-## Arquitetura da Solução
-
+#### Tabela `user_profiles` (dados de jornada espiritual):
 ```text
-┌──────────────────────────────────────────────────────────────────────┐
-│                         FLUXO ATUALIZADO                             │
-├──────────────────────────────────────────────────────────────────────┤
-│                                                                      │
-│  1. OBSERVER PROMPT (turn-insight-observer)                          │
-│     └── Instrui LLM a escolher de ENUM fixo (12 opções)              │
-│     └── Remove "tagging livre"                                       │
-│     └── Adiciona campo "related_scenarios" (array) para contextos    │
-│                                                                      │
-│  2. TOOL SCHEMA                                                      │
-│     └── scenario: enum com 12 valores                                │
-│     └── related_scenarios: array opcional                            │
-│                                                                      │
-│  3. SANITIZAÇÃO                                                      │
-│     └── Valida contra lista canônica                                 │
-│     └── Extrai cenário primário de strings compostas                 │
-│     └── Preserva cenários relacionados em JSON                       │
-│                                                                      │
-│  4. AGGREGATOR (aggregate-user-journey)                              │
-│     └── Usa apenas cenário primário para criar/atualizar temas       │
-│     └── Evita fragmentação                                           │
-│                                                                      │
-│  5. MIGRAÇÃO DE DADOS                                                │
-│     └── Script de normalização para dados existentes                 │
-│     └── Mapeia variações para cenários canônicos                     │
-│                                                                      │
-└──────────────────────────────────────────────────────────────────────┘
+├── id (uuid, PK, FK auth.users)
+├── perfil_disc (text)
+├── eneagrama (text)
+├── centros (jsonb)
+├── dom_original (text)
+├── virtude_hiperdesenvolvida (text)
+├── seguranca_quebrada_primaria (text)
+├── medo_raiz_dominante (text)
+├── mecanismo_defesa_padrao (text)
+├── fase_jornada (text) - 'inicio'
+├── primary_center (text)
+├── primary_security_matrix (text)
+├── active_themes_count (integer)
+├── total_shifts (integer)
+├── global_avg_score (real)
+├── spiritual_maturity (text)
+├── initial_pain_focus (text[])
+├── onboarding_completed_at (timestamp)
+├── created_at (timestamp)
+└── updated_at (timestamp)
 ```
 
-## Detalhes Técnicos
+---
 
-### Arquivo 1: `supabase/functions/turn-insight-observer/index.ts`
+### 1.3 Funcionalidades de Controle de Acesso Atuais
 
-#### Mudança 1.1: Atualizar OBSERVER_SYSTEM_PROMPT (linhas ~94-96)
-
-**DE:**
-```text
-### CENÁRIO (Onde dói) - Tagging Livre:
-Casamento, Carreira, Paternidade, Maternidade, Sexualidade, Vida Social, 
-Saúde, Família, Ministério, Finanças, Vício, Propósito, Luto, etc.
-```
-
-**PARA:**
-```text
-### CENÁRIO (Onde dói) - OBRIGATÓRIO escolher UM da lista:
-- CASAMENTO: Conflitos conjugais, intimidade, expectativas do parceiro
-- CARREIRA: Trabalho, performance, propósito profissional, acadêmico
-- FAMILIA: Relações familiares gerais (pais, irmãos, família de origem)
-- VIDA_SOCIAL: Amizades, aceitação social, pertencimento, rejeição
-- AUTOESTIMA: Valor próprio, autoimagem, identidade pessoal
-- SAUDE: Saúde física e mental, ansiedade, depressão, vícios
-- FINANCAS: Dinheiro, provisão, segurança material
-- MINISTERIO: Servir a Deus, liderança espiritual, igreja
-- LUTO: Perdas, morte de entes, separações, término
-- SEXUALIDADE: Identidade sexual, pornografia, pureza
-- PATERNIDADE: Ser pai, relação com filhos (perspectiva masculina)
-- MATERNIDADE: Ser mãe, relação com filhos (perspectiva feminina)
-
-REGRA: Escolha o cenário PRINCIPAL. Se múltiplos contextos estão presentes,
-liste os secundários em "related_scenarios" (array).
-Exemplo: Usuário fala de problema no casamento que afeta trabalho
-→ scenario: "CASAMENTO", related_scenarios: ["CARREIRA"]
-```
-
-#### Mudança 1.2: Atualizar EXTRACTION_TOOL schema (linhas ~228-241)
-
-**DE:**
+#### Hook `useUserRole.ts`:
 ```typescript
-scenario: { 
-  type: "string",
-  description: "Cenário onde dói (tagging livre): Casamento, Carreira, ..."
-},
+// Retorna flags para 3 roles
+return { isAdmin, isSoldado, isBuscador, loading };
 ```
 
-**PARA:**
-```typescript
-scenario: { 
-  type: "string", 
-  enum: ["CASAMENTO", "CARREIRA", "FAMILIA", "VIDA_SOCIAL", "AUTOESTIMA", 
-         "SAUDE", "FINANCAS", "MINISTERIO", "LUTO", "SEXUALIDADE", 
-         "PATERNIDADE", "MATERNIDADE"],
-  description: "Cenário PRINCIPAL onde a dor se manifesta"
-},
-related_scenarios: {
-  type: "array",
-  items: { 
-    type: "string",
-    enum: ["CASAMENTO", "CARREIRA", "FAMILIA", "VIDA_SOCIAL", "AUTOESTIMA", 
-           "SAUDE", "FINANCAS", "MINISTERIO", "LUTO", "SEXUALIDADE", 
-           "PATERNIDADE", "MATERNIDADE"]
-  },
-  description: "Cenários secundários afetados (opcional)"
-},
+#### Componente `AdminRoute.tsx`:
+- Verifica apenas `isAdmin`
+- Redireciona não-admins para `/`
+- **Problema**: Não há rotas intermediárias (ex: Soldado que vê apenas seus usuários)
+
+#### Trigger `handle_new_user`:
+```sql
+-- Ao criar novo usuário:
+INSERT INTO profiles (id, email, nome) VALUES ...
+INSERT INTO user_roles (user_id, role) VALUES (NEW.id, 'buscador');
+-- TODO: Falta criar user_profiles!
 ```
 
-#### Mudança 1.3: Atualizar JSON_SCHEMA_INSTRUCTIONS (linhas ~350+)
+---
 
-Adicionar o enum de scenario e o campo related_scenarios no schema JSON de fallback.
+### 1.4 Funcionalidades Mortas ou Incompletas Identificadas
 
-#### Mudança 1.4: Atualizar Sanitização (linhas ~702-737)
+| Funcionalidade | Status | Problema |
+|---------------|--------|----------|
+| Role `soldado` | DEFINIDO MAS SEM USO | Enum existe, nenhum usuário tem, nenhuma rota usa |
+| Intent SOLDADO | MORTO | `intent-router` define intents SOLDADO mas nunca são acessíveis |
+| MATCHMAKING | MORTO | Intent para conectar buscadores a soldados, sem implementação |
+| Trigger handle_new_user | INCOMPLETO | Cria `profiles` mas não cria `user_profiles` |
+| Relação soldado-buscador | INEXISTENTE | Não há tabela de acompanhamento |
 
-**ADICIONAR constante VALID_SCENARIOS:**
-```typescript
-// Cenários canônicos ZION - Lista fixa de 12 opções
-const VALID_SCENARIOS = [
-  'CASAMENTO', 'CARREIRA', 'FAMILIA', 'VIDA_SOCIAL', 'AUTOESTIMA',
-  'SAUDE', 'FINANCAS', 'MINISTERIO', 'LUTO', 'SEXUALIDADE',
-  'PATERNIDADE', 'MATERNIDADE'
-];
+---
 
-// Mapeamento de variações comuns para cenários canônicos
-const SCENARIO_ALIASES: Record<string, string> = {
-  'RELACIONAMENTO': 'CASAMENTO',
-  'RELACIONAMENTOS': 'VIDA_SOCIAL',
-  'TRABALHO': 'CARREIRA',
-  'PROFISSIONAL': 'CARREIRA',
-  'ACADÊMICA': 'CARREIRA',
-  'ACADEMICA': 'CARREIRA',
-  'AUTOIMAGEM': 'AUTOESTIMA',
-  'IDENTIDADE': 'AUTOESTIMA',
-  'PROPÓSITO': 'CARREIRA',
-  'PROPOSITO': 'CARREIRA',
-  'VÍCIO': 'SAUDE',
-  'VICIO': 'SAUDE',
-  'ANSIEDADE': 'SAUDE',
-  'DEPRESSÃO': 'SAUDE',
-  'DEPRESSAO': 'SAUDE',
-  'MENTAL': 'SAUDE',
-  'FÍSICA': 'SAUDE',
-  'FISICA': 'SAUDE',
-  'FILHOS': 'PATERNIDADE', // ou MATERNIDADE baseado em contexto
-  'EXISTENCIAL': 'AUTOESTIMA',
-  'GERAL': 'AUTOESTIMA',
-};
+### 1.5 Fluxo de Dados de Jornada Atual
+
+```text
+┌─────────────────────────────────────────────────────────────────┐
+│                    FLUXO ATUAL DE DADOS                         │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  chat_sessions ──► chat_messages ──► turn_insights              │
+│       │                                    │                    │
+│       └────────────────────────────────────┘                    │
+│                         │                                       │
+│                         ▼                                       │
+│                   user_themes                                   │
+│                         │                                       │
+│                         ▼                                       │
+│               user_profiles (agregados)                         │
+│                                                                 │
+│  ACESSO ATUAL:                                                  │
+│  - Admin vê TUDO                                                │
+│  - Buscador vê apenas PRÓPRIOS dados                            │
+│  - Soldado não tem acesso diferenciado (não implementado)       │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-**ATUALIZAR lógica de sanitização:**
+---
+
+## PARTE 2: ARQUITETURA PROPOSTA PARA NOVOS PERFIS
+
+### 2.1 Matriz de Perfis e Permissões
+
+| Perfil | Chat IA | Mapa Jornada | Dataset Feedback | Admin Panel | Gerenciar Membros |
+|--------|---------|--------------|------------------|-------------|-------------------|
+| **Buscador** | ✅ Próprio | ❌ | ❌ | ❌ | ❌ |
+| **Soldado** | ✅ Próprio | ✅ Seus acompanhados (max 10) | ❌ | ❌ | ❌ |
+| **Pastor** | ✅ Próprio | ✅ Membros da igreja | ❌ | ❌ | ❌ |
+| **Igreja** | ❌ | ❌ | ❌ | ❌ | ✅ Próprios membros |
+| **Profissional** | ✅ Próprio | ✅ Todos | ✅ | ❌ | ❌ |
+| **Auditor** | ❌ | ✅ Todos (anonimizado) | ✅ Todos | ✅ (sem PII) | ❌ |
+| **Desenvolvedor** | ✅ | ✅ Todos | ✅ Todos | ✅ Total | ✅ Total |
+| **Admin** | ✅ | ✅ Todos | ✅ Todos | ✅ Total | ✅ Total |
+
+---
+
+### 2.2 Novo Enum de Roles Proposto
+
+```sql
+CREATE TYPE public.app_role AS ENUM (
+  'buscador',       -- Usuário padrão buscando metanoia
+  'soldado',        -- Intercessor que acompanha buscadores
+  'pastor',         -- Líder espiritual de uma igreja
+  'igreja',         -- Entidade institucional (ponto de apoio)
+  'profissional',   -- Psicólogo/Psiquiatra
+  'auditor',        -- Auditor do modelo (sem PII)
+  'desenvolvedor',  -- Acesso total técnico
+  'admin'           -- Acesso total administrativo
+);
+```
+
+---
+
+### 2.3 Novas Tabelas Necessárias
+
+#### 2.3.1 Tabela `churches` (Igrejas)
+```sql
+CREATE TABLE public.churches (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  name text NOT NULL,
+  address text,
+  city text,
+  state text,
+  phone text,
+  email text,
+  website text,
+  pastor_id uuid REFERENCES profiles(id), -- Pastor responsável
+  is_active boolean DEFAULT true,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+```
+
+#### 2.3.2 Tabela `church_members` (Vinculação igreja-membro)
+```sql
+CREATE TABLE public.church_members (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  church_id uuid NOT NULL REFERENCES churches(id) ON DELETE CASCADE,
+  user_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  role app_role NOT NULL, -- buscador, soldado, pastor
+  joined_at timestamptz DEFAULT now(),
+  status text DEFAULT 'active', -- active, inactive, pending
+  added_by uuid REFERENCES profiles(id),
+  UNIQUE(church_id, user_id)
+);
+```
+
+#### 2.3.3 Tabela `soldado_assignments` (Acompanhamento soldado-buscador)
+```sql
+CREATE TABLE public.soldado_assignments (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  soldado_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  buscador_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+  church_id uuid REFERENCES churches(id), -- Opcional, se for da mesma igreja
+  status text DEFAULT 'active', -- active, paused, completed
+  assigned_at timestamptz DEFAULT now(),
+  assigned_by uuid REFERENCES profiles(id),
+  notes text,
+  UNIQUE(soldado_id, buscador_id),
+  -- Constraint: soldado pode ter max 10 ativos
+  CONSTRAINT max_assignments CHECK (
+    (SELECT COUNT(*) FROM soldado_assignments sa 
+     WHERE sa.soldado_id = soldado_id AND sa.status = 'active') <= 10
+  )
+);
+```
+
+#### 2.3.4 Tabela `professional_credentials` (Credenciais de profissionais)
+```sql
+CREATE TABLE public.professional_credentials (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE UNIQUE,
+  profession text NOT NULL, -- 'psicologo', 'psiquiatra', 'terapeuta'
+  license_number text NOT NULL,
+  license_state text NOT NULL,
+  verified boolean DEFAULT false,
+  verified_at timestamptz,
+  verified_by uuid REFERENCES profiles(id),
+  documents_url text[], -- URLs de documentos comprobatórios
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
+```
+
+---
+
+### 2.4 Alterações nas Tabelas Existentes
+
+#### 2.4.1 Tabela `profiles` (adicionar campos)
+```sql
+ALTER TABLE profiles ADD COLUMN phone text;
+ALTER TABLE profiles ADD COLUMN avatar_url text;
+ALTER TABLE profiles ADD COLUMN bio text;
+ALTER TABLE profiles ADD COLUMN is_public_profile boolean DEFAULT false;
+```
+
+#### 2.4.2 Trigger `handle_new_user` (corrigir)
+```sql
+CREATE OR REPLACE FUNCTION public.handle_new_user()
+RETURNS trigger
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  -- Criar perfil básico
+  INSERT INTO public.profiles (id, email, nome)
+  VALUES (NEW.id, NEW.email, NEW.raw_user_meta_data ->> 'nome');
+  
+  -- Criar perfil de jornada (NOVO)
+  INSERT INTO public.user_profiles (id)
+  VALUES (NEW.id);
+  
+  -- Atribuir role padrão
+  INSERT INTO public.user_roles (user_id, role)
+  VALUES (NEW.id, 'buscador');
+  
+  RETURN NEW;
+END;
+$$;
+```
+
+---
+
+### 2.5 Funções de Verificação de Acesso (Security Definer)
+
+#### 2.5.1 Função `has_role` (já existe, manter)
+```sql
+-- Já implementada corretamente
+```
+
+#### 2.5.2 Nova função `is_soldado_of`
+```sql
+CREATE OR REPLACE FUNCTION public.is_soldado_of(_soldado_id uuid, _buscador_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM soldado_assignments
+    WHERE soldado_id = _soldado_id
+      AND buscador_id = _buscador_id
+      AND status = 'active'
+  )
+$$;
+```
+
+#### 2.5.3 Nova função `is_pastor_of_church`
+```sql
+CREATE OR REPLACE FUNCTION public.is_pastor_of_church(_user_id uuid, _church_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM churches
+    WHERE id = _church_id
+      AND pastor_id = _user_id
+  )
+$$;
+```
+
+#### 2.5.4 Nova função `is_church_member_of`
+```sql
+CREATE OR REPLACE FUNCTION public.is_church_member_of(_user_id uuid, _member_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM church_members cm1
+    JOIN church_members cm2 ON cm1.church_id = cm2.church_id
+    WHERE cm1.user_id = _user_id
+      AND cm2.user_id = _member_id
+      AND cm1.status = 'active'
+      AND cm2.status = 'active'
+  )
+$$;
+```
+
+#### 2.5.5 Nova função `can_view_journey`
+```sql
+CREATE OR REPLACE FUNCTION public.can_view_journey(_viewer_id uuid, _target_id uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE SECURITY DEFINER
+SET search_path = public
+AS $$
+  SELECT 
+    -- Próprio usuário
+    _viewer_id = _target_id
+    -- Admin/Dev vê tudo
+    OR has_role(_viewer_id, 'admin')
+    OR has_role(_viewer_id, 'desenvolvedor')
+    -- Profissional vê tudo
+    OR has_role(_viewer_id, 'profissional')
+    -- Auditor vê tudo (dados serão anonimizados na camada de aplicação)
+    OR has_role(_viewer_id, 'auditor')
+    -- Soldado vê seus acompanhados
+    OR (has_role(_viewer_id, 'soldado') AND is_soldado_of(_viewer_id, _target_id))
+    -- Pastor vê membros da sua igreja
+    OR (has_role(_viewer_id, 'pastor') AND is_church_member_of(_viewer_id, _target_id))
+$$;
+```
+
+---
+
+### 2.6 Políticas RLS Atualizadas
+
+#### 2.6.1 Tabela `user_themes`
+```sql
+-- Remover política antiga
+DROP POLICY IF EXISTS "Users can view own themes" ON user_themes;
+
+-- Nova política com hierarquia
+CREATE POLICY "Users can view accessible themes" ON user_themes
+FOR SELECT USING (
+  can_view_journey(auth.uid(), user_id)
+);
+```
+
+#### 2.6.2 Tabela `turn_insights`
+```sql
+-- Adicionar política para visualização por soldados/pastores
+CREATE POLICY "Role-based access to insights" ON turn_insights
+FOR SELECT USING (
+  has_role(auth.uid(), 'admin')
+  OR has_role(auth.uid(), 'desenvolvedor')
+  OR has_role(auth.uid(), 'profissional')
+  OR has_role(auth.uid(), 'auditor')
+  -- Soldados/Pastores precisam de join com sessions
+);
+```
+
+#### 2.6.3 Tabela `churches`
+```sql
+ALTER TABLE churches ENABLE ROW LEVEL SECURITY;
+
+-- Igrejas podem ver próprios dados
+CREATE POLICY "Churches can view own data" ON churches
+FOR SELECT USING (
+  has_role(auth.uid(), 'admin')
+  OR has_role(auth.uid(), 'desenvolvedor')
+  OR EXISTS (
+    SELECT 1 FROM church_members 
+    WHERE church_id = churches.id 
+    AND user_id = auth.uid()
+  )
+  OR pastor_id = auth.uid()
+);
+
+-- Apenas admin/igreja pode editar
+CREATE POLICY "Churches can update own data" ON churches
+FOR UPDATE USING (
+  has_role(auth.uid(), 'admin')
+  OR has_role(auth.uid(), 'desenvolvedor')
+  OR EXISTS (
+    SELECT 1 FROM user_roles ur
+    JOIN church_members cm ON cm.user_id = auth.uid()
+    WHERE cm.church_id = churches.id
+    AND ur.user_id = auth.uid()
+    AND ur.role = 'igreja'
+  )
+);
+```
+
+---
+
+### 2.7 Alterações no Frontend
+
+#### 2.7.1 Hook `useUserRole.ts` (expandido)
 ```typescript
-// Função para normalizar cenário
-function normalizeScenario(rawScenario: string | undefined): string | null {
-  if (!rawScenario || typeof rawScenario !== 'string') return null;
+export const useUserRole = () => {
+  // ... código existente ...
   
-  // Limpar e uppercase
-  let scenario = rawScenario.trim().toUpperCase().replace(/[_\-\s]+/g, '_');
-  
-  // Se já é válido, retornar
-  if (VALID_SCENARIOS.includes(scenario)) {
-    return scenario;
-  }
-  
-  // Tentar alias direto
-  if (SCENARIO_ALIASES[scenario]) {
-    return SCENARIO_ALIASES[scenario];
-  }
-  
-  // Se é composto (contém vírgula, barra, etc.), extrair primeiro
-  const separators = /[,\/\|]+/;
-  if (separators.test(rawScenario)) {
-    const parts = rawScenario.split(separators).map(p => p.trim().toUpperCase().replace(/[_\-\s]+/g, '_'));
-    for (const part of parts) {
-      if (VALID_SCENARIOS.includes(part)) {
-        return part;
-      }
-      if (SCENARIO_ALIASES[part]) {
-        return SCENARIO_ALIASES[part];
-      }
-    }
-  }
-  
-  // Busca parcial em VALID_SCENARIOS
-  for (const valid of VALID_SCENARIOS) {
-    if (scenario.includes(valid) || valid.includes(scenario)) {
-      return valid;
-    }
-  }
-  
-  // Fallback: se contém palavras-chave
-  const keywords: Record<string, string> = {
-    'CASAMENT': 'CASAMENTO',
-    'CARREIR': 'CARREIRA',
-    'TRABALH': 'CARREIRA',
-    'FAMILI': 'FAMILIA',
-    'SOCIAL': 'VIDA_SOCIAL',
-    'AMIZAD': 'VIDA_SOCIAL',
-    'AUTOESTIM': 'AUTOESTIMA',
-    'IMAGEM': 'AUTOESTIMA',
-    'SAUD': 'SAUDE',
-    'MENTAL': 'SAUDE',
-    'FINANC': 'FINANCAS',
-    'DINHEIR': 'FINANCAS',
-    'MINISTER': 'MINISTERIO',
-    'IGREJA': 'MINISTERIO',
-    'LUTO': 'LUTO',
-    'MORT': 'LUTO',
-    'SEXUAL': 'SEXUALIDADE',
-    'PATERN': 'PATERNIDADE',
-    'MATERN': 'MATERNIDADE',
+  const [isPastor, setIsPastor] = useState(false);
+  const [isIgreja, setIsIgreja] = useState(false);
+  const [isProfissional, setIsProfissional] = useState(false);
+  const [isAuditor, setIsAuditor] = useState(false);
+  const [isDesenvolvedor, setIsDesenvolvedor] = useState(false);
+
+  // Na função checkRoles:
+  setIsAdmin(roleList.includes("admin"));
+  setIsSoldado(roleList.includes("soldado"));
+  setIsBuscador(roleList.includes("buscador"));
+  setIsPastor(roleList.includes("pastor"));
+  setIsIgreja(roleList.includes("igreja"));
+  setIsProfissional(roleList.includes("profissional"));
+  setIsAuditor(roleList.includes("auditor"));
+  setIsDesenvolvedor(roleList.includes("desenvolvedor"));
+
+  // Helpers
+  const canAccessChat = isAdmin || isDesenvolvedor || isSoldado || isPastor || 
+                        isBuscador || isProfissional;
+  const canViewJourneyMap = isAdmin || isDesenvolvedor || isSoldado || isPastor || 
+                           isProfissional || isAuditor;
+  const canViewFeedbackDataset = isAdmin || isDesenvolvedor || isProfissional || isAuditor;
+  const canManageMembers = isAdmin || isDesenvolvedor || isIgreja;
+  const canAccessFullAdmin = isAdmin || isDesenvolvedor;
+
+  return {
+    isAdmin, isSoldado, isBuscador, isPastor, isIgreja,
+    isProfissional, isAuditor, isDesenvolvedor,
+    canAccessChat, canViewJourneyMap, canViewFeedbackDataset,
+    canManageMembers, canAccessFullAdmin,
+    loading
   };
-  
-  for (const [keyword, canonical] of Object.entries(keywords)) {
-    if (scenario.includes(keyword)) {
-      return canonical;
-    }
-  }
-  
-  console.log(`Unable to normalize scenario: "${rawScenario}"`);
-  return null;
+};
+```
+
+#### 2.7.2 Novos Componentes de Rota
+```typescript
+// RoleRoute.tsx - Genérico
+interface RoleRouteProps {
+  children: React.ReactNode;
+  allowedRoles: string[];
+  redirectTo?: string;
 }
 
-// Aplicar na sanitização
-const lieScenario = normalizeScenario(rawScenario);
+// SoldadoRoute.tsx - Específico para soldados
+// PastorRoute.tsx - Específico para pastores
+// ProfissionalRoute.tsx - Específico para profissionais
+// AuditorRoute.tsx - Específico para auditores (dados anonimizados)
 ```
 
-#### Mudança 1.5: Salvar related_scenarios no lie_active JSON
-
-Ao atualizar o registro, incluir related_scenarios extraídos (se houver):
-```typescript
-lie_active: {
-  ...extractedData.lie_active,
-  related_scenarios: extractedData.lie_active?.related_scenarios || []
-},
+#### 2.7.3 Novas Páginas Necessárias
+```text
+src/pages/
+├── soldado/
+│   ├── Dashboard.tsx        -- Lista de buscadores acompanhados
+│   └── BuscadorJourney.tsx  -- Mapa de jornada do buscador
+├── pastor/
+│   ├── Dashboard.tsx        -- Visão geral da igreja
+│   └── MembersList.tsx      -- Lista de membros
+├── igreja/
+│   ├── Dashboard.tsx        -- Gestão da igreja
+│   ├── Members.tsx          -- CRUD de membros
+│   └── Events.tsx           -- Eventos e resgates
+├── profissional/
+│   ├── Dashboard.tsx        -- Visão geral
+│   └── JourneyAnalysis.tsx  -- Análise de jornadas
+└── auditor/
+    ├── Dashboard.tsx        -- Métricas do modelo
+    └── AnonymizedData.tsx   -- Dados anonimizados
 ```
 
-### Arquivo 2: `supabase/functions/aggregate-user-journey/index.ts`
+---
 
-#### Mudança 2.1: Garantir que usa cenário normalizado
-
-Não precisa de grandes mudanças - a lógica atual já usa `scenario` diretamente.
-Apenas garantir que o cenário já vem normalizado do Observer.
-
-### Arquivo 3: `supabase/functions/normalize-scenarios/index.ts` (NOVO)
-
-Criar nova Edge Function para normalizar dados existentes:
-
-```typescript
-import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
-import { createClient } from "https://esm.sh/@supabase/supabase-js@2.89.0";
-
-const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
-};
-
-const VALID_SCENARIOS = [
-  'CASAMENTO', 'CARREIRA', 'FAMILIA', 'VIDA_SOCIAL', 'AUTOESTIMA',
-  'SAUDE', 'FINANCAS', 'MINISTERIO', 'LUTO', 'SEXUALIDADE',
-  'PATERNIDADE', 'MATERNIDADE'
-];
-
-const SCENARIO_ALIASES: Record<string, string> = {
-  'RELACIONAMENTO': 'CASAMENTO',
-  'RELACIONAMENTOS': 'VIDA_SOCIAL',
-  // ... (mesma lista do observer)
-};
-
-function normalizeScenario(raw: string): string | null {
-  // ... (mesma função do observer)
-}
-
-serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
-  }
-
-  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
-  const supabaseKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-  const supabase = createClient(supabaseUrl, supabaseKey);
-
-  console.log("=== NORMALIZE SCENARIOS START ===");
-
-  // 1. Buscar todos os turn_insights com lie_scenario não-canônico
-  const { data: insights } = await supabase
-    .from("turn_insights")
-    .select("id, lie_scenario, lie_active")
-    .not("lie_scenario", "is", null)
-    .limit(200);
-
-  let normalized = 0;
-  let unchanged = 0;
-  const mappings: Record<string, string> = {};
-
-  for (const insight of insights || []) {
-    const current = insight.lie_scenario;
-    const canonical = normalizeScenario(current);
-    
-    if (canonical && canonical !== current) {
-      await supabase
-        .from("turn_insights")
-        .update({ lie_scenario: canonical })
-        .eq("id", insight.id);
-      
-      normalized++;
-      mappings[current] = canonical;
-    } else {
-      unchanged++;
-    }
-  }
-
-  // 2. Normalizar user_themes
-  const { data: themes } = await supabase
-    .from("user_themes")
-    .select("id, scenario")
-    .limit(200);
-
-  let themesNormalized = 0;
-
-  for (const theme of themes || []) {
-    const current = theme.scenario;
-    const canonical = normalizeScenario(current);
-    
-    if (canonical && canonical !== current) {
-      await supabase
-        .from("user_themes")
-        .update({ scenario: canonical })
-        .eq("id", theme.id);
-      
-      themesNormalized++;
-    }
-  }
-
-  // 3. Consolidar temas duplicados (mesmo user + cenário normalizado + matriz)
-  // ... (lógica de merge)
-
-  return new Response(
-    JSON.stringify({
-      insights: { normalized, unchanged, mappings },
-      themes: { normalized: themesNormalized },
-    }),
-    { headers: { ...corsHeaders, "Content-Type": "application/json" } }
-  );
-});
-```
-
-### Arquivo 4: `supabase/config.toml`
-
-Adicionar nova função:
-```toml
-[functions.normalize-scenarios]
-verify_jwt = false
-```
-
-### Arquivo 5: `src/components/onboarding/OnboardingFlow.tsx`
-
-#### Mudança 5.1: Alinhar PAIN_TAGS com cenários canônicos (opcional)
-
-Atualmente as tags do onboarding são mais emocionais que cenários.
-Podemos manter como está ou adicionar mapeamento.
-
-## Sequência de Execução
+### 2.8 Fluxo de Cadastro por Tipo de Usuário
 
 ```text
-┌────────────────────────────────────────────────────────────────┐
-│                    ORDEM DE IMPLEMENTAÇÃO                      │
-├────────────────────────────────────────────────────────────────┤
-│                                                                │
-│  FASE 1: Código do Observer                                    │
-│  ──────────────────────────                                    │
-│  1.1 Atualizar OBSERVER_SYSTEM_PROMPT                          │
-│  1.2 Atualizar EXTRACTION_TOOL schema                          │
-│  1.3 Atualizar JSON_SCHEMA_INSTRUCTIONS                        │
-│  1.4 Adicionar VALID_SCENARIOS e normalizeScenario()           │
-│  1.5 Atualizar lógica de sanitização                           │
-│                                                                │
-│  FASE 2: Script de Normalização                                │
-│  ─────────────────────────────                                 │
-│  2.1 Criar normalize-scenarios Edge Function                   │
-│  2.2 Atualizar config.toml                                     │
-│                                                                │
-│  FASE 3: Deploy e Execução                                     │
-│  ─────────────────────────                                     │
-│  3.1 Deploy automático das funções                             │
-│  3.2 Executar normalize-scenarios (pode precisar múltiplas)    │
-│  3.3 Executar resync-taxonomy (para re-agregar)                │
-│                                                                │
-│  FASE 4: Verificação                                           │
-│  ────────────────────                                          │
-│  4.1 Verificar Mapa de Jornada - temas consolidados            │
-│  4.2 Testar novas conversas - cenários sendo extraídos         │
-│                                                                │
-└────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│                    FLUXOS DE CADASTRO                                    │
+├──────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  BUSCADOR (Auto-cadastro):                                               │
+│  ┌────────────────────────────────────────────────────────────────────┐  │
+│  │ 1. Signup normal (/auth)                                           │  │
+│  │ 2. Trigger handle_new_user → role='buscador'                       │  │
+│  │ 3. Onboarding Flow                                                 │  │
+│  │ 4. Acesso ao Chat                                                  │  │
+│  └────────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+│  SOLDADO (Convite por igreja ou promoção):                               │
+│  ┌────────────────────────────────────────────────────────────────────┐  │
+│  │ 1. Buscador existente                                              │  │
+│  │ 2. Igreja/Pastor adiciona role 'soldado'                           │  │
+│  │ 3. Treinamento (fase futura)                                       │  │
+│  │ 4. Atribuição de buscadores (max 10)                               │  │
+│  └────────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+│  PASTOR (Vinculação a igreja):                                           │
+│  ┌────────────────────────────────────────────────────────────────────┐  │
+│  │ 1. Cadastro de Igreja primeiro                                     │  │
+│  │ 2. Admin cria usuário pastor                                       │  │
+│  │ 3. Vincula pastor à igreja (churches.pastor_id)                    │  │
+│  │ 4. Role 'pastor' atribuída                                         │  │
+│  └────────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+│  IGREJA (Cadastro institucional):                                        │
+│  ┌────────────────────────────────────────────────────────────────────┐  │
+│  │ 1. Admin cria registro em 'churches'                               │  │
+│  │ 2. Cria usuário com role 'igreja'                                  │  │
+│  │ 3. Vincula usuário à igreja                                        │  │
+│  │ 4. Acesso ao painel de gestão de membros                           │  │
+│  └────────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+│  PROFISSIONAL (Verificação de credenciais):                              │
+│  ┌────────────────────────────────────────────────────────────────────┐  │
+│  │ 1. Cadastro normal                                                 │  │
+│  │ 2. Submete credenciais (CRP/CRM)                                   │  │
+│  │ 3. Admin verifica documentos                                       │  │
+│  │ 4. Role 'profissional' atribuída após verificação                  │  │
+│  └────────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+│  AUDITOR / DESENVOLVEDOR (Apenas Admin):                                 │
+│  ┌────────────────────────────────────────────────────────────────────┐  │
+│  │ 1. Admin cria usuário                                              │  │
+│  │ 2. Atribui role específica                                         │  │
+│  │ 3. Acesso imediato às funcionalidades                              │  │
+│  └────────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
-## Resultado Esperado
+---
 
-### Antes da Normalização (19 variações)
-| Cenário | Ocorrências |
-|---------|-------------|
-| Vida Social | 24 |
-| Carreira | 19 |
-| Família | 5 |
-| Casamento | 4 |
-| ... | ... |
-| "Casamento, Carreira" | 1 |
-| "Relacionamento (casamento), Vida Social" | 1 |
-| **Total variações únicas** | **19** |
+## PARTE 3: PLANO DE IMPLEMENTAÇÃO
 
-### Depois da Normalização (12 canônicos)
-| Cenário Canônico | Ocorrências Consolidadas |
-|------------------|--------------------------|
-| VIDA_SOCIAL | ~28 |
-| CARREIRA | ~24 |
-| CASAMENTO | ~8 |
-| FAMILIA | ~6 |
-| MINISTERIO | 4 |
-| AUTOESTIMA | ~5 |
-| SAUDE | ~3 |
-| LUTO | 2 |
-| PATERNIDADE | 2 |
-| **Total variações únicas** | **9** (apenas cenários em uso) |
+### Fase 1: Migração de Banco de Dados
+1. Expandir enum `app_role` com novos valores
+2. Criar tabela `churches`
+3. Criar tabela `church_members`
+4. Criar tabela `soldado_assignments`
+5. Criar tabela `professional_credentials`
+6. Atualizar trigger `handle_new_user`
+7. Criar novas funções security definer
+8. Atualizar RLS policies
 
-### Impacto na Precisão
-- **Fragmentação:** 60% → 0%
-- **Temas por usuário:** ~11 → ~5 (mais consolidado)
-- **Detecção de padrões cross-session:** Habilitado (mesmo cenário = mesmo tema)
-- **Proximidade da raiz:** Aumenta pois múltiplas sessões sobre "CASAMENTO" se consolidam
+### Fase 2: Backend (Edge Functions)
+1. Atualizar `intent-router` para usar roles corretamente
+2. Criar endpoint para gestão de membros de igreja
+3. Criar endpoint para atribuição soldado-buscador
+4. Criar endpoint para verificação de credenciais
 
-## Arquivos a Modificar
+### Fase 3: Frontend
+1. Expandir hook `useUserRole`
+2. Criar componentes de rota por role
+3. Criar páginas específicas por perfil
+4. Implementar anonimização de dados para auditores
+5. Implementar gestão de membros para igrejas
 
-| Arquivo | Operação | Linhas Afetadas |
-|---------|----------|-----------------|
-| `supabase/functions/turn-insight-observer/index.ts` | EDITAR | ~94-96, ~228-241, ~350+, ~702-737 |
-| `supabase/functions/normalize-scenarios/index.ts` | CRIAR | Nova função |
-| `supabase/config.toml` | EDITAR | Adicionar normalize-scenarios |
+### Fase 4: Testes e Validação
+1. Testar fluxos de cadastro para cada tipo
+2. Validar isolamento de dados por role
+3. Testar limites (ex: max 10 para soldados)
+4. Auditoria de segurança das RLS policies
 
-## Considerações de Segurança
+---
 
-- A função `normalize-scenarios` usa `verify_jwt = false` mas requer `SUPABASE_SERVICE_ROLE_KEY`
-- Limite de 200 registros por chamada para evitar timeout
-- Pode ser necessário executar múltiplas vezes
-- Operação é idempotente (pode rodar várias vezes sem duplicar)
+## PARTE 4: RISCOS E CONSIDERAÇÕES
 
-## Rollback
+### Riscos de Segurança
+- **Escalação de privilégios**: Garantir que roles só podem ser atribuídas por admins
+- **Vazamento de PII para auditores**: Implementar anonimização na camada de aplicação
+- **Limite de soldados**: Constraint SQL pode ter race conditions
 
-Se necessário reverter:
-1. O código anterior está no histórico do Git
-2. Os dados originais estão preservados no campo `lie_active` JSON (não modificamos o JSON, apenas a coluna `lie_scenario`)
-3. Pode-se re-executar `resync-taxonomy` com a lógica antiga para restaurar
+### Decisões de Design
+- **Igreja como entidade**: Decidir se igreja é um usuário ou apenas uma entidade
+- **Multi-igreja**: Usuário pode pertencer a múltiplas igrejas?
+- **Promoção de roles**: Como um buscador vira soldado? Aprovação manual?
+
+---
+
+## PARTE 5: ARQUIVOS A CRIAR/MODIFICAR
+
+### Banco de Dados (Migrações)
+| Operação | Descrição |
+|----------|-----------|
+| CREATE TYPE | Expandir app_role |
+| CREATE TABLE | churches |
+| CREATE TABLE | church_members |
+| CREATE TABLE | soldado_assignments |
+| CREATE TABLE | professional_credentials |
+| CREATE FUNCTION | is_soldado_of |
+| CREATE FUNCTION | is_pastor_of_church |
+| CREATE FUNCTION | is_church_member_of |
+| CREATE FUNCTION | can_view_journey |
+| ALTER FUNCTION | handle_new_user |
+| CREATE POLICY | Múltiplas para novas tabelas |
+
+### Frontend
+| Arquivo | Operação |
+|---------|----------|
+| src/hooks/useUserRole.ts | MODIFICAR |
+| src/components/admin/RoleRoute.tsx | CRIAR |
+| src/pages/soldado/* | CRIAR |
+| src/pages/pastor/* | CRIAR |
+| src/pages/igreja/* | CRIAR |
+| src/pages/profissional/* | CRIAR |
+| src/pages/auditor/* | CRIAR |
+| src/App.tsx | MODIFICAR (novas rotas) |
+
+### Edge Functions
+| Arquivo | Operação |
+|---------|----------|
+| supabase/functions/intent-router/index.ts | MODIFICAR |
+| supabase/functions/manage-church/index.ts | CRIAR |
+| supabase/functions/assign-soldado/index.ts | CRIAR |
