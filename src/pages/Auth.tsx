@@ -8,6 +8,9 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/hooks/useAuth";
 import SafetyExit from "@/components/SafetyExit";
+import { AccountTypeSelector, type AccountType } from "@/components/auth/AccountTypeSelector";
+import { ChurchSignupForm } from "@/components/auth/ChurchSignupForm";
+import { ProfessionalSignupForm } from "@/components/auth/ProfessionalSignupForm";
 import { z } from "zod";
 
 const loginSchema = z.object({
@@ -27,11 +30,15 @@ const Auth = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  // Account type selection
+  const [selectedAccountType, setSelectedAccountType] = useState<AccountType | null>(null);
+  const [showAccountTypeSelector, setShowAccountTypeSelector] = useState(true);
+
   // Login form state
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
 
-  // Signup form state
+  // Signup form state (for Buscador)
   const [signupNome, setSignupNome] = useState("");
   const [signupEmail, setSignupEmail] = useState("");
   const [signupPassword, setSignupPassword] = useState("");
@@ -71,7 +78,7 @@ const Auth = () => {
     }
   };
 
-  const handleSignup = async (e: React.FormEvent) => {
+  const handleBuscadorSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrors({});
 
@@ -101,6 +108,16 @@ const Auth = () => {
     }
   };
 
+  const handleAccountTypeSelect = (type: AccountType) => {
+    setSelectedAccountType(type);
+    setShowAccountTypeSelector(false);
+  };
+
+  const handleBackToSelector = () => {
+    setSelectedAccountType(null);
+    setShowAccountTypeSelector(true);
+  };
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
@@ -110,6 +127,106 @@ const Auth = () => {
       </div>
     );
   }
+
+  const renderSignupContent = () => {
+    if (showAccountTypeSelector) {
+      return (
+        <AccountTypeSelector
+          selected={selectedAccountType}
+          onSelect={handleAccountTypeSelect}
+        />
+      );
+    }
+
+    if (selectedAccountType === "igreja") {
+      return <ChurchSignupForm onBack={handleBackToSelector} />;
+    }
+
+    if (selectedAccountType === "profissional") {
+      return <ProfessionalSignupForm onBack={handleBackToSelector} />;
+    }
+
+    // Buscador form
+    return (
+      <form onSubmit={handleBuscadorSignup} className="space-y-4">
+        <div className="flex items-center gap-2 mb-4">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
+            <User className="h-5 w-5" />
+          </div>
+          <div>
+            <h3 className="font-medium text-foreground">Cadastro de Buscador</h3>
+            <p className="text-sm text-muted-foreground">Pessoa em busca de acolhimento</p>
+          </div>
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="signup-nome">Nome</Label>
+          <div className="relative">
+            <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+            <Input
+              id="signup-nome"
+              type="text"
+              placeholder="Seu nome"
+              className="pl-10"
+              value={signupNome}
+              onChange={(e) => setSignupNome(e.target.value)}
+              disabled={isLoading}
+            />
+          </div>
+          {errors.signup_nome && (
+            <p className="text-sm text-destructive">{errors.signup_nome}</p>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="signup-email">Email</Label>
+          <div className="relative">
+            <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+            <Input
+              id="signup-email"
+              type="email"
+              placeholder="seu@email.com"
+              className="pl-10"
+              value={signupEmail}
+              onChange={(e) => setSignupEmail(e.target.value)}
+              disabled={isLoading}
+            />
+          </div>
+          {errors.signup_email && (
+            <p className="text-sm text-destructive">{errors.signup_email}</p>
+          )}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="signup-password">Senha</Label>
+          <div className="relative">
+            <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+            <Input
+              id="signup-password"
+              type="password"
+              placeholder="••••••••"
+              className="pl-10"
+              value={signupPassword}
+              onChange={(e) => setSignupPassword(e.target.value)}
+              disabled={isLoading}
+            />
+          </div>
+          {errors.signup_password && (
+            <p className="text-sm text-destructive">{errors.signup_password}</p>
+          )}
+        </div>
+
+        <div className="flex gap-3 pt-2">
+          <Button type="button" variant="outline" onClick={handleBackToSelector} disabled={isLoading}>
+            Voltar
+          </Button>
+          <Button type="submit" className="flex-1" disabled={isLoading}>
+            {isLoading ? "Criando conta..." : "Criar Conta"}
+          </Button>
+        </div>
+      </form>
+    );
+  };
 
   return (
     <div className="relative min-h-screen" style={{ background: "var(--gradient-peace)" }}>
@@ -143,7 +260,16 @@ const Auth = () => {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <Tabs defaultValue="login" className="w-full">
+            <Tabs 
+              defaultValue="login" 
+              className="w-full"
+              onValueChange={(value) => {
+                if (value === "signup") {
+                  setShowAccountTypeSelector(true);
+                  setSelectedAccountType(null);
+                }
+              }}
+            >
               <TabsList className="grid w-full grid-cols-2 mb-6">
                 <TabsTrigger value="login">Entrar</TabsTrigger>
                 <TabsTrigger value="signup">Cadastrar</TabsTrigger>
@@ -196,68 +322,7 @@ const Auth = () => {
               </TabsContent>
 
               <TabsContent value="signup">
-                <form onSubmit={handleSignup} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-nome">Nome</Label>
-                    <div className="relative">
-                      <User className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        id="signup-nome"
-                        type="text"
-                        placeholder="Seu nome"
-                        className="pl-10"
-                        value={signupNome}
-                        onChange={(e) => setSignupNome(e.target.value)}
-                        disabled={isLoading}
-                      />
-                    </div>
-                    {errors.signup_nome && (
-                      <p className="text-sm text-destructive">{errors.signup_nome}</p>
-                    )}
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-email">Email</Label>
-                    <div className="relative">
-                      <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        id="signup-email"
-                        type="email"
-                        placeholder="seu@email.com"
-                        className="pl-10"
-                        value={signupEmail}
-                        onChange={(e) => setSignupEmail(e.target.value)}
-                        disabled={isLoading}
-                      />
-                    </div>
-                    {errors.signup_email && (
-                      <p className="text-sm text-destructive">{errors.signup_email}</p>
-                    )}
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="signup-password">Senha</Label>
-                    <div className="relative">
-                      <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        id="signup-password"
-                        type="password"
-                        placeholder="••••••••"
-                        className="pl-10"
-                        value={signupPassword}
-                        onChange={(e) => setSignupPassword(e.target.value)}
-                        disabled={isLoading}
-                      />
-                    </div>
-                    {errors.signup_password && (
-                      <p className="text-sm text-destructive">{errors.signup_password}</p>
-                    )}
-                  </div>
-
-                  <Button type="submit" className="w-full" size="lg" disabled={isLoading}>
-                    {isLoading ? "Criando conta..." : "Criar Conta"}
-                  </Button>
-                </form>
+                {renderSignupContent()}
               </TabsContent>
             </Tabs>
           </CardContent>
