@@ -1398,6 +1398,14 @@ export type Database = {
     Functions: {
       calculate_content_hash: { Args: { content: string }; Returns: string }
       can_accept_assignment: { Args: { _soldado_id: string }; Returns: boolean }
+      can_manage_church_members: {
+        Args: { _church_id: string; _user_id: string }
+        Returns: boolean
+      }
+      can_view_journey: {
+        Args: { _target_id: string; _viewer_id: string }
+        Returns: boolean
+      }
       count_active_assignments: {
         Args: { _soldado_id: string }
         Returns: number
