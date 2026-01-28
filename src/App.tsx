@@ -7,6 +7,7 @@ import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Chat from "./pages/Chat";
 import Diary from "./pages/Diary";
+import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import KnowledgeBase from "./pages/admin/KnowledgeBase";
@@ -16,6 +17,7 @@ import DocumentChunks from "./pages/admin/DocumentChunks";
 import RagTest from "./pages/admin/RagTest";
 import FeedbackDataset from "./pages/admin/FeedbackDataset";
 import JourneyMap from "./pages/admin/JourneyMap";
+import PendingCredentials from "./pages/admin/PendingCredentials";
 
 const queryClient = new QueryClient();
 
@@ -30,6 +32,7 @@ const App = () => (
           <Route path="/auth" element={<Auth />} />
           <Route path="/chat" element={<Chat />} />
           <Route path="/diary" element={<Diary />} />
+          <Route path="/profile" element={<Profile />} />
           <Route path="/admin" element={<AdminDashboard />} />
           <Route path="/admin/documents" element={<Documents />} />
           <Route path="/admin/documents/:docId/chunks" element={<DocumentChunks />} />
@@ -38,6 +41,7 @@ const App = () => (
           <Route path="/admin/journey-map" element={<JourneyMap />} />
           <Route path="/admin/knowledge" element={<KnowledgeBase />} />
           <Route path="/admin/instructions" element={<SystemInstructions />} />
+          <Route path="/admin/pending-credentials" element={<PendingCredentials />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
