@@ -392,7 +392,7 @@ const Documents = () => {
             </div>
             <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
               <DialogTrigger asChild>
-                <Button>
+                <Button className="bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all duration-300">
                   <Plus className="mr-2 h-4 w-4" />
                   Novo Documento
                 </Button>
@@ -492,7 +492,7 @@ const Documents = () => {
                   <Button variant="outline" onClick={() => setDialogOpen(false)}>
                     Cancelar
                   </Button>
-                  <Button onClick={handleSubmit}>
+                  <Button onClick={handleSubmit} className="bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all duration-300">
                     {editingId ? "Salvar Nova Versão" : "Criar Documento"}
                   </Button>
                 </DialogFooter>

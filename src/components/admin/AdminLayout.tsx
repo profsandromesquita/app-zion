@@ -12,6 +12,7 @@ import {
   Map
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import zionLogo from "@/assets/zion-logo.png";
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -37,9 +38,10 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
         <div className="flex h-full flex-col">
           {/* Header */}
           <div className="border-b border-border p-4">
-            <h1 className="text-xl font-semibold text-foreground">
-              Painel Admin
-            </h1>
+            <div className="flex items-center gap-2 mb-1">
+              <img src={zionLogo} alt="Zion" className="h-8 w-8" />
+              <h1 className="text-xl font-semibold text-foreground">Painel Admin</h1>
+            </div>
             <p className="text-sm text-muted-foreground">Gerenciamento ZION</p>
           </div>
 
@@ -54,7 +56,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
                   cn(
                     "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                     isActive
-                      ? "bg-primary text-primary-foreground"
+                      ? "bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-md"
                       : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                   )
                 }

@@ -325,7 +325,7 @@ export function ChurchSignupForm({ onBack }: ChurchSignupFormProps) {
         <Button type="button" variant="outline" onClick={onBack} disabled={isLoading}>
           Voltar
         </Button>
-        <Button type="submit" className="flex-1" disabled={isLoading}>
+        <Button type="submit" className="flex-1 bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all duration-300" disabled={isLoading}>
           {isLoading ? "Criando conta..." : "Cadastrar Igreja"}
         </Button>
       </div>

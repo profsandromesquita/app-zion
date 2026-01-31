@@ -45,8 +45,8 @@ export function AccountTypeSelector({ selected, onSelect }: AccountTypeSelectorP
           <Card
             key={type}
             className={cn(
-              "cursor-pointer transition-all hover:border-primary/50",
-              selected === type && "border-primary ring-2 ring-primary/20"
+              "cursor-pointer transition-all hover:border-emerald-500/50",
+              selected === type && "border-emerald-500 ring-2 ring-emerald-500/20"
             )}
             onClick={() => onSelect(type)}
           >
@@ -55,7 +55,7 @@ export function AccountTypeSelector({ selected, onSelect }: AccountTypeSelectorP
                 className={cn(
                   "flex h-12 w-12 shrink-0 items-center justify-center rounded-full",
                   selected === type
-                    ? "bg-primary text-primary-foreground"
+                    ? "bg-gradient-to-r from-emerald-500 to-lime-500 text-white"
                     : "bg-muted text-muted-foreground"
                 )}
               >
