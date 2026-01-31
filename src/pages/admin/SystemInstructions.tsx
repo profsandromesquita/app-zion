@@ -174,6 +174,7 @@ const SystemInstructions = () => {
                     setEditingItem(null);
                     setFormData({ name: "", content: "", priority: items.length });
                   }}
+                  className="bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all duration-300"
                 >
                   <Plus className="mr-2 h-4 w-4" />
                   Nova Instrução
@@ -239,7 +240,7 @@ const SystemInstructions = () => {
                     >
                       Cancelar
                     </Button>
-                    <Button onClick={handleSubmit}>
+                    <Button onClick={handleSubmit} className="bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all duration-300">
                       {editingItem ? "Salvar Alterações" : "Criar Instrução"}
                     </Button>
                   </div>
@@ -250,7 +251,7 @@ const SystemInstructions = () => {
 
           {loading ? (
             <div className="flex items-center justify-center py-12">
-              <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+              <div className="h-8 w-8 animate-spin rounded-full border-4 border-emerald-500 border-t-transparent" />
             </div>
           ) : items.length === 0 ? (
             <Card>
@@ -275,7 +276,7 @@ const SystemInstructions = () => {
                         <div className="flex items-center gap-2">
                           <CardTitle className="text-base">{item.name}</CardTitle>
                           {item.is_pinned && (
-                            <span className="text-xs bg-primary text-primary-foreground px-2 py-0.5 rounded-full flex items-center gap-1">
+                            <span className="text-xs bg-gradient-to-r from-emerald-500 to-lime-500 text-white px-2 py-0.5 rounded-full flex items-center gap-1">
                               <Pin className="h-3 w-3" />
                               Constituição
                             </span>

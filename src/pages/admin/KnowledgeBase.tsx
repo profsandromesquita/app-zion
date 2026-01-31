@@ -201,6 +201,7 @@ const KnowledgeBase = () => {
                     setEditingItem(null);
                     setFormData({ title: "", content: "", category: "general" });
                   }}
+                  className="bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all duration-300"
                 >
                   <Plus className="mr-2 h-4 w-4" />
                   Novo Documento
@@ -288,7 +289,7 @@ const KnowledgeBase = () => {
                     >
                       Cancelar
                     </Button>
-                    <Button onClick={handleSubmit}>
+                    <Button onClick={handleSubmit} className="bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all duration-300">
                       {editingItem ? "Salvar Alterações" : "Criar Documento"}
                     </Button>
                   </div>
@@ -299,7 +300,7 @@ const KnowledgeBase = () => {
 
           {loading ? (
             <div className="flex items-center justify-center py-12">
-              <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+              <div className="h-8 w-8 animate-spin rounded-full border-4 border-emerald-500 border-t-transparent" />
             </div>
           ) : items.length === 0 ? (
             <Card>

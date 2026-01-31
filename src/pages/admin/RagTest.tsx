@@ -133,9 +133,9 @@ const RagTest = () => {
                     onKeyDown={(e) => e.key === "Enter" && handleSearch()}
                     className="flex-1"
                   />
-                  <Button onClick={handleSearch} disabled={loading}>
+                  <Button onClick={handleSearch} disabled={loading} className="bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all duration-300">
                     {loading ? (
-                      <div className="animate-spin h-4 w-4 border-2 border-background border-t-transparent rounded-full" />
+                      <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" />
                     ) : (
                       <Search className="h-4 w-4" />
                     )}

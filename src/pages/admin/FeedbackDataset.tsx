@@ -495,7 +495,7 @@ const FeedbackDataset = () => {
               <RefreshCw className="mr-2 h-4 w-4" />
               Atualizar
             </Button>
-            <Button onClick={() => setShowExportDialog(true)}>
+            <Button onClick={() => setShowExportDialog(true)} className="bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all duration-300">
               <Download className="mr-2 h-4 w-4" />
               Exportar
             </Button>
