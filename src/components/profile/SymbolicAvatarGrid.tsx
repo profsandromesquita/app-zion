@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, forwardRef } from "react";
 import { SYMBOLIC_AVATARS, SymbolicAvatar } from "@/data/symbolicAvatars";
 import { cn } from "@/lib/utils";
 import {
@@ -12,6 +12,49 @@ interface SymbolicAvatarGridProps {
   selectedAvatarId: string | null;
   onSelect: (avatar: SymbolicAvatar) => void;
 }
+
+interface AvatarButtonProps {
+  avatar: SymbolicAvatar;
+  isSelected: boolean;
+  onClick: () => void;
+  onMouseEnter: () => void;
+  onMouseLeave: () => void;
+}
+
+const AvatarButton = forwardRef<HTMLButtonElement, AvatarButtonProps>(
+  ({ avatar, isSelected, onClick, onMouseEnter, onMouseLeave }, ref) => (
+    <button
+      ref={ref}
+      type="button"
+      onClick={onClick}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+      className={cn(
+        "relative aspect-square rounded-xl overflow-hidden transition-all duration-200",
+        "border-2 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2",
+        isSelected
+          ? "border-primary ring-2 ring-primary ring-offset-2"
+          : "border-border hover:border-primary/50"
+      )}
+    >
+      <img
+        src={avatar.imagePath}
+        alt={avatar.name}
+        className="w-full h-full object-cover"
+      />
+      {isSelected && (
+        <div className="absolute inset-0 bg-primary/20 flex items-center justify-center">
+          <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
+            <svg className="w-4 h-4 text-primary-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+        </div>
+      )}
+    </button>
+  )
+);
+AvatarButton.displayName = "AvatarButton";
 
 const SymbolicAvatarGrid = ({ selectedAvatarId, onSelect }: SymbolicAvatarGridProps) => {
   const [hoveredAvatar, setHoveredAvatar] = useState<SymbolicAvatar | null>(null);
@@ -29,34 +72,13 @@ const SymbolicAvatarGrid = ({ selectedAvatarId, onSelect }: SymbolicAvatarGridPr
           {SYMBOLIC_AVATARS.map((avatar) => (
             <Tooltip key={avatar.id}>
               <TooltipTrigger asChild>
-                <button
-                  type="button"
+                <AvatarButton
+                  avatar={avatar}
+                  isSelected={selectedAvatarId === avatar.id}
                   onClick={() => onSelect(avatar)}
                   onMouseEnter={() => setHoveredAvatar(avatar)}
                   onMouseLeave={() => setHoveredAvatar(null)}
-                  className={cn(
-                    "relative aspect-square rounded-xl overflow-hidden transition-all duration-200",
-                    "border-2 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2",
-                    selectedAvatarId === avatar.id
-                      ? "border-primary ring-2 ring-primary ring-offset-2"
-                      : "border-border hover:border-primary/50"
-                  )}
-                >
-                  <img
-                    src={avatar.imagePath}
-                    alt={avatar.name}
-                    className="w-full h-full object-cover"
-                  />
-                  {selectedAvatarId === avatar.id && (
-                    <div className="absolute inset-0 bg-primary/20 flex items-center justify-center">
-                      <div className="w-6 h-6 rounded-full bg-primary flex items-center justify-center">
-                        <svg className="w-4 h-4 text-primary-foreground" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                        </svg>
-                      </div>
-                    </div>
-                  )}
-                </button>
+                />
               </TooltipTrigger>
               <TooltipContent side="bottom" className="max-w-xs">
                 <p className="font-medium">{avatar.name}</p>
