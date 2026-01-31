@@ -1,25 +1,27 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, User, Save, Shield, Heart } from "lucide-react";
+import { ArrowLeft, User, Save, Shield, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { Separator } from "@/components/ui/separator";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useAuth } from "@/hooks/useAuth";
 import { useUserRole, AppRole } from "@/hooks/useUserRole";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import SafetyExit from "@/components/SafetyExit";
+import AvatarEditor from "@/components/profile/AvatarEditor";
+import JourneySection from "@/components/profile/JourneySection";
 
 interface ProfileData {
   nome: string | null;
   email: string | null;
   phone: string | null;
   bio: string | null;
+  avatar_url: string | null;
   created_at: string;
 }
 
@@ -62,6 +64,7 @@ const Profile = () => {
   const [journey, setJourney] = useState<JourneyData | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [avatarEditorOpen, setAvatarEditorOpen] = useState(false);
 
   // Form state
   const [nome, setNome] = useState("");
@@ -88,7 +91,7 @@ const Profile = () => {
     // Load profile data
     const { data: profileData, error: profileError } = await supabase
       .from("profiles")
-      .select("nome, email, phone, bio, created_at")
+      .select("nome, email, phone, bio, avatar_url, created_at")
       .eq("id", user.id)
       .maybeSingle();
 
@@ -148,11 +151,15 @@ const Profile = () => {
     }
   };
 
+  const handleAvatarChange = (newUrl: string | null) => {
+    setProfile((prev) => prev ? { ...prev, avatar_url: newUrl } : null);
+  };
+
   if (authLoading || loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="animate-pulse-soft text-primary">
-          <Heart className="h-12 w-12" />
+        <div className="animate-pulse text-primary">
+          <div className="h-12 w-12 rounded-full border-4 border-primary border-t-transparent animate-spin" />
         </div>
       </div>
     );
@@ -182,11 +189,25 @@ const Profile = () => {
           <Card>
             <CardContent className="pt-6">
               <div className="flex items-start gap-4">
-                <Avatar className="h-20 w-20">
-                  <AvatarFallback className="bg-primary/10 text-primary text-2xl">
-                    <User className="h-10 w-10" />
-                  </AvatarFallback>
-                </Avatar>
+                {/* Clickable Avatar */}
+                <button
+                  type="button"
+                  onClick={() => setAvatarEditorOpen(true)}
+                  className="relative group focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 rounded-full"
+                >
+                  <Avatar className="h-20 w-20 transition-opacity group-hover:opacity-80">
+                    {profile?.avatar_url ? (
+                      <AvatarImage src={profile.avatar_url} alt="Avatar" className="object-cover" />
+                    ) : null}
+                    <AvatarFallback className="bg-primary/10 text-primary text-2xl">
+                      <User className="h-10 w-10" />
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/40 rounded-full opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Pencil className="h-5 w-5 text-white" />
+                  </div>
+                </button>
+
                 <div className="flex-1">
                   <h2 className="text-2xl font-semibold text-foreground">
                     {profile?.nome || "Usuário"}
@@ -288,48 +309,21 @@ const Profile = () => {
 
           {/* Journey Card - Only for Buscadores */}
           {isBuscador && journey && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <Heart className="h-5 w-5" />
-                  Minha Jornada
-                </CardTitle>
-                <CardDescription>
-                  Seu progresso na jornada de transformação
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-                  <div className="text-center">
-                    <p className="text-2xl font-semibold text-foreground">
-                      {journey.fase_jornada || "Início"}
-                    </p>
-                    <p className="text-sm text-muted-foreground">Fase</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-2xl font-semibold text-foreground">
-                      {journey.active_themes_count ?? 0}
-                    </p>
-                    <p className="text-sm text-muted-foreground">Temas Ativos</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-2xl font-semibold text-foreground">
-                      {journey.global_avg_score?.toFixed(1) ?? "—"}
-                    </p>
-                    <p className="text-sm text-muted-foreground">Score Médio</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-2xl font-semibold text-foreground">
-                      {journey.spiritual_maturity || "—"}
-                    </p>
-                    <p className="text-sm text-muted-foreground">Maturidade</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+            <JourneySection journey={journey} />
           )}
         </div>
       </main>
+
+      {/* Avatar Editor Modal */}
+      {user && (
+        <AvatarEditor
+          open={avatarEditorOpen}
+          onOpenChange={setAvatarEditorOpen}
+          currentAvatarUrl={profile?.avatar_url || null}
+          userId={user.id}
+          onAvatarChange={handleAvatarChange}
+        />
+      )}
     </div>
   );
 };
