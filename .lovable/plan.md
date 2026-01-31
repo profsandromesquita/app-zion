@@ -1,265 +1,248 @@
 
+# Plano: Aplicar Design Emerald-Lime nas Paginas Restantes
 
-# Plano: Aplicar Design Unificado em Todas as Paginas e Componentes
+## Resumo
 
-## Resumo das Areas Pendentes
+As seguintes areas ainda usam a paleta azul antiga (bg-primary = azul) e precisam ser atualizadas para o novo padrao emerald-lime:
 
-Com base na analise, as seguintes areas ainda usam a paleta azul antiga (bg-primary = azul) ou nao seguem o novo padrao visual emerald-lime:
-
-| Componente/Pagina | Problemas Identificados |
-|-------------------|------------------------|
-| **OnboardingFlow.tsx** | Logo com Heart azul, botoes com bg-primary azul, tags de selecao com border-primary azul, nome "Zyon" (errado) |
-| **Profile.tsx** | Loading spinner com border-primary azul, Avatar fallback com bg-primary/10 azul |
-| **ChatSidebar.tsx** | Logo com Heart azul em bg-primary/10, nome "Zyon" (errado), Avatar fallback com bg-primary azul |
-| **Diary.tsx** | Sidebar inteira com estilo antigo (sem gradientes emerald-lime) |
-| **Chat.tsx (mensagens usuario)** | Bolha de mensagem do usuario com `bg-primary` (azul) - deve ser gradiente emerald-lime |
-| **Progress.tsx** | Barra de progresso com `bg-primary` (azul) |
-| **JourneySection.tsx** | Card com `bg-gradient-to-r from-primary/5 to-primary/10` (azul), Heart com `text-primary` (azul) |
-| **AvatarEditor.tsx** | Botao Salvar sem gradiente, spinner com border-primary azul |
+| Componente | Problemas Identificados |
+|------------|------------------------|
+| **AccountTypeSelector.tsx** | Cards selecionados com `border-primary` e `ring-primary/20` (azul), icones com `bg-primary` (azul) |
+| **Auth.tsx (Buscador form)** | Icone do Buscador com `bg-blue-100 text-blue-800` |
+| **ChurchSignupForm.tsx** | Botao de submit sem gradiente emerald-lime |
+| **ProfessionalSignupForm.tsx** | Botao de submit sem gradiente emerald-lime |
+| **AdminLayout.tsx** | Sidebar com navegacao usando `bg-primary` (azul) para item ativo, logo ausente |
+| **Todas as paginas admin** | Botoes de acao sem gradiente, spinners com `border-primary` (azul), badges diversas |
 
 ---
 
 ## Arquivos a Modificar
 
-| Arquivo | Alteracoes |
-|---------|------------|
-| `src/components/onboarding/OnboardingFlow.tsx` | Trocar logo Heart por zionLogo, gradientes emerald-lime em botoes e selecoes, corrigir "Zyon" para "Zion" |
-| `src/pages/Profile.tsx` | Loading com zionLogo, gradiente em avatar fallback |
-| `src/components/chat/ChatSidebar.tsx` | Logo zionLogo, gradiente emerald no avatar, corrigir "Zyon" para "Zion" |
-| `src/pages/Diary.tsx` | Sidebar com estilo harmonizado |
-| `src/pages/Chat.tsx` | Bolha do usuario com gradiente emerald-lime |
-| `src/components/ui/progress.tsx` | Barra com gradiente emerald-lime |
-| `src/components/profile/JourneySection.tsx` | Gradientes emerald no lugar de primary/azul |
-| `src/components/profile/AvatarEditor.tsx` | Botao Salvar com gradiente |
+### 1. AccountTypeSelector.tsx
 
----
+**Problema**: Cards de selecao (Buscador, Igreja, Profissional) usam `border-primary` e `bg-primary` azul
 
-## Detalhes Tecnicos
-
-### 1. OnboardingFlow.tsx
-
-**Antes:**
+**Mudancas**:
 ```tsx
-<Heart className="h-5 w-5 text-primary" />
-<span className="font-medium text-foreground">Zyon</span>
+// Card selecionado - ANTES:
+selected === type && "border-primary ring-2 ring-primary/20"
+// DEPOIS:
+selected === type && "border-emerald-500 ring-2 ring-emerald-500/20"
+
+// Hover do card - ANTES:
+"hover:border-primary/50"
+// DEPOIS:
+"hover:border-emerald-500/50"
+
+// Icone selecionado - ANTES:
+selected === type ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+// DEPOIS:
+selected === type ? "bg-gradient-to-r from-emerald-500 to-lime-500 text-white" : "bg-muted text-muted-foreground"
 ```
 
-**Depois:**
+### 2. Auth.tsx (Formulario Buscador)
+
+**Problema**: Icone do formulario de Buscador usa `bg-blue-100 text-blue-800`
+
+**Mudancas**:
 ```tsx
-<img src={zionLogo} alt="Zion" className="h-10 w-10" />
-<span className="font-semibold text-foreground">Zion</span>
+// ANTES (linha 135):
+<div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
+// DEPOIS:
+<div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300">
 ```
 
-**Botoes de selecao - Antes:**
+### 3. ChurchSignupForm.tsx
+
+**Problema**: Botao de submit sem gradiente
+
+**Mudancas**:
 ```tsx
-formData.grammar_gender === option.value
-  ? "border-primary bg-primary/5"
-  : "border-border hover:border-primary/50"
+// ANTES (linha 328):
+<Button type="submit" className="flex-1" disabled={isLoading}>
+// DEPOIS:
+<Button type="submit" className="flex-1 bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all duration-300" disabled={isLoading}>
 ```
 
-**Depois:**
+### 4. ProfessionalSignupForm.tsx
+
+**Problema**: Botao de submit sem gradiente
+
+**Mudancas**:
 ```tsx
-formData.grammar_gender === option.value
-  ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/30"
-  : "border-border hover:border-emerald-500/50"
+// ANTES (linha 288):
+<Button type="submit" className="flex-1" disabled={isLoading}>
+// DEPOIS:
+<Button type="submit" className="flex-1 bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all duration-300" disabled={isLoading}>
 ```
 
-**Check icon:**
+### 5. AdminLayout.tsx
+
+**Problemas**:
+- Navegacao ativa usa `bg-primary text-primary-foreground` (azul)
+- Falta logo Zion no header da sidebar
+
+**Mudancas**:
 ```tsx
-<Check className="h-5 w-5 text-emerald-500" />
-```
+// Adicionar import:
+import zionLogo from "@/assets/zion-logo.png";
 
-**Botao Continuar/Comecar:**
-```tsx
-className="flex-1 bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all duration-300"
-```
-
-**Tags de dor - selecionada:**
-```tsx
-formData.initial_pain_focus.includes(tag)
-  ? "border-emerald-500 bg-gradient-to-r from-emerald-500 to-lime-500 text-white"
-  : "border-border text-foreground hover:border-emerald-500/50"
-```
-
-### 2. Profile.tsx - Loading
-
-**Antes:**
-```tsx
-<div className="h-12 w-12 rounded-full border-4 border-primary border-t-transparent animate-spin" />
-```
-
-**Depois:**
-```tsx
-<img src={zionLogo} alt="Zion" className="h-16 w-16 animate-pulse-soft" />
-```
-
-### 3. ChatSidebar.tsx
-
-**Logo - Antes:**
-```tsx
-<div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
-  <Heart className="h-4 w-4 text-primary" />
+// Header da sidebar - adicionar logo:
+<div className="border-b border-border p-4">
+  <div className="flex items-center gap-2 mb-1">
+    <img src={zionLogo} alt="Zion" className="h-8 w-8" />
+    <h1 className="text-xl font-semibold text-foreground">Painel Admin</h1>
+  </div>
+  <p className="text-sm text-muted-foreground">Gerenciamento ZION</p>
 </div>
-{!collapsed && <span className="font-semibold text-foreground">Zyon</span>}
+
+// Navegacao ativa - ANTES:
+isActive ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent"
+// DEPOIS:
+isActive ? "bg-gradient-to-r from-emerald-500 to-lime-500 text-white" : "text-muted-foreground hover:bg-accent"
 ```
 
-**Depois:**
+### 6. Paginas Admin - Botoes de Acao
+
+Todas as paginas admin que usam botoes primarios precisam do gradiente:
+
+**Documents.tsx**:
+- Botao "Novo Documento" (linha 395-398)
+- Botao "Criar Documento" / "Salvar Nova Versao" no dialog (linha 495-496)
+
+**RagTest.tsx**:
+- Botao de busca (linha 136)
+
+**FeedbackDataset.tsx**:
+- Botao "Exportar" (linha 498-500)
+
+**JourneyMap.tsx**:
+- Botoes de acao diversos
+
+**KnowledgeBase.tsx**:
+- Botao "Novo Documento" (linha 199-207)
+- Botao "Criar Documento" no dialog (linha 291)
+- Spinner de loading (linha 302)
+
+**SystemInstructions.tsx**:
+- Botao "Nova Instrucao" (linha 172-180)
+- Botao "Criar Instrucao" no dialog (linha 242)
+- Spinner de loading (linha 252)
+- Badge "Constituicao" (linha 278-281)
+
+---
+
+## Detalhes Tecnicos por Arquivo
+
+### AdminLayout.tsx - Codigo Completo da Mudanca
+
 ```tsx
-<img src={zionLogo} alt="Zion" className="h-8 w-8" />
-{!collapsed && <span className="font-semibold text-foreground">Zion</span>}
+// Import
+import zionLogo from "@/assets/zion-logo.png";
+
+// Header
+<div className="border-b border-border p-4">
+  <div className="flex items-center gap-2 mb-1">
+    <img src={zionLogo} alt="Zion" className="h-8 w-8" />
+    <h1 className="text-xl font-semibold text-foreground">Painel Admin</h1>
+  </div>
+  <p className="text-sm text-muted-foreground">Gerenciamento ZION</p>
+</div>
+
+// Navegacao
+className={({ isActive }) =>
+  cn(
+    "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
+    isActive
+      ? "bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-md"
+      : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+  )
+}
 ```
 
-**Avatar fallback - Antes:**
+### Botoes Admin - Padrao
+
+Todos os botoes primarios nas paginas admin devem usar:
 ```tsx
-<AvatarFallback className="bg-primary/10 text-primary text-xs">
+className="bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all duration-300"
 ```
 
-**Depois:**
+### Spinners de Loading - Padrao
+
 ```tsx
-<AvatarFallback className="bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-xs">
+// ANTES:
+<div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+
+// DEPOIS (usar logo):
+<img src={zionLogo} alt="Zion" className="h-12 w-12 animate-pulse" />
 ```
 
-### 4. Chat.tsx - Bolha de Mensagem do Usuario
+### Badges Constituicao em SystemInstructions.tsx
 
-**Antes:**
 ```tsx
-message.sender === "user"
-  ? "bg-primary text-primary-foreground"
-  : "bg-muted text-foreground"
-```
-
-**Depois:**
-```tsx
-message.sender === "user"
-  ? "bg-gradient-to-r from-emerald-500 to-lime-500 text-white"
-  : "bg-muted text-foreground"
-```
-
-### 5. Progress.tsx - Barra de Progresso
-
-**Antes:**
-```tsx
-<ProgressPrimitive.Indicator
-  className="h-full w-full flex-1 bg-primary transition-all"
-```
-
-**Depois:**
-```tsx
-<ProgressPrimitive.Indicator
-  className="h-full w-full flex-1 bg-gradient-to-r from-emerald-500 to-lime-500 transition-all"
-```
-
-### 6. JourneySection.tsx
-
-**Card header - Antes:**
-```tsx
-<CardHeader className="bg-gradient-to-r from-primary/5 to-primary/10 border-b">
-  <Heart className="h-5 w-5 text-primary" />
-```
-
-**Depois:**
-```tsx
-<CardHeader className="bg-gradient-to-r from-emerald-50 to-lime-50 dark:from-emerald-950/20 dark:to-lime-950/20 border-b">
-  <Heart className="h-5 w-5 text-emerald-500" />
-```
-
-**Phase card - Antes:**
-```tsx
-<div className="rounded-xl bg-gradient-to-br from-primary/10 via-primary/5 to-background p-5 border border-primary/20">
-  <Sprout className="h-5 w-5 text-primary" />
-```
-
-**Depois:**
-```tsx
-<div className="rounded-xl bg-gradient-to-br from-emerald-100 via-emerald-50 to-background dark:from-emerald-900/30 dark:via-emerald-950/20 dark:to-background p-5 border border-emerald-200 dark:border-emerald-800">
-  <Sprout className="h-5 w-5 text-emerald-500" />
-```
-
-**Progresso percentual:**
-```tsx
-<span className="font-medium text-emerald-600 dark:text-emerald-400">
-```
-
-**Milestones:**
-```tsx
-dynamicProgress >= i * 20 ? "bg-white" : "bg-emerald-200/50 dark:bg-emerald-700/50"
-```
-
-### 7. AvatarEditor.tsx
-
-**Botao Salvar - Antes:**
-```tsx
-<Button onClick={handleSave}>
-  Salvar
-</Button>
-```
-
-**Depois:**
-```tsx
-<Button onClick={handleSave} className="bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all duration-300">
-  Salvar
-</Button>
-```
-
-### 8. Diary.tsx - Sidebar
-
-A sidebar do diario ja esta ok, mas vou verificar se os cards de entrada selecionada usam o estilo correto:
-
-**Card selecionado - Antes:**
-```tsx
-selectedEntry?.id === entry.id ? "border-primary bg-muted/50" : ""
-```
-
-**Depois:**
-```tsx
-selectedEntry?.id === entry.id ? "border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/30" : ""
+// ANTES:
+<span className="text-xs bg-primary text-primary-foreground px-2 py-0.5 rounded-full">
+// DEPOIS:
+<span className="text-xs bg-gradient-to-r from-emerald-500 to-lime-500 text-white px-2 py-0.5 rounded-full">
 ```
 
 ---
 
-## Resumo Visual das Mudancas
+## Lista Completa de Arquivos
+
+| Arquivo | Tipo de Mudanca |
+|---------|-----------------|
+| `src/components/auth/AccountTypeSelector.tsx` | Cards de selecao, icones |
+| `src/pages/Auth.tsx` | Icone do formulario Buscador |
+| `src/components/auth/ChurchSignupForm.tsx` | Botao submit |
+| `src/components/auth/ProfessionalSignupForm.tsx` | Botao submit |
+| `src/components/admin/AdminLayout.tsx` | Logo, navegacao ativa |
+| `src/pages/admin/Documents.tsx` | Botoes primarios |
+| `src/pages/admin/RagTest.tsx` | Botao busca |
+| `src/pages/admin/FeedbackDataset.tsx` | Botao exportar |
+| `src/pages/admin/JourneyMap.tsx` | Botoes diversos |
+| `src/pages/admin/KnowledgeBase.tsx` | Botoes, spinner |
+| `src/pages/admin/SystemInstructions.tsx` | Botoes, spinner, badge |
+
+---
+
+## Resultado Visual Esperado
 
 ```text
 ANTES (Azul):
-+------------------+
-| [Heart Azul]     |  <- bg-primary/10 + text-primary
-| Zyon             |  <- Nome errado
-| [ Botao Azul ]   |  <- bg-primary
-| [=====     ]     |  <- Progress azul
-+------------------+
++------------------------+
+| [Buscador]  <- border-primary azul
+| [Igreja]    <- hover azul
+| [Profissional]
++------------------------+
+| [Botao Azul]
++------------------------+
 
 DEPOIS (Emerald-Lime):
-+------------------+
-| [Z Logo]         |  <- Imagem real do logo
-| Zion             |  <- Nome correto
-| [Gradiente]      |  <- from-emerald-500 to-lime-500
-| [=====     ]     |  <- Progress gradiente verde
-+------------------+
++------------------------+
+| [Buscador]  <- border-emerald-500 + gradiente
+| [Igreja]    <- hover emerald
+| [Profissional]
++------------------------+
+| [Gradiente Verde]
++------------------------+
 ```
 
----
+Admin Sidebar:
+```text
+ANTES:
++------------------+
+| Painel Admin     |
+|------------------|
+| [Dashboard] <- bg-primary azul
+| [Documentos]
++------------------+
 
-## Arquivos Finais a Editar
-
-1. `src/components/onboarding/OnboardingFlow.tsx`
-2. `src/pages/Profile.tsx`
-3. `src/components/chat/ChatSidebar.tsx`
-4. `src/pages/Chat.tsx`
-5. `src/components/ui/progress.tsx`
-6. `src/components/profile/JourneySection.tsx`
-7. `src/components/profile/AvatarEditor.tsx`
-8. `src/pages/Diary.tsx`
-
----
-
-## Resultado Esperado
-
-Todas as paginas e componentes terao:
-- Logo Zion real (imagem) em vez de icone Heart
-- Nome "Zion" consistente (nao "Zyon")
-- Gradiente emerald-lime em botoes primarios e elementos selecionados
-- Barra de progresso com gradiente verde
-- Fallbacks de avatar em tons de emerald
-- Cards selecionados com borda emerald
-- Consistencia visual total em todo o app
-
+DEPOIS:
++------------------+
+| [Z] Painel Admin |  <- Logo + titulo
+|------------------|
+| [Dashboard] <- gradiente verde
+| [Documentos]
++------------------+
+```
