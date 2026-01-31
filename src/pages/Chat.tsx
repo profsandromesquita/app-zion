@@ -9,6 +9,7 @@ import { CrisisBanner } from "@/components/chat/CrisisBanner";
 import { DebugPanel } from "@/components/chat/DebugPanel";
 import { ConversationStarters } from "@/components/chat/ConversationStarters";
 import { WelcomeBackBanner } from "@/components/chat/WelcomeBackBanner";
+import { PushNotificationPrompt } from "@/components/PushNotificationPrompt";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -500,6 +501,15 @@ const Chat = () => {
         }).catch(err => console.warn("Observer trigger failed:", err));
       }
 
+      // Update last_active_at for push notification tracking
+      if (user?.id) {
+        supabase
+          .from("profiles")
+          .update({ last_active_at: new Date().toISOString() })
+          .eq("id", user.id)
+          .then(() => {});
+      }
+
       // Add AI message
       const aiMsg: Message = {
         id: savedMsg?.id || `ai-${Date.now()}`,
@@ -774,17 +784,22 @@ const Chat = () => {
               </div>
             </div>
 
-            {/* Debug toggle for admins */}
-            {isAdmin && (
-              <Button
-                variant={showDebug ? "secondary" : "ghost"}
-                size="icon"
-                onClick={() => setShowDebug(!showDebug)}
-                title="Toggle Debug Panel"
-              >
-                <Bug className="h-4 w-4" />
-              </Button>
-            )}
+            <div className="flex items-center gap-1">
+              {/* Push notification toggle */}
+              <PushNotificationPrompt userId={user?.id || null} variant="icon" />
+
+              {/* Debug toggle for admins */}
+              {isAdmin && (
+                <Button
+                  variant={showDebug ? "secondary" : "ghost"}
+                  size="icon"
+                  onClick={() => setShowDebug(!showDebug)}
+                  title="Toggle Debug Panel"
+                >
+                  <Bug className="h-4 w-4" />
+                </Button>
+              )}
+            </div>
           </header>
 
           {/* Messages */}
