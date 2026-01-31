@@ -1396,6 +1396,13 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      add_user_role: {
+        Args: {
+          _role: Database["public"]["Enums"]["app_role"]
+          _user_id: string
+        }
+        Returns: undefined
+      }
       calculate_content_hash: { Args: { content: string }; Returns: string }
       can_accept_assignment: { Args: { _soldado_id: string }; Returns: boolean }
       can_manage_church_members: {

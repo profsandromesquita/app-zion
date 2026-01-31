@@ -14,6 +14,7 @@ export interface OnboardingData {
 
 interface OnboardingFlowProps {
   onComplete: (data: OnboardingData) => void;
+  onSkip?: () => void;
 }
 
 const GENDER_OPTIONS = [
@@ -45,7 +46,7 @@ const PAIN_TAGS = [
   "Propósito",
 ];
 
-export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
+export function OnboardingFlow({ onComplete, onSkip }: OnboardingFlowProps) {
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState<OnboardingData>({
     name: "",
@@ -245,11 +246,25 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
       {/* Header with progress */}
       <header className="border-b border-border px-4 py-4">
         <div className="mx-auto max-w-lg">
-          <div className="mb-3 flex items-center justify-center gap-2">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-              <Heart className="h-5 w-5 text-primary" />
+          <div className="mb-3 flex items-center justify-between">
+            <div className="flex-1" />
+            <div className="flex items-center gap-2">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
+                <Heart className="h-5 w-5 text-primary" />
+              </div>
+              <span className="font-medium text-foreground">Zyon</span>
             </div>
-            <span className="font-medium text-foreground">Zyon</span>
+            <div className="flex-1 flex justify-end">
+              {onSkip && (
+                <button
+                  type="button"
+                  onClick={onSkip}
+                  className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  Pular
+                </button>
+              )}
+            </div>
           </div>
           <Progress value={progress} className="h-2" />
           <p className="mt-2 text-center text-xs text-muted-foreground">
