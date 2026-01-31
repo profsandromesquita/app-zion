@@ -4,7 +4,7 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import {
   Sidebar,
@@ -70,12 +70,28 @@ export function ChatSidebar({
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (user) {
       loadSessions();
+      loadUserAvatar();
     }
   }, [user]);
+
+  const loadUserAvatar = async () => {
+    if (!user) return;
+    
+    const { data } = await supabase
+      .from("profiles")
+      .select("avatar_url")
+      .eq("id", user.id)
+      .maybeSingle();
+    
+    if (data?.avatar_url) {
+      setAvatarUrl(data.avatar_url);
+    }
+  };
 
   // Expose refresh function to parent
   useEffect(() => {
@@ -373,6 +389,9 @@ export function ChatSidebar({
           <DropdownMenuTrigger asChild>
             <button className="flex w-full items-center gap-2 rounded-lg p-2 hover:bg-muted/50 transition-colors">
               <Avatar className="h-8 w-8">
+                {avatarUrl && (
+                  <AvatarImage src={avatarUrl} alt="Avatar" className="object-cover" />
+                )}
                 <AvatarFallback className="bg-primary/10 text-primary text-xs">
                   <User className="h-3 w-3" />
                 </AvatarFallback>
