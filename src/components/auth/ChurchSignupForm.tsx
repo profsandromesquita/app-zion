@@ -117,15 +117,20 @@ export function ChurchSignupForm({ onBack }: ChurchSignupFormProps) {
 
       if (churchError) throw churchError;
 
-      // 4. Add 'igreja' role (the trigger already adds 'buscador', we need to add 'igreja')
-      const { error: roleError } = await supabase.from("user_roles").insert({
-        user_id: userId,
-        role: "igreja",
+      // 4. Add 'igreja' role using SECURITY DEFINER function
+      const { error: roleError } = await supabase.rpc("add_user_role", {
+        _user_id: userId,
+        _role: "igreja",
       });
 
       if (roleError) {
         console.error("Error adding igreja role:", roleError);
       }
+
+      // 5. Mark onboarding as completed (not applicable for churches)
+      await supabase.from("user_profiles").update({
+        onboarding_completed_at: new Date().toISOString(),
+      }).eq("id", userId);
 
       toast({
         title: "Cadastro realizado!",

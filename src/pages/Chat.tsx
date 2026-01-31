@@ -107,6 +107,21 @@ const Chat = () => {
   const checkOnboardingAndInit = async () => {
     if (!user) return;
 
+    // First check user roles - igreja and profissional skip onboarding
+    const { data: rolesData } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", user.id);
+
+    const userRoles = rolesData?.map((r) => r.role) || [];
+
+    // Igreja and Profissional accounts skip onboarding entirely
+    if (userRoles.includes("igreja") || userRoles.includes("profissional")) {
+      setOnboardingChecked(true);
+      initAuthenticatedSession();
+      return;
+    }
+
     // Fetch user_profiles for onboarding check
     const { data: userProfileData } = await supabase
       .from("user_profiles")
@@ -335,6 +350,12 @@ const Chat = () => {
       .eq("id", sessionId);
   };
 
+  // Handle skipping onboarding
+  const handleSkipOnboarding = async () => {
+    setShowOnboarding(false);
+    await initAuthenticatedSession();
+  };
+
   const sendMessage = async () => {
     if (!input.trim() || isLoading || !chatSessionId) return;
 
@@ -557,7 +578,12 @@ const Chat = () => {
 
   // Show onboarding for authenticated users who haven't completed it
   if (showOnboarding && user && !isNicodemosMode) {
-    return <OnboardingFlow onComplete={handleOnboardingComplete} />;
+    return (
+      <OnboardingFlow
+        onComplete={handleOnboardingComplete}
+        onSkip={handleSkipOnboarding}
+      />
+    );
   }
 
   // Anonymous mode (Nicodemos) - no sidebar

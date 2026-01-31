@@ -15,6 +15,7 @@ import { useToast } from "@/hooks/use-toast";
 import SafetyExit from "@/components/SafetyExit";
 import AvatarEditor from "@/components/profile/AvatarEditor";
 import JourneySection from "@/components/profile/JourneySection";
+import ChurchProfileSection, { ChurchData } from "@/components/profile/ChurchProfileSection";
 
 interface ProfileData {
   nome: string | null;
@@ -59,11 +60,13 @@ const roleColors: Record<AppRole, string> = {
 const Profile = () => {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
-  const { roles, loading: rolesLoading, isBuscador } = useUserRole();
+  const { roles, loading: rolesLoading, isBuscador, isIgreja } = useUserRole();
   const { toast } = useToast();
 
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [journey, setJourney] = useState<JourneyData | null>(null);
+  const [churchData, setChurchData] = useState<ChurchData | null>(null);
+  const [churchLoading, setChurchLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [avatarEditorOpen, setAvatarEditorOpen] = useState(false);
@@ -84,6 +87,34 @@ const Profile = () => {
       loadProfile();
     }
   }, [user]);
+
+  // Load church data when user has igreja role
+  useEffect(() => {
+    if (user && isIgreja && !rolesLoading) {
+      loadChurchData();
+    }
+  }, [user, isIgreja, rolesLoading]);
+
+  const loadChurchData = async () => {
+    if (!user) return;
+
+    setChurchLoading(true);
+
+    // Find church where this user is the pastor
+    const { data, error } = await supabase
+      .from("churches")
+      .select("id, name, address, city, state, phone, email, website, created_at")
+      .eq("pastor_id", user.id)
+      .maybeSingle();
+
+    if (error) {
+      console.error("Error loading church:", error);
+    } else if (data) {
+      setChurchData(data as ChurchData);
+    }
+
+    setChurchLoading(false);
+  };
 
   const loadProfile = async () => {
     if (!user) return;
@@ -120,6 +151,10 @@ const Profile = () => {
     }
 
     setLoading(false);
+  };
+
+  const handleChurchSave = (data: Partial<ChurchData>) => {
+    setChurchData((prev) => prev ? { ...prev, ...data } : null);
   };
 
   const handleSave = async () => {
@@ -262,52 +297,63 @@ const Profile = () => {
             </CardContent>
           </Card>
 
-          {/* Personal Data Card */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-lg">Dados Pessoais</CardTitle>
-              <CardDescription>
-                Atualize suas informações de perfil
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="nome">Nome</Label>
-                <Input
-                  id="nome"
-                  value={nome}
-                  onChange={(e) => setNome(e.target.value)}
-                  placeholder="Seu nome"
-                />
-              </div>
+          {/* Church Profile Section - Only for Igreja role */}
+          {isIgreja && (
+            <ChurchProfileSection
+              church={churchData}
+              onSave={handleChurchSave}
+              loading={churchLoading}
+            />
+          )}
 
-              <div className="space-y-2">
-                <Label htmlFor="phone">Telefone</Label>
-                <Input
-                  id="phone"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  placeholder="(00) 00000-0000"
-                />
-              </div>
+          {/* Personal Data Card - Not shown for Igreja role */}
+          {!isIgreja && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Dados Pessoais</CardTitle>
+                <CardDescription>
+                  Atualize suas informações de perfil
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="nome">Nome</Label>
+                  <Input
+                    id="nome"
+                    value={nome}
+                    onChange={(e) => setNome(e.target.value)}
+                    placeholder="Seu nome"
+                  />
+                </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="bio">Bio</Label>
-                <Textarea
-                  id="bio"
-                  value={bio}
-                  onChange={(e) => setBio(e.target.value)}
-                  placeholder="Conte um pouco sobre você..."
-                  rows={3}
-                />
-              </div>
+                <div className="space-y-2">
+                  <Label htmlFor="phone">Telefone</Label>
+                  <Input
+                    id="phone"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="(00) 00000-0000"
+                  />
+                </div>
 
-              <Button onClick={handleSave} disabled={saving} className="w-full sm:w-auto">
-                <Save className="mr-2 h-4 w-4" />
-                {saving ? "Salvando..." : "Salvar Alterações"}
-              </Button>
-            </CardContent>
-          </Card>
+                <div className="space-y-2">
+                  <Label htmlFor="bio">Bio</Label>
+                  <Textarea
+                    id="bio"
+                    value={bio}
+                    onChange={(e) => setBio(e.target.value)}
+                    placeholder="Conte um pouco sobre você..."
+                    rows={3}
+                  />
+                </div>
+
+                <Button onClick={handleSave} disabled={saving} className="w-full sm:w-auto">
+                  <Save className="mr-2 h-4 w-4" />
+                  {saving ? "Salvando..." : "Salvar Alterações"}
+                </Button>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Journey Card - Only for Buscadores */}
           {isBuscador && journey && (
