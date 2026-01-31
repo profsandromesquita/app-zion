@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Heart, ChevronRight, ChevronLeft, Check } from "lucide-react";
+import { ChevronRight, ChevronLeft, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
+import zionLogo from "@/assets/zion-logo.png";
 
 export interface OnboardingData {
   name: string;
@@ -144,8 +145,8 @@ export function OnboardingFlow({ onComplete, onSkip }: OnboardingFlowProps) {
                   className={cn(
                     "flex items-center justify-between rounded-xl border-2 p-4 text-left transition-all",
                     formData.grammar_gender === option.value
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:border-primary/50 hover:bg-muted/50"
+                      ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/30"
+                      : "border-border hover:border-emerald-500/50 hover:bg-muted/50"
                   )}
                 >
                   <div>
@@ -155,7 +156,7 @@ export function OnboardingFlow({ onComplete, onSkip }: OnboardingFlowProps) {
                     </span>
                   </div>
                   {formData.grammar_gender === option.value && (
-                    <Check className="h-5 w-5 text-primary" />
+                    <Check className="h-5 w-5 text-emerald-500" />
                   )}
                 </button>
               ))}
@@ -184,8 +185,8 @@ export function OnboardingFlow({ onComplete, onSkip }: OnboardingFlowProps) {
                   className={cn(
                     "flex items-center justify-between rounded-xl border-2 p-4 text-left transition-all",
                     formData.spiritual_maturity === option.value
-                      ? "border-primary bg-primary/5"
-                      : "border-border hover:border-primary/50 hover:bg-muted/50"
+                      ? "border-emerald-500 bg-emerald-50 dark:bg-emerald-950/30"
+                      : "border-border hover:border-emerald-500/50 hover:bg-muted/50"
                   )}
                 >
                   <div className="flex items-center gap-3">
@@ -193,7 +194,7 @@ export function OnboardingFlow({ onComplete, onSkip }: OnboardingFlowProps) {
                     <span className="font-medium text-foreground">{option.label}</span>
                   </div>
                   {formData.spiritual_maturity === option.value && (
-                    <Check className="h-5 w-5 text-primary" />
+                    <Check className="h-5 w-5 text-emerald-500" />
                   )}
                 </button>
               ))}
@@ -220,8 +221,8 @@ export function OnboardingFlow({ onComplete, onSkip }: OnboardingFlowProps) {
                   className={cn(
                     "rounded-full border-2 px-4 py-2 text-sm font-medium transition-all",
                     formData.initial_pain_focus.includes(tag)
-                      ? "border-primary bg-primary text-primary-foreground"
-                      : "border-border text-foreground hover:border-primary/50 hover:bg-muted/50"
+                      ? "border-emerald-500 bg-gradient-to-r from-emerald-500 to-lime-500 text-white"
+                      : "border-border text-foreground hover:border-emerald-500/50 hover:bg-muted/50"
                   )}
                 >
                   {tag}
@@ -249,10 +250,8 @@ export function OnboardingFlow({ onComplete, onSkip }: OnboardingFlowProps) {
           <div className="mb-3 flex items-center justify-between">
             <div className="flex-1" />
             <div className="flex items-center gap-2">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                <Heart className="h-5 w-5 text-primary" />
-              </div>
-              <span className="font-medium text-foreground">Zyon</span>
+              <img src={zionLogo} alt="Zion" className="h-10 w-10" />
+              <span className="font-semibold text-foreground">Zion</span>
             </div>
             <div className="flex-1 flex justify-end">
               {onSkip && (
@@ -293,12 +292,12 @@ export function OnboardingFlow({ onComplete, onSkip }: OnboardingFlowProps) {
           <Button
             onClick={handleNext}
             disabled={!canProceed()}
-            className="flex-1"
+            className="flex-1 bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all duration-300"
           >
             {step === totalSteps ? (
               <>
                 Começar
-                <Heart className="ml-2 h-4 w-4" />
+                <ChevronRight className="ml-2 h-4 w-4" />
               </>
             ) : (
               <>

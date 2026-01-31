@@ -564,7 +564,7 @@ const Chat = () => {
         <div
           className={`max-w-[80%] rounded-2xl px-4 py-3 ${
             message.sender === "user"
-              ? "bg-primary text-primary-foreground"
+              ? "bg-gradient-to-r from-emerald-500 to-lime-500 text-white"
               : "bg-muted text-foreground"
           }`}
         >
