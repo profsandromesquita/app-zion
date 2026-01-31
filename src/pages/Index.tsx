@@ -1,6 +1,7 @@
 import { useNavigate } from "react-router-dom";
 import { useEffect } from "react";
 import { Heart, Shield, MessageCircle, LogIn } from "lucide-react";
+import zionLogo from "@/assets/zion-logo.png";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import SafetyExit from "@/components/SafetyExit";
@@ -52,12 +53,17 @@ const Index = () => {
           className="mb-8 text-center opacity-0 animate-fade-slide-up"
           style={{ animationDelay: "0ms", animationFillMode: "forwards" }}
         >
-          <div className="mb-4 inline-flex h-24 w-24 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500 to-cyan-500 shadow-2xl shadow-emerald-500/30">
-            <Heart className="h-12 w-12 text-white" />
+          {/* Logo + Texto lado a lado */}
+          <div className="flex items-center justify-center gap-3 mb-2">
+            <img 
+              src={zionLogo} 
+              alt="Zion Logo" 
+              className="h-12 w-12 md:h-14 md:w-14 drop-shadow-lg"
+            />
+            <h1 className="text-5xl font-bold tracking-tight text-white drop-shadow-lg md:text-6xl">
+              Zion
+            </h1>
           </div>
-          <h1 className="text-5xl font-bold tracking-tight text-white drop-shadow-lg md:text-6xl">
-            Zion
-          </h1>
           <p
             className="mt-2 text-white/80 drop-shadow-md opacity-0 animate-fade-slide-up"
             style={{ animationDelay: "100ms", animationFillMode: "forwards" }}
