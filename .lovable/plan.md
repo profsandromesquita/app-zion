@@ -1,120 +1,165 @@
 
-## Objetivo (regra obrigatória)
-Implementar de forma “à prova de falhas” a regra:
 
-- **Cadastro == Igreja?**  
-  - **Sim** → **NÃO** deve aparecer onboarding (nunca).  
-  - **Não** → onboarding segue normal (apenas pessoas).
+# Plano: Adicionar Vídeo de Background na Landing Page do Zion
 
-Hoje isso já foi “tentado” no `Chat.tsx`, mas ainda aparece onboarding porque **a identificação “igreja” nem sempre está garantida** (role pode não ter sido gravada, ou o usuário pode ter igreja criada mas sem role, etc.). Então vamos fazer a regra funcionar mesmo em cenários inconsistentes.
+## Análise do Vídeo
+O vídeo enviado é um arquivo MP4 de alta qualidade (4K, 16:9, 24fps) com estilo cinemático. Pela nomenclatura, parece ser um vídeo atmosférico/contemplativo — ideal para usar como **background imersivo** na página inicial.
 
----
+## Estratégia de Integração Recomendada
 
-## Diagnóstico do porquê ainda aparece onboarding (causa mais provável)
-Apesar do `Chat.tsx` já checar `user_roles`, o onboarding ainda pode surgir quando:
+### Opção Escolhida: Vídeo como Background Full-Screen
+O vídeo será colocado como **fundo da página inteira**, com uma camada de overlay escurecido para garantir legibilidade do texto e botões por cima.
 
-1. O usuário **não está com a role `igreja`** na tabela `user_roles` (por falha no fluxo de cadastro ou inconsistência de dados).
-2. Mesmo sendo “igreja na prática” (tem registro em `churches`), o app está decidindo onboarding somente por `user_roles` e/ou `onboarding_completed_at`.
-3. A checagem de onboarding acontece antes de a lógica “institucional” ficar estável, e o app entra no fluxo padrão.
-
-A correção definitiva é: **não depender de um único sinal** (role) e sim ter um “detector institucional” robusto.
+**Vantagens:**
+- Experiência imersiva e premium
+- Mantém a hierarquia visual dos elementos (logo, texto, botões)
+- Funciona bem em dispositivos móveis (fallback para poster/imagem)
 
 ---
 
-## Entrega (o que será mudado)
-### Parte 1 — Garantir a regra no Chat (independente de role)
-**Arquivo:** `src/pages/Chat.tsx`
+## Implementação Técnica
 
-1) **Parar de decidir onboarding apenas por `user_roles`** (ou por um fetch pontual).  
-2) Introduzir uma lógica única e clara no `checkOnboardingAndInit()`:
+### 1. Copiar Vídeo para o Projeto
+O vídeo será copiado para `public/videos/hero-background.mp4` (pasta pública para acesso direto).
 
-**Regra final no Chat:**
-- Se o usuário é **igreja** → **não mostrar onboarding**, inicializar chat imediatamente.
-- Caso contrário → aplicar regra padrão (se `onboarding_completed_at` é nulo, mostra onboarding).
+**Por que `public/` e não `src/assets/`?**
+- Vídeos grandes (especialmente 4K) não devem passar pelo bundler do Vite
+- Acesso direto via URL (`/videos/hero-background.mp4`) é mais eficiente
+- Permite streaming progressivo pelo navegador
 
-**Como detectar “igreja” de forma robusta:**
-- Prioridade 1: `user_roles` contém `'igreja'`
-- Prioridade 2 (fallback): existe registro em `churches` com `pastor_id = user.id`  
-  - Se existir, então o usuário é igreja “na prática”, e o app deve:
-    - **pular onboarding** imediatamente
-    - (opcional, mas recomendado) tentar “consertar” a role automaticamente chamando `add_user_role` para incluir `'igreja'` (best-effort, sem quebrar o fluxo)
+### 2. Estrutura do Vídeo de Background
 
-3) Garantir que **mesmo que `showOnboarding` já esteja true**, ao detectar igreja o app:
-- fecha o onboarding (`setShowOnboarding(false)`)
-- segue para `initAuthenticatedSession()`
+```tsx
+{/* Video Background */}
+<div className="absolute inset-0 -z-20 overflow-hidden">
+  <video
+    autoPlay
+    muted
+    loop
+    playsInline
+    className="h-full w-full object-cover"
+    poster="/images/hero-poster.jpg"  // fallback para conexões lentas
+  >
+    <source src="/videos/hero-background.mp4" type="video/mp4" />
+  </video>
+  
+  {/* Overlay escurecido para legibilidade */}
+  <div className="absolute inset-0 bg-black/50" />
+  
+  {/* Gradiente suave na parte inferior */}
+  <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent" />
+</div>
+```
 
-Resultado: **não importa o estado do `user_profiles`** — igreja nunca verá onboarding.
+### 3. Ajustes de Estilo para os Elementos
 
----
+**Texto e Logo:**
+- Trocar cores para `text-white` para contrastar com vídeo
+- Adicionar `drop-shadow` sutil para destacar texto
 
-### Parte 2 — Garantir que Igreja receba role “igreja” corretamente no cadastro (fonte da verdade)
-**Arquivo:** `src/components/auth/ChurchSignupForm.tsx`
+**Botões com Efeitos Aprimorados:**
+- Botão primário: efeito de "glow" ao hover + escala
+- Botão secundário: borda luminosa + backdrop blur
 
-1) No `signUp`, adicionar metadado explícito para o tipo de conta:
-- `account_type: "igreja"` (ou nome equivalente consistente)
+```tsx
+{/* Botão Primário - com glow effect */}
+<Button 
+  className="group relative h-14 w-full overflow-hidden 
+             bg-primary text-lg font-medium text-primary-foreground 
+             shadow-lg shadow-primary/30
+             transition-all duration-300
+             hover:shadow-xl hover:shadow-primary/50 hover:scale-[1.02]"
+>
+  <MessageCircle className="mr-2 h-5 w-5 transition-transform group-hover:scale-110" />
+  Preciso de Ajuda Agora
+  <span className="absolute inset-0 -z-10 bg-gradient-to-r from-primary to-accent 
+                   opacity-0 transition-opacity duration-300 group-hover:opacity-100" />
+</Button>
 
-2) Isso permite que o backend crie a role correta já no nascimento do usuário.
+{/* Botão Secundário - com backdrop blur */}
+<Button 
+  variant="outline"
+  className="h-14 w-full border-2 border-white/30 
+             bg-white/10 backdrop-blur-md
+             text-white text-lg font-medium
+             transition-all duration-300
+             hover:bg-white/20 hover:border-white/50 hover:scale-[1.02]"
+>
+  <LogIn className="mr-2 h-5 w-5" />
+  Entrar / Cadastrar
+</Button>
+```
 
----
+### 4. Responsividade e Performance
 
-### Parte 3 — Ajustar o backend para setar role correta no momento do signup
-**Arquivos:** `supabase/migrations/...sql` (nova migration)
+**Mobile:**
+- Vídeo continua funcionando, mas com `poster` como fallback em conexões 3G
+- Considerar versão comprimida do vídeo para mobile (futura otimização)
 
-Hoje existe a função `public.handle_new_user()` (SECURITY DEFINER) que roda no signup e **insere sempre** role `'buscador'`. Vamos tornar isso inteligente:
+**Performance:**
+- `autoPlay muted loop playsInline` — necessário para autoplay funcionar
+- `object-cover` — garante que vídeo cubra toda a área sem distorção
+- `poster` — imagem exibida enquanto vídeo carrega
 
-1) Atualizar `public.handle_new_user()` para:
-- Ler `NEW.raw_user_meta_data ->> 'account_type'`
-- Se for `"igreja"` → inserir role `'igreja'`
-- Caso contrário → inserir role `'buscador'`
-
-2) (Opcional, mas recomendado pela regra) Se `account_type = 'igreja'`:
-- já marcar `user_profiles.onboarding_completed_at = now()`  
-  Mesmo que o Chat vá pular onboarding, isso evita qualquer fluxo futuro depender desse campo e “reabrir” onboarding por acidente.
-
-Isso torna a regra verdadeira desde a origem: “nasceu igreja → nunca entra em onboarding”.
-
----
-
-### Parte 4 — Corrigir usuários já criados (backfill)
-**Arquivo:** `supabase/migrations/...sql` (na mesma migration ou outra)
-
-Para corrigir dados existentes (igrejas cadastradas antes do ajuste), criar um backfill seguro:
-
-1) Inserir role `'igreja'` para todo `pastor_id` que já tenha uma igreja:
-- `INSERT INTO user_roles (user_id, role) SELECT pastor_id, 'igreja' FROM churches ... ON CONFLICT DO NOTHING`
-
-2) (Opcional) marcar onboarding como completo nesses usuários igreja:
-- `UPDATE user_profiles SET onboarding_completed_at = now() WHERE id IN (SELECT pastor_id FROM churches ...) AND onboarding_completed_at IS NULL`
-
----
-
-## Sequência de implementação (ordem obrigatória)
-1) **Migration**: atualizar `handle_new_user()` + backfill (Parte 3 e 4)  
-2) **Frontend**: atualizar `Chat.tsx` com “detector institucional” (Parte 1)  
-3) **Frontend**: atualizar `ChurchSignupForm.tsx` para setar `account_type: 'igreja'` no signup (Parte 2)  
-
----
-
-## Critérios de aceite (testes obrigatórios)
-1) Criar um novo cadastro de **Igreja** e entrar em `/chat`:
-- **Onboarding não aparece** em nenhum momento.
-2) Fazer login com um usuário “igreja antigo” (já existente):
-- **Onboarding não aparece** (mesmo que `onboarding_completed_at` esteja null).
-3) Criar um usuário normal (não igreja):
-- onboarding aparece normalmente se não tiver completado.
-4) Recarregar a página várias vezes em `/chat`:
-- igreja nunca cai no onboarding (sem “piscar” ou intermitência).
-
----
-
-## Observações de segurança
-- Roles continuam exclusivamente na tabela `user_roles` (como exigido).
-- A função `add_user_role` já valida `_user_id = auth.uid()` (isso é essencial e será mantido).
-- O backfill só usa relações já existentes (`churches.pastor_id`) e não abre brechas de privilégio.
+### 5. Acessibilidade
+- Vídeo é puramente decorativo (sem conteúdo informativo)
+- Será silenciado (`muted`) por padrão
+- Não interfere na navegação por teclado/leitor de tela
 
 ---
 
-## Arquivos envolvidos
-- `src/pages/Chat.tsx` (regra final: igreja nunca tem onboarding, com fallback via `churches`)
-- `src/components/auth/ChurchSignupForm.tsx` (setar metadata `account_type: 'igreja'`)
-- `supabase/migrations/<nova>.sql` (atualizar `handle_new_user` + backfill de roles + (opcional) marcar onboarding como completo para igrejas)
+## Arquivos a Modificar
+
+| Arquivo | Ação |
+|---------|------|
+| `public/videos/hero-background.mp4` | **CRIAR** - Copiar vídeo do upload |
+| `src/pages/Index.tsx` | **MODIFICAR** - Adicionar vídeo de background + ajustar estilos |
+
+---
+
+## Resultado Visual Esperado
+
+```text
+┌─────────────────────────────────────────┐
+│  [VÍDEO CINEMÁTICO EM LOOP]             │
+│  ╔═══════════════════════════════════╗  │
+│  ║   ❤️  (logo)                      ║  │
+│  ║        Zion                       ║  │
+│  ║   Seu refúgio espiritual          ║  │
+│  ║                                   ║  │
+│  ║   Encontre paz e orientação       ║  │
+│  ║   Um espaço seguro para...        ║  │
+│  ║                                   ║  │
+│  ║ ┌─────────────────────────────┐   ║  │
+│  ║ │  💬 Preciso de Ajuda Agora  │   ║  │ ← Glow effect no hover
+│  ║ └─────────────────────────────┘   ║  │
+│  ║ ┌─────────────────────────────┐   ║  │
+│  ║ │  🔑 Entrar / Cadastrar      │   ║  │ ← Backdrop blur
+│  ║ └─────────────────────────────┘   ║  │
+│  ║                                   ║  │
+│  ║  🛡️ 100% Confidencial  ❤️ Acolhimento ║
+│  ╚═══════════════════════════════════╝  │
+│  [OVERLAY ESCURECIDO SOBRE VÍDEO]       │
+└─────────────────────────────────────────┘
+```
+
+---
+
+## Efeitos dos Botões (Detalhado)
+
+| Botão | Estado Normal | Estado Hover |
+|-------|---------------|--------------|
+| **Preciso de Ajuda** | Azul sólido, sombra suave | Gradiente azul→lavanda, sombra "glow", escala 1.02x, ícone pulsa |
+| **Entrar/Cadastrar** | Transparente com borda, backdrop blur | Fundo mais opaco, borda mais visível, escala 1.02x |
+
+---
+
+## Considerações de Tamanho do Arquivo
+
+O vídeo original é 4K, o que pode ser grande (~50-100MB). Recomendações futuras:
+- Comprimir para 1080p (qualidade ainda excelente, ~10-20MB)
+- Criar versão WebM para navegadores compatíveis (menor tamanho)
+- Usar CDN para entrega otimizada
+
+Por agora, vamos usar o arquivo original para garantir qualidade máxima.
+
