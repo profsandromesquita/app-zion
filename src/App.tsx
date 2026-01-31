@@ -8,6 +8,7 @@ import Auth from "./pages/Auth";
 import Chat from "./pages/Chat";
 import Diary from "./pages/Diary";
 import Profile from "./pages/Profile";
+import Install from "./pages/Install";
 import NotFound from "./pages/NotFound";
 import AdminDashboard from "./pages/admin/AdminDashboard";
 import KnowledgeBase from "./pages/admin/KnowledgeBase";
@@ -33,6 +34,7 @@ const App = () => (
           <Route path="/chat" element={<Chat />} />
           <Route path="/diary" element={<Diary />} />
           <Route path="/profile" element={<Profile />} />
+          <Route path="/install" element={<Install />} />
           <Route path="/admin" element={<AdminDashboard />} />
           <Route path="/admin/documents" element={<Documents />} />
           <Route path="/admin/documents/:docId/chunks" element={<DocumentChunks />} />
