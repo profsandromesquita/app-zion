@@ -48,7 +48,17 @@ const Chat = () => {
 
   const { user, loading: authLoading, signOut } = useAuth();
   const { sessionId: anonSessionId, loading: anonLoading } = useAnonymousSession();
-  const { isAdmin } = useUserRole();
+  const { isAdmin, loading: rolesLoading } = useUserRole();
+  
+  // Debug log para diagnóstico mobile - header icons
+  useEffect(() => {
+    console.log("[Chat Header] Icons state:", { 
+      userId: user?.id, 
+      isAdmin, 
+      rolesLoading,
+      authLoading 
+    });
+  }, [user?.id, isAdmin, rolesLoading, authLoading]);
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");

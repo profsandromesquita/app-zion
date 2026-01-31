@@ -29,12 +29,22 @@ export function PushNotificationPrompt({ userId, variant = "icon" }: Props) {
     unsubscribe,
   } = usePushNotifications(userId);
 
-  // Mostrar aviso para iOS não-PWA
+  // Debug logging para diagnóstico mobile
   useEffect(() => {
+    console.log("[PushPrompt] State:", { 
+      isSupported, 
+      isLoading, 
+      permission, 
+      isSubscribed,
+      isIOS, 
+      isInStandaloneMode,
+      isMobile 
+    });
+    
     if (isIOS && !isInStandaloneMode && isSupported) {
       console.log("[Push] iOS detected, not in standalone mode - push may not work");
     }
-  }, [isIOS, isInStandaloneMode, isSupported]);
+  }, [isIOS, isInStandaloneMode, isSupported, isLoading, permission, isSubscribed, isMobile]);
 
   // Handler que mostra aviso para iOS se necessário
   const handleSubscribe = async () => {
@@ -49,7 +59,29 @@ export function PushNotificationPrompt({ userId, variant = "icon" }: Props) {
     await subscribe();
   };
 
-  // Não mostrar se não suportado ou permissão negada permanentemente
+  // Durante loading, mostrar ícone desabilitado (não esconder)
+  if (isLoading) {
+    if (variant === "icon") {
+      return (
+        <Button
+          variant="ghost"
+          size="icon"
+          disabled
+          className="h-8 w-8 text-muted-foreground opacity-50"
+        >
+          <BellOff className="h-4 w-4" />
+        </Button>
+      );
+    }
+    return (
+      <Button variant="ghost" size="sm" disabled className="text-muted-foreground opacity-50">
+        <BellOff className="h-4 w-4 mr-2" />
+        Verificando...
+      </Button>
+    );
+  }
+
+  // Só ocultar se CONFIRMADO que não é suportado (após loading completar)
   if (!isSupported || permission === "denied") return null;
 
   // Versão compacta (ícone apenas)
