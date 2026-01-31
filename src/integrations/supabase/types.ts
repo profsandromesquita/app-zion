@@ -887,6 +887,7 @@ export type Database = {
           grammar_gender: string | null
           id: string
           is_public_profile: boolean | null
+          last_active_at: string | null
           nome: string | null
           phone: string | null
           updated_at: string
@@ -899,6 +900,7 @@ export type Database = {
           grammar_gender?: string | null
           id: string
           is_public_profile?: boolean | null
+          last_active_at?: string | null
           nome?: string | null
           phone?: string | null
           updated_at?: string
@@ -911,9 +913,46 @@ export type Database = {
           grammar_gender?: string | null
           id?: string
           is_public_profile?: boolean | null
+          last_active_at?: string | null
           nome?: string | null
           phone?: string | null
           updated_at?: string
+        }
+        Relationships: []
+      }
+      push_subscriptions: {
+        Row: {
+          auth: string
+          created_at: string | null
+          device_info: Json | null
+          endpoint: string
+          id: string
+          is_active: boolean | null
+          p256dh: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          auth: string
+          created_at?: string | null
+          device_info?: Json | null
+          endpoint: string
+          id?: string
+          is_active?: boolean | null
+          p256dh: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          auth?: string
+          created_at?: string | null
+          device_info?: Json | null
+          endpoint?: string
+          id?: string
+          is_active?: boolean | null
+          p256dh?: string
+          updated_at?: string | null
+          user_id?: string
         }
         Relationships: []
       }
