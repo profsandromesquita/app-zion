@@ -30,6 +30,8 @@ interface JourneyData {
   active_themes_count: number | null;
   global_avg_score: number | null;
   spiritual_maturity: string | null;
+  total_shifts: number | null;
+  updated_at: string | null;
 }
 
 const roleLabels: Record<AppRole, string> = {
@@ -107,7 +109,7 @@ const Profile = () => {
     // Load journey data
     const { data: journeyData, error: journeyError } = await supabase
       .from("user_profiles")
-      .select("fase_jornada, active_themes_count, global_avg_score, spiritual_maturity")
+      .select("fase_jornada, active_themes_count, global_avg_score, spiritual_maturity, total_shifts, updated_at")
       .eq("id", user.id)
       .maybeSingle();
 

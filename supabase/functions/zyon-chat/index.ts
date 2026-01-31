@@ -174,6 +174,76 @@ const EMBEDDING_CONFIG = {
 const CURRENT_EMBEDDING_TYPE = 'simple-hash-v1';
 
 // ============================================
+// SYMBOLIC AVATAR EMOTIONAL CONTEXT MAPPING
+// ============================================
+
+const AVATAR_EMOTIONAL_CONTEXT: Record<string, { 
+  name: string; 
+  emotionalHint: string; 
+  suggestionForModel: string 
+}> = {
+  "seed-in-dark": {
+    name: "A Semente no Escuro",
+    emotionalHint: "Usuário se sente 'enterrado' pelos problemas mas tem esperança de potencial adormecido",
+    suggestionForModel: "Valorize pequenos progressos. Lembre que toda jornada começa com um primeiro passo."
+  },
+  "kintsugi-vase": {
+    name: "O Vaso Kintsugi",
+    emotionalHint: "Usuário está aceitando que suas 'quebras' podem ser transformadas em beleza",
+    suggestionForModel: "Valide a coragem de olhar para as cicatrizes. Enfatize resiliência e cura."
+  },
+  "deep-diver": {
+    name: "O Mergulhador nas Profundezas",
+    emotionalHint: "Usuário está pronto para encarar medos subconscientes",
+    suggestionForModel: "Pode ir mais fundo nas perguntas. O usuário demonstra coragem para introspecção."
+  },
+  "lit-labyrinth": {
+    name: "O Labirinto Iluminado",
+    emotionalHint: "Usuário se sente perdido mas está buscando clareza ativamente",
+    suggestionForModel: "Ajude a ordenar pensamentos. Faça perguntas que tragam clareza gradual."
+  },
+  "flame-in-storm": {
+    name: "A Chama na Tempestade",
+    emotionalHint: "Usuário passa por momento difícil mas mantém força interior",
+    suggestionForModel: "Reconheça a força de resistir. Não minimize a tempestade, mas valorize a chama."
+  },
+  "breaking-cocoon": {
+    name: "O Casulo a Romper",
+    emotionalHint: "Usuário em fase de transição intensa, sente desconforto da mudança",
+    suggestionForModel: "Normalize o desconforto da transformação. Celebre sinais de evolução."
+  },
+  "mountain-horizon": {
+    name: "A Montanha no Horizonte",
+    emotionalHint: "Usuário identificou o tamanho do desafio e está determinado",
+    suggestionForModel: "Reconheça a grandeza do desafio. Foque em passos concretos, não no cume."
+  },
+  "clearing-mirror": {
+    name: "O Espelho Embaciado",
+    emotionalHint: "Usuário começando a questionar mentiras sobre si mesmo",
+    suggestionForModel: "Ajude a limpar mais do espelho. Faça perguntas que revelem identidade verdadeira."
+  },
+  "broken-chain": {
+    name: "A Corrente Quebrada",
+    emotionalHint: "Usuário teve momento de libertação, identificou mentira que o prendia",
+    suggestionForModel: "Celebre a libertação! Ajude a consolidar o insight para que não volte."
+  },
+  "inner-sunrise": {
+    name: "O Nascer do Sol Interior",
+    emotionalHint: "Usuário vendo luz ao fundo do túnel, fase de otimismo e renovação",
+    suggestionForModel: "Alimente a esperança. Este é momento de consolidar ganhos e olhar para frente."
+  }
+};
+
+// Helper function to extract symbolic avatar ID from URL
+function extractSymbolicAvatarId(avatarUrl: string | null): string | null {
+  if (!avatarUrl) return null;
+  
+  // Symbolic avatars are in /avatars/[id].webp
+  const match = avatarUrl.match(/\/avatars\/([a-z-]+)\.webp$/);
+  return match ? match[1] : null;
+}
+
+// ============================================
 // BASE IDENTITY (CONSTITUIÇÃO)
 // ============================================
 
@@ -1662,11 +1732,11 @@ serve(async (req) => {
           console.error("Error fetching user profile:", err);
         }
         
-        // Fetch basic profile for name and grammar gender (onboarding)
+        // Fetch basic profile for name, grammar gender, bio, and avatar (onboarding + self-perception)
         try {
           const { data: basic } = await supabase
             .from("profiles")
-            .select("nome, grammar_gender")
+            .select("nome, grammar_gender, bio, avatar_url")
             .eq("id", userId)
             .maybeSingle();
           
@@ -1712,6 +1782,34 @@ serve(async (req) => {
         if (onboardingContext) {
           diaryContext += onboardingContext;
           console.log("Onboarding context injected");
+        }
+
+        // ============================================
+        // BIO AND SYMBOLIC AVATAR CONTEXT INJECTION
+        // ============================================
+        let selfPerceptionContext = "";
+
+        // Bio: explicit context provided by user
+        if (basicProfile?.bio && basicProfile.bio.trim().length > 0) {
+          selfPerceptionContext += `\n\n## AUTO-DESCRIÇÃO DO USUÁRIO (use discretamente, sem mencionar que leu)
+O usuário descreveu-se assim: "${basicProfile.bio.trim().substring(0, 500)}"
+REGRAS: Use como PISTA de contexto. NÃO repita literalmente. NÃO diga "você disse na sua bio".`;
+        }
+
+        // Symbolic avatar: emotional self-perception hint
+        const symbolicAvatarId = extractSymbolicAvatarId(basicProfile?.avatar_url);
+        if (symbolicAvatarId && AVATAR_EMOTIONAL_CONTEXT[symbolicAvatarId]) {
+          const avatarContext = AVATAR_EMOTIONAL_CONTEXT[symbolicAvatarId];
+          selfPerceptionContext += `\n\n## ESTADO EMOCIONAL AUTO-PERCEBIDO (pista sutil, NÃO mencione o avatar)
+Avatar escolhido: "${avatarContext.name}"
+Pista emocional: ${avatarContext.emotionalHint}
+Sugestão: ${avatarContext.suggestionForModel}
+REGRA: Use como orientação de tom, NÃO diga "pelo seu avatar" ou "você escolheu".`;
+        }
+
+        if (selfPerceptionContext) {
+          diaryContext += selfPerceptionContext;
+          console.log("Self-perception context injected (bio + avatar)");
         }
 
         // ============================================
