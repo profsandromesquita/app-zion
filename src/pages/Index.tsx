@@ -4,27 +4,26 @@ import { Heart, Shield, MessageCircle, LogIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import SafetyExit from "@/components/SafetyExit";
-
 const Index = () => {
   const navigate = useNavigate();
-  const { user, loading } = useAuth();
-
+  const {
+    user,
+    loading
+  } = useAuth();
   useEffect(() => {
     if (!loading && user) {
       navigate("/chat");
     }
   }, [user, loading, navigate]);
-
   const handleNeedHelp = () => {
     navigate("/chat?mode=nicodemos");
   };
-
   const handleLogin = () => {
     navigate("/auth");
   };
-
-  return (
-    <div className="relative min-h-screen overflow-hidden" style={{ background: "var(--gradient-peace)" }}>
+  return <div className="relative min-h-screen overflow-hidden" style={{
+    background: "var(--gradient-peace)"
+  }}>
       <SafetyExit />
       
       {/* Background decorativo */}
@@ -39,9 +38,7 @@ const Index = () => {
           <div className="mb-4 inline-flex h-20 w-20 items-center justify-center rounded-full bg-primary/10">
             <Heart className="h-10 w-10 text-primary" />
           </div>
-          <h1 className="text-4xl font-light tracking-tight text-foreground md:text-5xl">
-            Zyon
-          </h1>
+          <h1 className="text-4xl font-light tracking-tight text-foreground md:text-5xl">Zion</h1>
           <p className="mt-2 text-muted-foreground">Seu refúgio espiritual</p>
         </div>
 
@@ -58,22 +55,13 @@ const Index = () => {
 
         {/* Action Buttons */}
         <div className="flex w-full max-w-sm flex-col gap-4 animate-slide-up">
-          <Button
-            onClick={handleNeedHelp}
-            size="lg"
-            className="group relative h-14 w-full overflow-hidden bg-primary text-lg font-medium text-primary-foreground shadow-lg transition-all hover:shadow-xl"
-          >
+          <Button onClick={handleNeedHelp} size="lg" className="group relative h-14 w-full overflow-hidden bg-primary text-lg font-medium text-primary-foreground shadow-lg transition-all hover:shadow-xl">
             <MessageCircle className="mr-2 h-5 w-5" />
             Preciso de Ajuda Agora
             <span className="absolute inset-0 -z-10 bg-gradient-to-r from-primary to-accent opacity-0 transition-opacity group-hover:opacity-100" />
           </Button>
 
-          <Button
-            onClick={handleLogin}
-            variant="outline"
-            size="lg"
-            className="h-14 w-full border-2 text-lg font-medium"
-          >
+          <Button onClick={handleLogin} variant="outline" size="lg" className="h-14 w-full border-2 text-lg font-medium">
             <LogIn className="mr-2 h-5 w-5" />
             Entrar / Cadastrar
           </Button>
@@ -96,8 +84,6 @@ const Index = () => {
           <p>Você não está sozinho. Há esperança.</p>
         </footer>
       </div>
-    </div>
-  );
+    </div>;
 };
-
 export default Index;
