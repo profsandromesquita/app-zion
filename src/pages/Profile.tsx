@@ -347,7 +347,7 @@ const Profile = () => {
                   />
                 </div>
 
-                <Button onClick={handleSave} disabled={saving} className="w-full sm:w-auto">
+                <Button onClick={handleSave} disabled={saving} className="w-full sm:w-auto bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all duration-300">
                   <Save className="mr-2 h-4 w-4" />
                   {saving ? "Salvando..." : "Salvar Alterações"}
                 </Button>

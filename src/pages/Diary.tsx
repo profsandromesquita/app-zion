@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Heart, Plus, ArrowLeft, Trash2, Calendar, Save } from "lucide-react";
+import { Plus, ArrowLeft, Trash2, Calendar, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   AlertDialog,
@@ -22,6 +22,7 @@ import { useToast } from "@/hooks/use-toast";
 import SafetyExit from "@/components/SafetyExit";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
+import zionLogo from "@/assets/zion-logo.png";
 
 interface DiaryEntry {
   id: string;
@@ -169,9 +170,9 @@ const Diary = () => {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="animate-pulse-soft text-primary">
-          <Heart className="h-12 w-12" />
+      <div className="flex min-h-screen items-center justify-center" style={{ background: "var(--gradient-peace)" }}>
+        <div className="animate-pulse-soft">
+          <img src={zionLogo} alt="Zion" className="h-16 w-16" />
         </div>
       </div>
     );
@@ -293,7 +294,7 @@ const Diary = () => {
                   </p>
                 )}
               </div>
-              <Button onClick={handleSave} disabled={!content.trim() || isSaving}>
+              <Button onClick={handleSave} disabled={!content.trim() || isSaving} className="bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all duration-300">
                 <Save className="mr-2 h-4 w-4" />
                 {isSaving ? "Salvando..." : "Salvar"}
               </Button>
@@ -310,8 +311,8 @@ const Diary = () => {
           </>
         ) : (
           <div className="flex flex-1 flex-col items-center justify-center p-8 text-center">
-            <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
-              <Heart className="h-8 w-8 text-primary" />
+            <div className="mb-4">
+              <img src={zionLogo} alt="Zion" className="h-16 w-16 mx-auto" />
             </div>
             <h2 className="mb-2 text-lg font-medium text-foreground">
               Seu Diário Espiritual
@@ -320,7 +321,7 @@ const Diary = () => {
               Um espaço privado para registrar suas reflexões, orações e momentos 
               de conexão com Deus.
             </p>
-            <Button onClick={handleNewEntry}>
+            <Button onClick={handleNewEntry} className="bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all duration-300">
               <Plus className="mr-2 h-4 w-4" />
               Nova Entrada
             </Button>
