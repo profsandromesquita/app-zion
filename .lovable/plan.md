@@ -1,305 +1,120 @@
 
-# Plano de Correção: Cadastro e Perfil de Igreja
+## Objetivo (regra obrigatória)
+Implementar de forma “à prova de falhas” a regra:
 
-## Diagnóstico Completo dos 4 Problemas
+- **Cadastro == Igreja?**  
+  - **Sim** → **NÃO** deve aparecer onboarding (nunca).  
+  - **Não** → onboarding segue normal (apenas pessoas).
 
-### A. Erro RLS (código 42501) no cadastro de igreja
-
-**Causa Raiz Identificada:**
-1. A tabela `churches` não possui policy de INSERT para usuários normais
-2. Apenas admins e desenvolvedores podem inserir (policy ALL)
-3. O código em `ChurchSignupForm.tsx` tenta inserir diretamente na tabela
-
-**Políticas Atuais de `churches`:**
-```text
-SELECT: Membros ativos ou pastor_id = auth.uid()
-UPDATE: Apenas quem pode gerenciar membros
-ALL: Apenas admin/desenvolvedor
-INSERT: NÃO EXISTE ❌
-```
-
-**Problema Secundário:**
-O código também tenta inserir role 'igreja' em `user_roles` (linha 121), mas apenas admins podem fazer isso.
+Hoje isso já foi “tentado” no `Chat.tsx`, mas ainda aparece onboarding porque **a identificação “igreja” nem sempre está garantida** (role pode não ter sido gravada, ou o usuário pode ter igreja criada mas sem role, etc.). Então vamos fazer a regra funcionar mesmo em cenários inconsistentes.
 
 ---
 
-### B. Erro de lógica (Onboarding para igreja)
+## Diagnóstico do porquê ainda aparece onboarding (causa mais provável)
+Apesar do `Chat.tsx` já checar `user_roles`, o onboarding ainda pode surgir quando:
 
-**Causa Raiz:**
-O `Chat.tsx` (linhas 106-139) verifica `onboarding_completed_at` para **todos** os usuários sem verificar a role.
+1. O usuário **não está com a role `igreja`** na tabela `user_roles` (por falha no fluxo de cadastro ou inconsistência de dados).
+2. Mesmo sendo “igreja na prática” (tem registro em `churches`), o app está decidindo onboarding somente por `user_roles` e/ou `onboarding_completed_at`.
+3. A checagem de onboarding acontece antes de a lógica “institucional” ficar estável, e o app entra no fluxo padrão.
 
-```typescript
-// Atual (Chat.tsx linha 127)
-if (!userProfileData?.onboarding_completed_at) {
-  setShowOnboarding(true);  // Mostra para TODOS, incluindo igrejas
-}
-```
-
-Igrejas são instituições, não pessoas - não faz sentido perguntar "Como você descreveria sua relação com Deus?" para uma conta institucional.
+A correção definitiva é: **não depender de um único sinal** (role) e sim ter um “detector institucional” robusto.
 
 ---
 
-### C. Erro de informações (Perfil de pessoa para igreja)
+## Entrega (o que será mudado)
+### Parte 1 — Garantir a regra no Chat (independente de role)
+**Arquivo:** `src/pages/Chat.tsx`
 
-**Causa Raiz:**
-`Profile.tsx` exibe os mesmos campos para todos:
-- Dados Pessoais (nome, telefone, bio)
-- Seção "Minha Jornada" (apenas para buscadores)
+1) **Parar de decidir onboarding apenas por `user_roles`** (ou por um fetch pontual).  
+2) Introduzir uma lógica única e clara no `checkOnboardingAndInit()`:
 
-Para igrejas, deveria mostrar:
-- Dados da Igreja (nome, endereço, cidade, estado, website)
-- Lista de membros (futuro)
-- Estatísticas da igreja (futuro)
+**Regra final no Chat:**
+- Se o usuário é **igreja** → **não mostrar onboarding**, inicializar chat imediatamente.
+- Caso contrário → aplicar regra padrão (se `onboarding_completed_at` é nulo, mostra onboarding).
 
----
+**Como detectar “igreja” de forma robusta:**
+- Prioridade 1: `user_roles` contém `'igreja'`
+- Prioridade 2 (fallback): existe registro em `churches` com `pastor_id = user.id`  
+  - Se existir, então o usuário é igreja “na prática”, e o app deve:
+    - **pular onboarding** imediatamente
+    - (opcional, mas recomendado) tentar “consertar” a role automaticamente chamando `add_user_role` para incluir `'igreja'` (best-effort, sem quebrar o fluxo)
 
-### D. Usuário preso no onboarding
+3) Garantir que **mesmo que `showOnboarding` já esteja true**, ao detectar igreja o app:
+- fecha o onboarding (`setShowOnboarding(false)`)
+- segue para `initAuthenticatedSession()`
 
-**Causa Raiz:**
-`OnboardingFlow.tsx` não possui:
-- Botão de sair/fechar
-- Opção de pular completamente
-- Escape quando o usuário fecha e reabre o app
-
----
-
-## Solução Proposta
-
-### PARTE 1: Corrigir RLS para Cadastro de Igreja
-
-**1.1 Criar Policy de INSERT para `churches`**
-```sql
--- Permitir que usuário insira igreja onde ele será o pastor
-CREATE POLICY "Users can create their own church"
-ON public.churches FOR INSERT
-TO authenticated
-WITH CHECK (pastor_id = auth.uid());
-```
-
-**1.2 Modificar Trigger `handle_new_user` para aceitar role customizada**
-
-Opção A (Recomendada): Criar função SECURITY DEFINER para adicionar role 'igreja':
-```sql
-CREATE OR REPLACE FUNCTION public.add_user_role(_user_id uuid, _role app_role)
-RETURNS void
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-BEGIN
-  INSERT INTO public.user_roles (user_id, role)
-  VALUES (_user_id, _role)
-  ON CONFLICT (user_id, role) DO NOTHING;
-END;
-$$;
-
--- RLS Policy para chamar a função
-GRANT EXECUTE ON FUNCTION public.add_user_role TO authenticated;
-```
-
-**1.3 Atualizar `ChurchSignupForm.tsx`**
-Usar RPC para adicionar role 'igreja' via função SECURITY DEFINER.
+Resultado: **não importa o estado do `user_profiles`** — igreja nunca verá onboarding.
 
 ---
 
-### PARTE 2: Pular Onboarding para Igrejas
+### Parte 2 — Garantir que Igreja receba role “igreja” corretamente no cadastro (fonte da verdade)
+**Arquivo:** `src/components/auth/ChurchSignupForm.tsx`
 
-**2.1 Modificar `Chat.tsx`**
+1) No `signUp`, adicionar metadado explícito para o tipo de conta:
+- `account_type: "igreja"` (ou nome equivalente consistente)
 
-Antes de mostrar onboarding, verificar se usuário tem role 'igreja':
-
-```typescript
-// Chat.tsx - checkOnboardingAndInit()
-const checkOnboardingAndInit = async () => {
-  if (!user) return;
-
-  // NOVO: Verificar roles primeiro
-  const { data: rolesData } = await supabase
-    .from("user_roles")
-    .select("role")
-    .eq("user_id", user.id);
-
-  const userRoles = rolesData?.map(r => r.role) || [];
-  
-  // Igrejas e profissionais pulam onboarding
-  if (userRoles.includes('igreja') || userRoles.includes('profissional')) {
-    setOnboardingChecked(true);
-    initAuthenticatedSession();
-    return;
-  }
-
-  // Resto do código para buscadores...
-};
-```
-
-**2.2 Marcar `onboarding_completed_at` no cadastro de igreja**
-
-Adicionar no `ChurchSignupForm.tsx` após criar igreja:
-```typescript
-// Marcar onboarding como completo (não aplicável para igrejas)
-await supabase.from("user_profiles").update({
-  onboarding_completed_at: new Date().toISOString()
-}).eq("id", userId);
-```
+2) Isso permite que o backend crie a role correta já no nascimento do usuário.
 
 ---
 
-### PARTE 3: Perfil Específico para Igreja
+### Parte 3 — Ajustar o backend para setar role correta no momento do signup
+**Arquivos:** `supabase/migrations/...sql` (nova migration)
 
-**3.1 Criar componente `ChurchProfileSection.tsx`**
+Hoje existe a função `public.handle_new_user()` (SECURITY DEFINER) que roda no signup e **insere sempre** role `'buscador'`. Vamos tornar isso inteligente:
 
-Novo componente que exibe:
-- Nome da Igreja
-- Endereço completo (rua, cidade, estado)
-- Telefone
-- Website
-- Email de contato
-- Data de cadastro
+1) Atualizar `public.handle_new_user()` para:
+- Ler `NEW.raw_user_meta_data ->> 'account_type'`
+- Se for `"igreja"` → inserir role `'igreja'`
+- Caso contrário → inserir role `'buscador'`
 
-**3.2 Modificar `Profile.tsx`**
+2) (Opcional, mas recomendado pela regra) Se `account_type = 'igreja'`:
+- já marcar `user_profiles.onboarding_completed_at = now()`  
+  Mesmo que o Chat vá pular onboarding, isso evita qualquer fluxo futuro depender desse campo e “reabrir” onboarding por acidente.
 
-```typescript
-// Profile.tsx
-const { isIgreja, isBuscador } = useUserRole();
-
-// Buscar dados da igreja se for conta de igreja
-const [churchData, setChurchData] = useState<ChurchData | null>(null);
-
-useEffect(() => {
-  if (isIgreja && user) {
-    loadChurchProfile();
-  }
-}, [isIgreja, user]);
-
-// Na renderização:
-return (
-  <>
-    {isIgreja ? (
-      <ChurchProfileSection church={churchData} onSave={handleChurchSave} />
-    ) : (
-      <>
-        <PersonalDataCard />
-        {isBuscador && <JourneySection />}
-      </>
-    )}
-  </>
-);
-```
+Isso torna a regra verdadeira desde a origem: “nasceu igreja → nunca entra em onboarding”.
 
 ---
 
-### PARTE 4: Permitir Sair do Onboarding
+### Parte 4 — Corrigir usuários já criados (backfill)
+**Arquivo:** `supabase/migrations/...sql` (na mesma migration ou outra)
 
-**4.1 Adicionar botão "Pular" no `OnboardingFlow.tsx`**
+Para corrigir dados existentes (igrejas cadastradas antes do ajuste), criar um backfill seguro:
 
-```typescript
-// OnboardingFlow.tsx - Props
-interface OnboardingFlowProps {
-  onComplete: (data: OnboardingData) => void;
-  onSkip?: () => void;  // NOVO: Callback para pular
-}
+1) Inserir role `'igreja'` para todo `pastor_id` que já tenha uma igreja:
+- `INSERT INTO user_roles (user_id, role) SELECT pastor_id, 'igreja' FROM churches ... ON CONFLICT DO NOTHING`
 
-// Header ou footer
-<button
-  onClick={onSkip}
-  className="text-muted-foreground hover:text-foreground"
->
-  Pular por enquanto
-</button>
-```
-
-**4.2 Implementar lógica de "pular" em `Chat.tsx`**
-
-```typescript
-const handleSkipOnboarding = async () => {
-  // Marcar que pulou (mas não completou)
-  // Pode ser revisitado depois
-  setShowOnboarding(false);
-  initAuthenticatedSession();
-};
-```
+2) (Opcional) marcar onboarding como completo nesses usuários igreja:
+- `UPDATE user_profiles SET onboarding_completed_at = now() WHERE id IN (SELECT pastor_id FROM churches ...) AND onboarding_completed_at IS NULL`
 
 ---
 
-## Arquivos a Modificar
-
-| Arquivo | Alteração |
-|---------|-----------|
-| **Migrations SQL** | Criar policy INSERT para `churches`, criar função `add_user_role` |
-| `src/components/auth/ChurchSignupForm.tsx` | Usar RPC para adicionar role, marcar onboarding_completed |
-| `src/pages/Chat.tsx` | Verificar roles antes de mostrar onboarding |
-| `src/pages/Profile.tsx` | Condicionar exibição baseada em role (igreja vs pessoa) |
-| `src/components/profile/ChurchProfileSection.tsx` | NOVO - Exibir/editar dados da igreja |
-| `src/components/onboarding/OnboardingFlow.tsx` | Adicionar opção de pular |
+## Sequência de implementação (ordem obrigatória)
+1) **Migration**: atualizar `handle_new_user()` + backfill (Parte 3 e 4)  
+2) **Frontend**: atualizar `Chat.tsx` com “detector institucional” (Parte 1)  
+3) **Frontend**: atualizar `ChurchSignupForm.tsx` para setar `account_type: 'igreja'` no signup (Parte 2)  
 
 ---
 
-## Fluxo de Implementação
-
-```text
-FASE 1: Correção Crítica (RLS)
-├── 1.1 Criar policy INSERT para churches (pastor_id = auth.uid())
-├── 1.2 Criar função add_user_role com SECURITY DEFINER
-└── 1.3 Atualizar ChurchSignupForm.tsx para usar RPC
-
-FASE 2: Lógica de Onboarding
-├── 2.1 Modificar Chat.tsx para verificar roles
-├── 2.2 Marcar onboarding_completed_at no signup de igreja
-└── 2.3 Adicionar botão "Pular" no OnboardingFlow
-
-FASE 3: Perfil de Igreja
-├── 3.1 Criar ChurchProfileSection.tsx
-├── 3.2 Criar query para buscar dados da igreja do pastor
-└── 3.3 Modificar Profile.tsx para exibir condicional
-
-DEPLOY: Executar migrations SQL primeiro
-```
+## Critérios de aceite (testes obrigatórios)
+1) Criar um novo cadastro de **Igreja** e entrar em `/chat`:
+- **Onboarding não aparece** em nenhum momento.
+2) Fazer login com um usuário “igreja antigo” (já existente):
+- **Onboarding não aparece** (mesmo que `onboarding_completed_at` esteja null).
+3) Criar um usuário normal (não igreja):
+- onboarding aparece normalmente se não tiver completado.
+4) Recarregar a página várias vezes em `/chat`:
+- igreja nunca cai no onboarding (sem “piscar” ou intermitência).
 
 ---
 
-## Resumo das Correções
-
-| Problema | Causa | Solução |
-|----------|-------|---------|
-| A. Erro RLS 42501 | Sem policy INSERT para churches | Criar policy `pastor_id = auth.uid()` |
-| B. Onboarding para igreja | Sem verificação de role | Pular se role = 'igreja' |
-| C. Perfil errado | Mesmo template para todos | Componente específico para igreja |
-| D. Preso no onboarding | Sem opção de sair | Adicionar botão "Pular" |
+## Observações de segurança
+- Roles continuam exclusivamente na tabela `user_roles` (como exigido).
+- A função `add_user_role` já valida `_user_id = auth.uid()` (isso é essencial e será mantido).
+- O backfill só usa relações já existentes (`churches.pastor_id`) e não abre brechas de privilégio.
 
 ---
 
-## Detalhes das Migrations SQL
-
-```sql
--- MIGRATION 1: Policy INSERT para churches
-CREATE POLICY "Users can create their own church"
-ON public.churches FOR INSERT
-TO authenticated
-WITH CHECK (pastor_id = auth.uid());
-
--- MIGRATION 2: Função para adicionar role (SECURITY DEFINER)
-CREATE OR REPLACE FUNCTION public.add_user_role(_user_id uuid, _role app_role)
-RETURNS void
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-BEGIN
-  INSERT INTO public.user_roles (user_id, role)
-  VALUES (_user_id, _role)
-  ON CONFLICT (user_id, role) DO NOTHING;
-END;
-$$;
-
--- Permitir que usuários autenticados chamem a função para SI MESMOS
--- Nota: A função valida internamente que user_id = auth.uid()
-```
-
----
-
-## Resultado Esperado
-
-1. **Cadastro de igreja funciona** sem erro de RLS
-2. **Igrejas não veem onboarding** de pessoa física
-3. **Perfil de igreja mostra dados corretos** (nome da igreja, endereço, etc.)
-4. **Usuários podem pular onboarding** se desejarem
+## Arquivos envolvidos
+- `src/pages/Chat.tsx` (regra final: igreja nunca tem onboarding, com fallback via `churches`)
+- `src/components/auth/ChurchSignupForm.tsx` (setar metadata `account_type: 'igreja'`)
+- `supabase/migrations/<nova>.sql` (atualizar `handle_new_user` + backfill de roles + (opcional) marcar onboarding como completo para igrejas)
