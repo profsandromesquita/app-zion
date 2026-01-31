@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { Heart, Mail, Lock, User, ArrowLeft } from "lucide-react";
+import { Mail, Lock, User, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,6 +12,7 @@ import { AccountTypeSelector, type AccountType } from "@/components/auth/Account
 import { ChurchSignupForm } from "@/components/auth/ChurchSignupForm";
 import { ProfessionalSignupForm } from "@/components/auth/ProfessionalSignupForm";
 import { z } from "zod";
+import zionLogo from "@/assets/zion-logo.png";
 const loginSchema = z.object({
   email: z.string().email("Email inválido"),
   password: z.string().min(6, "Senha deve ter no mínimo 6 caracteres")
@@ -111,9 +112,9 @@ const Auth = () => {
     setShowAccountTypeSelector(true);
   };
   if (loading) {
-    return <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="animate-pulse-soft text-primary">
-          <Heart className="h-12 w-12" />
+    return <div className="flex min-h-screen items-center justify-center" style={{ background: "var(--gradient-peace)" }}>
+        <div className="animate-pulse-soft">
+          <img src={zionLogo} alt="Zion" className="h-16 w-16" />
         </div>
       </div>;
   }
@@ -171,7 +172,7 @@ const Auth = () => {
           <Button type="button" variant="outline" onClick={handleBackToSelector} disabled={isLoading}>
             Voltar
           </Button>
-          <Button type="submit" className="flex-1" disabled={isLoading}>
+          <Button type="submit" className="flex-1 bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all duration-300" disabled={isLoading}>
             {isLoading ? "Criando conta..." : "Criar Conta"}
           </Button>
         </div>
@@ -191,10 +192,10 @@ const Auth = () => {
       <div className="container mx-auto flex min-h-screen flex-col items-center justify-center px-4 py-16">
         {/* Logo */}
         <div className="mb-8 text-center animate-fade-in">
-          <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-full bg-primary/10">
-            <Heart className="h-8 w-8 text-primary" />
+          <div className="flex items-center justify-center gap-3 mb-2">
+            <img src={zionLogo} alt="Zion Logo" className="h-12 w-12 drop-shadow-lg" />
+            <h1 className="text-3xl font-bold text-foreground">Zion</h1>
           </div>
-          <h1 className="text-3xl font-light text-foreground">Zion</h1>
         </div>
 
         {/* Auth Card */}
@@ -237,7 +238,7 @@ const Auth = () => {
                     {errors.login_password && <p className="text-sm text-destructive">{errors.login_password}</p>}
                   </div>
 
-                  <Button type="submit" className="w-full" size="lg" disabled={isLoading}>
+                  <Button type="submit" className="w-full bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all duration-300" size="lg" disabled={isLoading}>
                     {isLoading ? "Entrando..." : "Entrar"}
                   </Button>
                 </form>

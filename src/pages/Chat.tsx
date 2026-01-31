@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Heart, Send, Menu, ArrowLeft, Bug } from "lucide-react";
+import { Send, Menu, ArrowLeft, Bug } from "lucide-react";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
 import { usePersonalizedStarters } from "@/hooks/usePersonalizedStarters";
 import { VoiceMicButton } from "@/components/chat/VoiceMicButton";
@@ -21,6 +21,7 @@ import { supabase } from "@/integrations/supabase/client";
 import SafetyExit from "@/components/SafetyExit";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { OnboardingFlow, OnboardingData } from "@/components/onboarding/OnboardingFlow";
+import zionLogo from "@/assets/zion-logo.png";
 interface Message {
   id: string;
   sender: "user" | "ai";
@@ -601,9 +602,9 @@ const Chat = () => {
 
   if (loading || (!onboardingChecked && user && !isNicodemosMode)) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="animate-pulse-soft text-primary">
-          <Heart className="h-12 w-12" />
+      <div className="flex min-h-screen items-center justify-center" style={{ background: "var(--gradient-peace)" }}>
+        <div className="animate-pulse-soft">
+          <img src={zionLogo} alt="Zion" className="h-16 w-16" />
         </div>
       </div>
     );
@@ -638,11 +639,9 @@ const Chat = () => {
               <ArrowLeft className="h-5 w-5" />
             </Button>
             <div className="flex items-center gap-2">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                <Heart className="h-5 w-5 text-primary" />
-              </div>
+              <img src={zionLogo} alt="Zion" className="h-10 w-10" />
               <div>
-                <h1 className="font-medium text-foreground">Zyon</h1>
+                <h1 className="font-medium text-foreground">Zion</h1>
                 <p className="text-xs text-muted-foreground">Modo Anônimo</p>
               </div>
             </div>
@@ -659,7 +658,7 @@ const Chat = () => {
                 <p className="text-sm text-muted-foreground">
                   Você está no modo anônimo. Crie uma conta para salvar suas conversas e acessar o diário.
                 </p>
-                <Button onClick={() => navigate("/auth")}>
+                <Button onClick={() => navigate("/auth")} className="bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all duration-300">
                   Criar Conta
                 </Button>
               </div>
@@ -718,7 +717,7 @@ const Chat = () => {
             <Button
               onClick={sendMessage}
               size="icon"
-              className="h-[50px] w-[50px] shrink-0"
+              className="h-[50px] w-[50px] shrink-0 bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all duration-300"
               disabled={!input.trim() || isLoading}
             >
               <Send className="h-5 w-5" />
@@ -767,11 +766,9 @@ const Chat = () => {
             <div className="flex items-center gap-3">
               <SidebarTrigger />
               <div className="flex items-center gap-2">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-primary/10">
-                  <Heart className="h-5 w-5 text-primary" />
-                </div>
+                <img src={zionLogo} alt="Zion" className="h-10 w-10" />
                 <div>
-                  <h1 className="font-medium text-foreground">Zyon</h1>
+                  <h1 className="font-medium text-foreground">Zion</h1>
                   <p className="text-xs text-muted-foreground">Acolhimento</p>
                 </div>
               </div>
@@ -841,7 +838,7 @@ const Chat = () => {
               <Button
                 onClick={sendMessage}
                 size="icon"
-                className="h-[50px] w-[50px] shrink-0"
+                className="h-[50px] w-[50px] shrink-0 bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all duration-300"
                 disabled={!input.trim() || isLoading}
               >
                 <Send className="h-5 w-5" />
