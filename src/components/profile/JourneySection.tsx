@@ -1,4 +1,4 @@
-import { Heart, Sprout, BarChart3, Star, Leaf } from "lucide-react";
+import { Heart, Sprout, BarChart3, Star, Leaf, Lightbulb, Activity } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Progress } from "@/components/ui/progress";
 
@@ -7,6 +7,8 @@ interface JourneyData {
   active_themes_count: number | null;
   global_avg_score: number | null;
   spiritual_maturity: string | null;
+  total_shifts: number | null;
+  updated_at: string | null;
 }
 
 interface JourneySectionProps {
@@ -44,14 +46,40 @@ const PHASE_MESSAGES: Record<string, { message: string; progress: number }> = {
   },
 };
 
+// Calculate days since last activity
+function getDaysSinceActivity(updatedAt: string | null): number {
+  if (!updatedAt) return 30;
+  const now = new Date();
+  const updated = new Date(updatedAt);
+  return Math.floor((now.getTime() - updated.getTime()) / (1000 * 60 * 60 * 24));
+}
+
+// Get activity status label and color
+function getActivityStatus(days: number): { label: string; colorClass: string } {
+  if (days <= 3) return { label: "Ativo recentemente", colorClass: "text-green-600 dark:text-green-400" };
+  if (days <= 7) return { label: `Última atividade há ${days} dias`, colorClass: "text-amber-600 dark:text-amber-400" };
+  if (days <= 30) return { label: `Última atividade há ${days} dias`, colorClass: "text-muted-foreground" };
+  return { label: "Há algum tempo sem atividade", colorClass: "text-muted-foreground" };
+}
+
 const JourneySection = ({ journey }: JourneySectionProps) => {
   const phase = journey.fase_jornada || "inicio";
   const phaseInfo = PHASE_MESSAGES[phase] || PHASE_MESSAGES.inicio;
   
-  // Calculate progress based on score (0-5 scale to 0-100)
-  const scoreProgress = journey.global_avg_score 
-    ? Math.min(100, (journey.global_avg_score / 5) * 100) 
-    : 0;
+  // Calculate dynamic progress
+  const baseProgress = phaseInfo.progress;
+  
+  // Bonus for shifts/insights (max +15%)
+  const shiftsBonus = Math.min(15, (journey.total_shifts || 0) * 3);
+  
+  // Bonus for recent activity (max +10%)
+  const daysSinceActivity = getDaysSinceActivity(journey.updated_at);
+  const activityBonus = daysSinceActivity <= 3 ? 10 : daysSinceActivity <= 7 ? 5 : 0;
+  
+  // Final progress (max 95%, never 100%)
+  const dynamicProgress = Math.min(95, baseProgress + shiftsBonus + activityBonus);
+  
+  const activityStatus = getActivityStatus(daysSinceActivity);
 
   return (
     <Card className="overflow-hidden">
@@ -88,8 +116,8 @@ const JourneySection = ({ journey }: JourneySectionProps) => {
           </div>
         </div>
 
-        {/* Stats Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {/* Stats Grid - Now 4 columns */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {/* Temas Ativos */}
           <div className="rounded-lg border bg-card p-4 text-center space-y-2">
             <div className="mx-auto w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
@@ -112,6 +140,17 @@ const JourneySection = ({ journey }: JourneySectionProps) => {
             <p className="text-xs text-muted-foreground">Progresso geral</p>
           </div>
 
+          {/* Insights (NEW) */}
+          <div className="rounded-lg border bg-card p-4 text-center space-y-2">
+            <div className="mx-auto w-10 h-10 rounded-full bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center">
+              <Lightbulb className="h-5 w-5 text-purple-600 dark:text-purple-400" />
+            </div>
+            <p className="text-2xl font-bold text-foreground">
+              {journey.total_shifts ?? 0}
+            </p>
+            <p className="text-xs text-muted-foreground">Insights conquistados</p>
+          </div>
+
           {/* Maturidade */}
           <div className="rounded-lg border bg-card p-4 text-center space-y-2">
             <div className="mx-auto w-10 h-10 rounded-full bg-green-100 dark:bg-green-900/30 flex items-center justify-center">
@@ -128,16 +167,16 @@ const JourneySection = ({ journey }: JourneySectionProps) => {
         <div className="space-y-3 pt-2">
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">Progresso da jornada</span>
-            <span className="font-medium text-primary">{phaseInfo.progress}%</span>
+            <span className="font-medium text-primary">{dynamicProgress}%</span>
           </div>
           <div className="relative">
-            <Progress value={phaseInfo.progress} className="h-3" />
+            <Progress value={dynamicProgress} className="h-3" />
             <div className="absolute inset-0 flex items-center justify-between px-1">
               {[0, 1, 2, 3, 4, 5].map((i) => (
                 <div
                   key={i}
                   className={`w-1.5 h-1.5 rounded-full ${
-                    phaseInfo.progress >= i * 20 ? "bg-primary-foreground" : "bg-primary/30"
+                    dynamicProgress >= i * 20 ? "bg-primary-foreground" : "bg-primary/30"
                   }`}
                 />
               ))}
@@ -147,6 +186,14 @@ const JourneySection = ({ journey }: JourneySectionProps) => {
             <span>Início</span>
             <span>Consolidação</span>
           </div>
+        </div>
+
+        {/* Activity Indicator (NEW) */}
+        <div className="flex items-center gap-2 pt-2 border-t">
+          <Activity className={`h-4 w-4 ${activityStatus.colorClass}`} />
+          <span className={`text-sm ${activityStatus.colorClass}`}>
+            {activityStatus.label}
+          </span>
         </div>
       </CardContent>
     </Card>
