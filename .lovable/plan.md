@@ -1,248 +1,114 @@
 
-# Plano: Aplicar Design Emerald-Lime nas Paginas Restantes
+# Plano: Corrigir Avatar no Modal de Detalhes do Usuário
 
-## Resumo
+## Problema Identificado
 
-As seguintes areas ainda usam a paleta azul antiga (bg-primary = azul) e precisam ser atualizadas para o novo padrao emerald-lime:
+O modal "Detalhes do Usuário" não mostra a imagem do avatar porque:
 
-| Componente | Problemas Identificados |
-|------------|------------------------|
-| **AccountTypeSelector.tsx** | Cards selecionados com `border-primary` e `ring-primary/20` (azul), icones com `bg-primary` (azul) |
-| **Auth.tsx (Buscador form)** | Icone do Buscador com `bg-blue-100 text-blue-800` |
-| **ChurchSignupForm.tsx** | Botao de submit sem gradiente emerald-lime |
-| **ProfessionalSignupForm.tsx** | Botao de submit sem gradiente emerald-lime |
-| **AdminLayout.tsx** | Sidebar com navegacao usando `bg-primary` (azul) para item ativo, logo ausente |
-| **Todas as paginas admin** | Botoes de acao sem gradiente, spinners com `border-primary` (azul), badges diversas |
-
----
+1. A query no `AdminDashboard.tsx` não inclui o campo `avatar_url` quando busca os perfis
+2. A interface `UserWithRoles` não possui o campo `avatar_url`
+3. O `UserDetailsModal` só usa `AvatarFallback`, não tem `AvatarImage`
 
 ## Arquivos a Modificar
 
-### 1. AccountTypeSelector.tsx
-
-**Problema**: Cards de selecao (Buscador, Igreja, Profissional) usam `border-primary` e `bg-primary` azul
-
-**Mudancas**:
-```tsx
-// Card selecionado - ANTES:
-selected === type && "border-primary ring-2 ring-primary/20"
-// DEPOIS:
-selected === type && "border-emerald-500 ring-2 ring-emerald-500/20"
-
-// Hover do card - ANTES:
-"hover:border-primary/50"
-// DEPOIS:
-"hover:border-emerald-500/50"
-
-// Icone selecionado - ANTES:
-selected === type ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
-// DEPOIS:
-selected === type ? "bg-gradient-to-r from-emerald-500 to-lime-500 text-white" : "bg-muted text-muted-foreground"
-```
-
-### 2. Auth.tsx (Formulario Buscador)
-
-**Problema**: Icone do formulario de Buscador usa `bg-blue-100 text-blue-800`
-
-**Mudancas**:
-```tsx
-// ANTES (linha 135):
-<div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300">
-// DEPOIS:
-<div className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-300">
-```
-
-### 3. ChurchSignupForm.tsx
-
-**Problema**: Botao de submit sem gradiente
-
-**Mudancas**:
-```tsx
-// ANTES (linha 328):
-<Button type="submit" className="flex-1" disabled={isLoading}>
-// DEPOIS:
-<Button type="submit" className="flex-1 bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all duration-300" disabled={isLoading}>
-```
-
-### 4. ProfessionalSignupForm.tsx
-
-**Problema**: Botao de submit sem gradiente
-
-**Mudancas**:
-```tsx
-// ANTES (linha 288):
-<Button type="submit" className="flex-1" disabled={isLoading}>
-// DEPOIS:
-<Button type="submit" className="flex-1 bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all duration-300" disabled={isLoading}>
-```
-
-### 5. AdminLayout.tsx
-
-**Problemas**:
-- Navegacao ativa usa `bg-primary text-primary-foreground` (azul)
-- Falta logo Zion no header da sidebar
-
-**Mudancas**:
-```tsx
-// Adicionar import:
-import zionLogo from "@/assets/zion-logo.png";
-
-// Header da sidebar - adicionar logo:
-<div className="border-b border-border p-4">
-  <div className="flex items-center gap-2 mb-1">
-    <img src={zionLogo} alt="Zion" className="h-8 w-8" />
-    <h1 className="text-xl font-semibold text-foreground">Painel Admin</h1>
-  </div>
-  <p className="text-sm text-muted-foreground">Gerenciamento ZION</p>
-</div>
-
-// Navegacao ativa - ANTES:
-isActive ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-accent"
-// DEPOIS:
-isActive ? "bg-gradient-to-r from-emerald-500 to-lime-500 text-white" : "text-muted-foreground hover:bg-accent"
-```
-
-### 6. Paginas Admin - Botoes de Acao
-
-Todas as paginas admin que usam botoes primarios precisam do gradiente:
-
-**Documents.tsx**:
-- Botao "Novo Documento" (linha 395-398)
-- Botao "Criar Documento" / "Salvar Nova Versao" no dialog (linha 495-496)
-
-**RagTest.tsx**:
-- Botao de busca (linha 136)
-
-**FeedbackDataset.tsx**:
-- Botao "Exportar" (linha 498-500)
-
-**JourneyMap.tsx**:
-- Botoes de acao diversos
-
-**KnowledgeBase.tsx**:
-- Botao "Novo Documento" (linha 199-207)
-- Botao "Criar Documento" no dialog (linha 291)
-- Spinner de loading (linha 302)
-
-**SystemInstructions.tsx**:
-- Botao "Nova Instrucao" (linha 172-180)
-- Botao "Criar Instrucao" no dialog (linha 242)
-- Spinner de loading (linha 252)
-- Badge "Constituicao" (linha 278-281)
+| Arquivo | Mudança |
+|---------|---------|
+| `src/pages/admin/AdminDashboard.tsx` | Adicionar `avatar_url` na query e interface |
+| `src/components/admin/UserDetailsModal.tsx` | Adicionar `avatar_url` na interface e usar `AvatarImage` |
 
 ---
 
-## Detalhes Tecnicos por Arquivo
+## Detalhes Técnicos
 
-### AdminLayout.tsx - Codigo Completo da Mudanca
+### 1. AdminDashboard.tsx
 
+**Query atual (linha 79):**
 ```tsx
-// Import
-import zionLogo from "@/assets/zion-logo.png";
+supabase.from("profiles").select("id, nome, email, phone, created_at")
+```
 
-// Header
-<div className="border-b border-border p-4">
-  <div className="flex items-center gap-2 mb-1">
-    <img src={zionLogo} alt="Zion" className="h-8 w-8" />
-    <h1 className="text-xl font-semibold text-foreground">Painel Admin</h1>
-  </div>
-  <p className="text-sm text-muted-foreground">Gerenciamento ZION</p>
-</div>
+**Query corrigida:**
+```tsx
+supabase.from("profiles").select("id, nome, email, phone, created_at, avatar_url")
+```
 
-// Navegacao
-className={({ isActive }) =>
-  cn(
-    "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-    isActive
-      ? "bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-md"
-      : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
-  )
+**Interface UserWithRoles - adicionar campo:**
+```tsx
+interface UserWithRoles {
+  id: string;
+  nome: string | null;
+  email: string | null;
+  phone: string | null;
+  created_at: string;
+  avatar_url: string | null;  // ADICIONAR
+  roles: AppRole[];
+  // ... demais campos
 }
 ```
 
-### Botoes Admin - Padrao
+### 2. UserDetailsModal.tsx
 
-Todos os botoes primarios nas paginas admin devem usar:
+**Interface UserWithRoles - adicionar campo:**
 ```tsx
-className="bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all duration-300"
+interface UserWithRoles {
+  id: string;
+  nome: string | null;
+  email: string | null;
+  phone: string | null;
+  created_at: string;
+  avatar_url?: string | null;  // ADICIONAR
+  roles: AppRole[];
+  // ... demais campos
+}
 ```
 
-### Spinners de Loading - Padrao
-
+**Importar AvatarImage:**
 ```tsx
-// ANTES:
-<div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
-
-// DEPOIS (usar logo):
-<img src={zionLogo} alt="Zion" className="h-12 w-12 animate-pulse" />
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 ```
 
-### Badges Constituicao em SystemInstructions.tsx
-
+**Avatar atual (linhas 182-186):**
 ```tsx
-// ANTES:
-<span className="text-xs bg-primary text-primary-foreground px-2 py-0.5 rounded-full">
-// DEPOIS:
-<span className="text-xs bg-gradient-to-r from-emerald-500 to-lime-500 text-white px-2 py-0.5 rounded-full">
+<Avatar className="h-16 w-16">
+  <AvatarFallback className="bg-primary/10 text-primary text-xl">
+    <User className="h-8 w-8" />
+  </AvatarFallback>
+</Avatar>
 ```
+
+**Avatar corrigido:**
+```tsx
+<Avatar className="h-16 w-16">
+  {user.avatar_url && (
+    <AvatarImage src={user.avatar_url} alt={user.nome || "Avatar"} className="object-cover" />
+  )}
+  <AvatarFallback className="bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-xl">
+    <User className="h-8 w-8" />
+  </AvatarFallback>
+</Avatar>
+```
+
+Também atualizo o fallback para usar as cores emerald-lime do novo design.
 
 ---
 
-## Lista Completa de Arquivos
+## Resultado Esperado
 
-| Arquivo | Tipo de Mudanca |
-|---------|-----------------|
-| `src/components/auth/AccountTypeSelector.tsx` | Cards de selecao, icones |
-| `src/pages/Auth.tsx` | Icone do formulario Buscador |
-| `src/components/auth/ChurchSignupForm.tsx` | Botao submit |
-| `src/components/auth/ProfessionalSignupForm.tsx` | Botao submit |
-| `src/components/admin/AdminLayout.tsx` | Logo, navegacao ativa |
-| `src/pages/admin/Documents.tsx` | Botoes primarios |
-| `src/pages/admin/RagTest.tsx` | Botao busca |
-| `src/pages/admin/FeedbackDataset.tsx` | Botao exportar |
-| `src/pages/admin/JourneyMap.tsx` | Botoes diversos |
-| `src/pages/admin/KnowledgeBase.tsx` | Botoes, spinner |
-| `src/pages/admin/SystemInstructions.tsx` | Botoes, spinner, badge |
-
----
-
-## Resultado Visual Esperado
-
+Antes:
 ```text
-ANTES (Azul):
-+------------------------+
-| [Buscador]  <- border-primary azul
-| [Igreja]    <- hover azul
-| [Profissional]
-+------------------------+
-| [Botao Azul]
-+------------------------+
-
-DEPOIS (Emerald-Lime):
-+------------------------+
-| [Buscador]  <- border-emerald-500 + gradiente
-| [Igreja]    <- hover emerald
-| [Profissional]
-+------------------------+
-| [Gradiente Verde]
-+------------------------+
++------------------+
+| [Icone genérico] |  <- Sempre mostra fallback
+| Sandro Mesquita  |
++------------------+
 ```
 
-Admin Sidebar:
+Depois:
 ```text
-ANTES:
 +------------------+
-| Painel Admin     |
-|------------------|
-| [Dashboard] <- bg-primary azul
-| [Documentos]
+| [Foto do avatar] |  <- Mostra imagem real se disponível
+| Sandro Mesquita  |
 +------------------+
-
-DEPOIS:
-+------------------+
-| [Z] Painel Admin |  <- Logo + titulo
-|------------------|
-| [Dashboard] <- gradiente verde
-| [Documentos]
+| ou               |
+| [Fallback verde] |  <- Mostra fallback emerald se não tiver foto
 +------------------+
 ```
