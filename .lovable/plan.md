@@ -1,222 +1,36 @@
 
-# Plano de Implementação: Integrar Bio/Avatar no Modelo + Melhorar Jornada
+# Plano: Exibir Avatar do Usuário no Sidebar
 
-## Resumo Executivo
-Implementar duas melhorias conforme recomendações do relatório técnico:
-1. **Integrar Bio e Avatar Simbólico** no contexto do modelo Zyon-Chat
-2. **Melhorar visualização da Jornada** com métricas dinâmicas (`phase_confidence`, `total_shifts`)
+## Problema Identificado
 
----
+O avatar carregado no perfil não aparece no sidebar porque:
 
-## PARTE 1: Integrar Bio e Avatar no Contexto do Modelo
-
-### 1.1 Alterações na Query de Profiles
-
-**Arquivo**: `supabase/functions/zyon-chat/index.ts`  
-**Linha**: 1667-1671
-
-```text
-ANTES:
-.select("nome, grammar_gender")
-
-DEPOIS:
-.select("nome, grammar_gender, bio, avatar_url")
-```
-
-### 1.2 Criar Mapeamento de Avatares Simbólicos
-
-**Arquivo**: `supabase/functions/zyon-chat/index.ts`  
-**Localização**: Após as constantes existentes (aprox. linha 50-100)
-
-```typescript
-// Mapeamento de avatares simbólicos para contexto emocional
-const AVATAR_EMOTIONAL_CONTEXT: Record<string, { 
-  name: string; 
-  emotionalHint: string; 
-  suggestionForModel: string 
-}> = {
-  "seed-in-dark": {
-    name: "A Semente no Escuro",
-    emotionalHint: "Usuário se sente 'enterrado' pelos problemas mas tem esperança de potencial adormecido",
-    suggestionForModel: "Valorize pequenos progressos. Lembre que toda jornada começa com um primeiro passo."
-  },
-  "kintsugi-vase": {
-    name: "O Vaso Kintsugi",
-    emotionalHint: "Usuário está aceitando que suas 'quebras' podem ser transformadas em beleza",
-    suggestionForModel: "Valide a coragem de olhar para as cicatrizes. Enfatize resiliência e cura."
-  },
-  "deep-diver": {
-    name: "O Mergulhador nas Profundezas",
-    emotionalHint: "Usuário está pronto para encarar medos subconscientes",
-    suggestionForModel: "Pode ir mais fundo nas perguntas. O usuário demonstra coragem para introspecção."
-  },
-  "lit-labyrinth": {
-    name: "O Labirinto Iluminado",
-    emotionalHint: "Usuário se sente perdido mas está buscando clareza ativamente",
-    suggestionForModel: "Ajude a ordenar pensamentos. Faça perguntas que tragam clareza gradual."
-  },
-  "flame-in-storm": {
-    name: "A Chama na Tempestade",
-    emotionalHint: "Usuário passa por momento difícil mas mantém força interior",
-    suggestionForModel: "Reconheça a força de resistir. Não minimize a tempestade, mas valorize a chama."
-  },
-  "breaking-cocoon": {
-    name: "O Casulo a Romper",
-    emotionalHint: "Usuário em fase de transição intensa, sente desconforto da mudança",
-    suggestionForModel: "Normalize o desconforto da transformação. Celebre sinais de evolução."
-  },
-  "mountain-horizon": {
-    name: "A Montanha no Horizonte",
-    emotionalHint: "Usuário identificou o tamanho do desafio e está determinado",
-    suggestionForModel: "Reconheça a grandeza do desafio. Foque em passos concretos, não no cume."
-  },
-  "clearing-mirror": {
-    name: "O Espelho Embaciado",
-    emotionalHint: "Usuário começando a questionar mentiras sobre si mesmo",
-    suggestionForModel: "Ajude a limpar mais do espelho. Faça perguntas que revelem identidade verdadeira."
-  },
-  "broken-chain": {
-    name: "A Corrente Quebrada",
-    emotionalHint: "Usuário teve momento de libertação, identificou mentira que o prendia",
-    suggestionForModel: "Celebre a libertação! Ajude a consolidar o insight para que não volte."
-  },
-  "inner-sunrise": {
-    name: "O Nascer do Sol Interior",
-    emotionalHint: "Usuário vendo luz ao fundo do túnel, fase de otimismo e renovação",
-    suggestionForModel: "Alimente a esperança. Este é momento de consolidar ganhos e olhar para frente."
-  }
-};
-
-// Função auxiliar para extrair ID do avatar simbólico a partir da URL
-function extractSymbolicAvatarId(avatarUrl: string | null): string | null {
-  if (!avatarUrl) return null;
-  
-  // Avatares simbólicos estão em /avatars/[id].webp
-  const match = avatarUrl.match(/\/avatars\/([a-z-]+)\.webp$/);
-  return match ? match[1] : null;
-}
-```
-
-### 1.3 Injetar Bio e Avatar no Contexto (Uso Discreto)
-
-**Arquivo**: `supabase/functions/zyon-chat/index.ts`  
-**Localização**: Após linha 1714 (após `if (onboardingContext)`)
-
-```typescript
-// ============================================
-// BIO AND SYMBOLIC AVATAR CONTEXT INJECTION
-// ============================================
-let selfPerceptionContext = "";
-
-// Bio: contexto explícito fornecido pelo usuário
-if (basicProfile?.bio && basicProfile.bio.trim().length > 0) {
-  selfPerceptionContext += `\n\n## AUTO-DESCRIÇÃO DO USUÁRIO (use discretamente, sem mencionar que leu)
-O usuário descreveu-se assim: "${basicProfile.bio.trim().substring(0, 500)}"
-REGRAS: Use como PISTA de contexto. NÃO repita literalmente. NÃO diga "você disse na sua bio".`;
-}
-
-// Avatar simbólico: pista de auto-percepção emocional
-const symbolicAvatarId = extractSymbolicAvatarId(basicProfile?.avatar_url);
-if (symbolicAvatarId && AVATAR_EMOTIONAL_CONTEXT[symbolicAvatarId]) {
-  const avatarContext = AVATAR_EMOTIONAL_CONTEXT[symbolicAvatarId];
-  selfPerceptionContext += `\n\n## ESTADO EMOCIONAL AUTO-PERCEBIDO (pista sutil, NÃO mencione o avatar)
-Avatar escolhido: "${avatarContext.name}"
-Pista emocional: ${avatarContext.emotionalHint}
-Sugestão: ${avatarContext.suggestionForModel}
-REGRA: Use como orientação de tom, NÃO diga "pelo seu avatar" ou "você escolheu".`;
-}
-
-if (selfPerceptionContext) {
-  diaryContext += selfPerceptionContext;
-  console.log("Self-perception context injected (bio + avatar)");
-}
-```
+1. **ChatSidebar.tsx** usa apenas `AvatarFallback` estático (ícone de usuário)
+2. **Não há busca** do `avatar_url` do banco de dados
+3. **Não há `AvatarImage`** para exibir a foto/avatar simbólico
 
 ---
 
-## PARTE 2: Melhorar Visualização da Jornada
+## Solução Proposta
 
-### 2.1 Expandir Dados da Jornada no Profile.tsx
+### Abordagem A: Buscar avatar diretamente no Sidebar (Recomendada)
 
-**Arquivo**: `src/pages/Profile.tsx`
+O `ChatSidebar` já recebe o `user.id`, então pode buscar o `avatar_url` internamente.
 
-**Atualizar Interface** (linha 28-33):
-```typescript
-interface JourneyData {
-  fase_jornada: string | null;
-  active_themes_count: number | null;
-  global_avg_score: number | null;
-  spiritual_maturity: string | null;
-  // NOVOS CAMPOS
-  total_shifts: number | null;
-  updated_at: string | null;
-}
-```
-
-**Atualizar Query** (linha 108-112):
-```typescript
-const { data: journeyData, error: journeyError } = await supabase
-  .from("user_profiles")
-  .select("fase_jornada, active_themes_count, global_avg_score, spiritual_maturity, total_shifts, updated_at")
-  .eq("id", user.id)
-  .maybeSingle();
-```
-
-### 2.2 Atualizar Componente JourneySection
-
-**Arquivo**: `src/components/profile/JourneySection.tsx`
-
-**Atualizar Interface**:
-```typescript
-interface JourneyData {
-  fase_jornada: string | null;
-  active_themes_count: number | null;
-  global_avg_score: number | null;
-  spiritual_maturity: string | null;
-  total_shifts: number | null;
-  updated_at: string | null;
-}
-```
-
-**Calcular Progresso Dinâmico**:
-```typescript
-// Progresso base por fase (peso: 60%)
-const baseProgress = PHASE_MESSAGES[phase]?.progress || 10;
-
-// Bônus por shifts/insights (peso: 25%, max +15%)
-const shiftsBonus = Math.min(15, (journey.total_shifts || 0) * 3);
-
-// Bônus por atividade recente (peso: 15%, max +10%)
-const daysSinceActivity = journey.updated_at 
-  ? Math.floor((Date.now() - new Date(journey.updated_at).getTime()) / (1000 * 60 * 60 * 24))
-  : 30;
-const activityBonus = daysSinceActivity <= 3 ? 10 : daysSinceActivity <= 7 ? 5 : 0;
-
-// Progresso final (máximo 95%, nunca 100%)
-const dynamicProgress = Math.min(95, baseProgress + shiftsBonus + activityBonus);
-```
-
-**Adicionar Card de Insights/Shifts**:
 ```text
-┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐  ┌──────────────────┐
-│  📊 TEMAS ATIVOS │  │  ⭐ SCORE MÉDIO  │  │  💡 INSIGHTS     │  │  🌿 MATURIDADE  │
-│  ────────────────│  │  ────────────────│  │  ────────────────│  │  ────────────────│
-│        0         │  │       3.5        │  │       12         │  │   Consolidado   │
-│                  │  │                  │  │                  │  │                 │
-│  Temas em        │  │  Progresso       │  │  Mudanças de     │  │  Nível de       │
-│  exploração      │  │  geral           │  │  perspectiva     │  │  crescimento    │
-└──────────────────┘  └──────────────────┘  └──────────────────┘  └──────────────────┘
-```
+ESTADO ATUAL:
+┌─────────────────────────────────────┐
+│  ┌────┐                             │
+│  │ 👤 │  sandro.mesquita@...  ▼     │  ← Ícone estático
+│  └────┘                             │
+└─────────────────────────────────────┘
 
-**Indicador de Atividade Recente**:
-```text
-┌─────────────────────────────────────────────────────────────┐
-│  📈 Progresso da jornada                           42%     │
-│  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░  │
-│  Início ────────────────────────────────── Consolidação    │
-│                                                             │
-│  ● Ativo recentemente (última sessão há 2 dias)            │
-└─────────────────────────────────────────────────────────────┘
+ESTADO DESEJADO:
+┌─────────────────────────────────────┐
+│  ┌────┐                             │
+│  │ 🌱 │  sandro.mesquita@...  ▼     │  ← Avatar real do perfil
+│  └────┘                             │
+└─────────────────────────────────────┘
 ```
 
 ---
@@ -225,65 +39,129 @@ const dynamicProgress = Math.min(95, baseProgress + shiftsBonus + activityBonus)
 
 | Arquivo | Alterações |
 |---------|------------|
-| `supabase/functions/zyon-chat/index.ts` | Adicionar bio/avatar_url na query, criar mapeamento, injetar contexto |
-| `src/components/profile/JourneySection.tsx` | Adicionar total_shifts, cálculo dinâmico, indicador de atividade |
-| `src/pages/Profile.tsx` | Expandir JourneyData interface e query |
+| `src/components/chat/ChatSidebar.tsx` | Buscar `avatar_url`, adicionar `AvatarImage`, atualizar estado |
+| `src/components/profile/SymbolicAvatarGrid.tsx` | Corrigir erro de ref usando `forwardRef` |
+
+---
+
+## Implementação Detalhada
+
+### 1. Atualizar ChatSidebar.tsx
+
+**Adicionar import do AvatarImage** (linha 7):
+```typescript
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+```
+
+**Adicionar estado para avatar** (após linha 72):
+```typescript
+const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+```
+
+**Buscar avatar_url do perfil** (dentro do useEffect existente ou novo):
+```typescript
+useEffect(() => {
+  const loadUserAvatar = async () => {
+    if (!user) return;
+    
+    const { data } = await supabase
+      .from("profiles")
+      .select("avatar_url")
+      .eq("id", user.id)
+      .maybeSingle();
+    
+    if (data?.avatar_url) {
+      setAvatarUrl(data.avatar_url);
+    }
+  };
+  
+  loadUserAvatar();
+}, [user]);
+```
+
+**Atualizar renderização do Avatar** (linhas 375-379):
+```typescript
+<Avatar className="h-8 w-8">
+  {avatarUrl && (
+    <AvatarImage src={avatarUrl} alt="Avatar" className="object-cover" />
+  )}
+  <AvatarFallback className="bg-primary/10 text-primary text-xs">
+    <User className="h-3 w-3" />
+  </AvatarFallback>
+</Avatar>
+```
+
+### 2. Corrigir Erro de Ref no SymbolicAvatarGrid.tsx
+
+O erro ocorre porque `TooltipTrigger` com `asChild` tenta passar uma ref para um `<button>` que é um componente funcional inline.
+
+**Solução**: Extrair o botão para um componente com `forwardRef`:
+
+```typescript
+import { forwardRef } from "react";
+
+const AvatarButton = forwardRef<HTMLButtonElement, {
+  avatar: SymbolicAvatar;
+  isSelected: boolean;
+  onClick: () => void;
+  onMouseEnter: () => void;
+  onMouseLeave: () => void;
+}>(({ avatar, isSelected, onClick, onMouseEnter, onMouseLeave }, ref) => (
+  <button
+    ref={ref}
+    type="button"
+    onClick={onClick}
+    onMouseEnter={onMouseEnter}
+    onMouseLeave={onMouseLeave}
+    className={cn(
+      "relative aspect-square rounded-xl overflow-hidden transition-all duration-200",
+      "border-2 hover:scale-105 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2",
+      isSelected
+        ? "border-primary ring-2 ring-primary ring-offset-2"
+        : "border-border hover:border-primary/50"
+    )}
+  >
+    {/* ... conteúdo do botão ... */}
+  </button>
+));
+AvatarButton.displayName = "AvatarButton";
+```
 
 ---
 
 ## Fluxo de Implementação
 
 ```text
-PARTE 1: Integração Bio/Avatar no Modelo
-├── 1.1 Adicionar bio e avatar_url na query de profiles (linha 1669)
-├── 1.2 Criar constante AVATAR_EMOTIONAL_CONTEXT e função auxiliar
-└── 1.3 Injetar contexto após onboarding (após linha 1714)
+PASSO 1: Atualizar ChatSidebar.tsx
+├── 1.1 Adicionar import de AvatarImage
+├── 1.2 Adicionar estado avatarUrl
+├── 1.3 Criar useEffect para buscar avatar do perfil
+└── 1.4 Renderizar AvatarImage quando avatarUrl existir
 
-PARTE 2: Melhorar Visualização da Jornada
-├── 2.1 Expandir JourneyData interface (Profile.tsx)
-├── 2.2 Atualizar query para incluir total_shifts e updated_at
-├── 2.3 Implementar cálculo de progresso dinâmico (JourneySection.tsx)
-├── 2.4 Adicionar card de Insights (total_shifts)
-└── 2.5 Adicionar indicador de atividade recente
-
-DEPLOY: Fazer deploy da edge function após modificações
+PASSO 2: Corrigir SymbolicAvatarGrid.tsx
+├── 2.1 Importar forwardRef
+├── 2.2 Extrair botão para componente com ref
+└── 2.3 Usar componente extraído dentro do TooltipTrigger
 ```
 
 ---
 
-## Detalhes Técnicos
+## Considerações Técnicas
 
-### Regras de Uso Discreto (Bio e Avatar)
+### Cache-busting
+Se o usuário fizer upload de uma nova foto, a URL pode ter um parâmetro `?t=timestamp`. O `AvatarImage` do Radix lida bem com isso.
 
-| Dado | Uso Permitido | Uso PROIBIDO |
-|------|---------------|--------------|
-| Bio | Contextualizar respostas, adaptar tom | "Você disse na sua bio que..." |
-| Avatar | Orientar tom emocional | "Pelo seu avatar de casulo..." |
+### Fallback
+Se `avatar_url` for `null` ou a imagem falhar ao carregar, o `AvatarFallback` será exibido automaticamente (comportamento nativo do Radix Avatar).
 
-### Fórmula de Progresso Dinâmico
-
-```
-Progresso = min(95, BasePhase + ShiftsBonus + ActivityBonus)
-
-Onde:
-- BasePhase = Valor fixo por fase (10-95%)
-- ShiftsBonus = min(15, total_shifts × 3)
-- ActivityBonus = 10 se <3 dias, 5 se <7 dias, 0 caso contrário
-```
-
-### Exemplo de Cálculo
-
-| Cenário | Fase | Shifts | Dias | Cálculo | Resultado |
-|---------|------|--------|------|---------|-----------|
-| Usuário novo | inicio | 0 | 1 | 10 + 0 + 10 | 20% |
-| Usuário ativo | PADROES | 4 | 2 | 50 + 12 + 10 | 72% |
-| Usuário avançado | TROCA | 6 | 10 | 80 + 15 + 0 | 95% |
+### Performance
+A busca do avatar é feita apenas uma vez quando o componente monta (ou quando `user` muda). Não há re-fetches desnecessários.
 
 ---
 
 ## Resultado Esperado
 
-1. **Modelo mais contextualizado**: Zyon saberá usar bio e avatar como pistas emocionais
-2. **Jornada dinâmica**: Progresso reflete atividade real, não apenas fase estática
-3. **Feedback visual**: Usuário vê contagem de insights e indicador de atividade
-4. **Nunca 100%**: Simboliza jornada contínua de crescimento
+1. Avatar do perfil aparece no sidebar (foto ou avatar simbólico)
+2. Fallback com ícone de usuário quando não há avatar definido
+3. Erro de ref no console corrigido
+4. Atualização automática quando usuário altera avatar (próxima sessão)
