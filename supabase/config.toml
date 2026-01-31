@@ -41,3 +41,6 @@ verify_jwt = false
 
 [functions.send-push-reminder]
 verify_jwt = false
+
+[functions.test-push-notification]
+verify_jwt = false
