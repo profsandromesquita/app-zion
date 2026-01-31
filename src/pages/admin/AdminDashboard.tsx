@@ -24,6 +24,7 @@ interface UserWithRoles {
   email: string | null;
   phone: string | null;
   created_at: string;
+  avatar_url: string | null;
   roles: AppRole[];
   fase_jornada?: string | null;
   active_themes_count?: number | null;
@@ -76,7 +77,7 @@ const AdminDashboard = () => {
     const [knowledgeRes, instructionsRes, profilesRes, rolesRes, journeysRes, credentialsRes] = await Promise.all([
       supabase.from("knowledge_base").select("id", { count: "exact", head: true }),
       supabase.from("system_instructions").select("id", { count: "exact", head: true }),
-      supabase.from("profiles").select("id, nome, email, phone, created_at").order("created_at", { ascending: false }),
+      supabase.from("profiles").select("id, nome, email, phone, created_at, avatar_url").order("created_at", { ascending: false }),
       supabase.from("user_roles").select("user_id, role"),
       supabase.from("user_profiles").select("id, fase_jornada, active_themes_count, global_avg_score, spiritual_maturity"),
       supabase.from("professional_credentials").select("id", { count: "exact", head: true }).eq("verified", false),
