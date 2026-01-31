@@ -16,6 +16,7 @@ import SafetyExit from "@/components/SafetyExit";
 import AvatarEditor from "@/components/profile/AvatarEditor";
 import JourneySection from "@/components/profile/JourneySection";
 import ChurchProfileSection, { ChurchData } from "@/components/profile/ChurchProfileSection";
+import zionLogo from "@/assets/zion-logo.png";
 
 interface ProfileData {
   nome: string | null;
@@ -194,9 +195,9 @@ const Profile = () => {
 
   if (authLoading || loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <div className="animate-pulse text-primary">
-          <div className="h-12 w-12 rounded-full border-4 border-primary border-t-transparent animate-spin" />
+      <div className="flex min-h-screen items-center justify-center" style={{ background: "var(--gradient-peace)" }}>
+        <div className="animate-pulse-soft">
+          <img src={zionLogo} alt="Zion" className="h-16 w-16" />
         </div>
       </div>
     );
@@ -236,7 +237,7 @@ const Profile = () => {
                     {profile?.avatar_url ? (
                       <AvatarImage src={profile.avatar_url} alt="Avatar" className="object-cover" />
                     ) : null}
-                    <AvatarFallback className="bg-primary/10 text-primary text-2xl">
+                    <AvatarFallback className="bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-2xl">
                       <User className="h-10 w-10" />
                     </AvatarFallback>
                   </Avatar>

@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
-import { Plus, Search, Heart, LogOut, BookOpen, Shield, User, Star, Settings, ChevronDown } from "lucide-react";
+import { Plus, Search, LogOut, BookOpen, Shield, User, Star, Settings, ChevronDown } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import zionLogo from "@/assets/zion-logo.png";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -277,10 +278,8 @@ export function ChatSidebar({
     <Sidebar className="border-r border-border">
       <SidebarHeader className="p-4">
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary/10">
-            <Heart className="h-4 w-4 text-primary" />
-          </div>
-          {!collapsed && <span className="font-semibold text-foreground">Zyon</span>}
+          <img src={zionLogo} alt="Zion" className="h-8 w-8" />
+          {!collapsed && <span className="font-semibold text-foreground">Zion</span>}
         </div>
       </SidebarHeader>
 
@@ -389,10 +388,10 @@ export function ChatSidebar({
           <DropdownMenuTrigger asChild>
             <button className="flex w-full items-center gap-2 rounded-lg p-2 hover:bg-muted/50 transition-colors">
               <Avatar className="h-8 w-8">
-                {avatarUrl && (
+              {avatarUrl && (
                   <AvatarImage src={avatarUrl} alt="Avatar" className="object-cover" />
                 )}
-                <AvatarFallback className="bg-primary/10 text-primary text-xs">
+                <AvatarFallback className="bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-xs">
                   <User className="h-3 w-3" />
                 </AvatarFallback>
               </Avatar>

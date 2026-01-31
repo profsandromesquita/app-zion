@@ -218,7 +218,7 @@ const Diary = () => {
                 <Card
                   key={entry.id}
                   className={`mb-2 cursor-pointer transition-colors hover:bg-muted/50 ${
-                    selectedEntry?.id === entry.id ? "border-primary bg-muted/50" : ""
+                    selectedEntry?.id === entry.id ? "border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/30" : ""
                   }`}
                   onClick={() => handleSelectEntry(entry)}
                 >

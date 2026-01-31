@@ -83,9 +83,9 @@ const JourneySection = ({ journey }: JourneySectionProps) => {
 
   return (
     <Card className="overflow-hidden">
-      <CardHeader className="bg-gradient-to-r from-primary/5 to-primary/10 border-b">
+      <CardHeader className="bg-gradient-to-r from-emerald-50 to-lime-50 dark:from-emerald-950/20 dark:to-lime-950/20 border-b">
         <CardTitle className="flex items-center gap-2 text-lg">
-          <Heart className="h-5 w-5 text-primary" />
+          <Heart className="h-5 w-5 text-emerald-500" />
           Minha Jornada
         </CardTitle>
         <CardDescription>
@@ -95,10 +95,10 @@ const JourneySection = ({ journey }: JourneySectionProps) => {
       
       <CardContent className="pt-6 space-y-6">
         {/* Phase Card - Highlighted */}
-        <div className="rounded-xl bg-gradient-to-br from-primary/10 via-primary/5 to-background p-5 border border-primary/20">
+        <div className="rounded-xl bg-gradient-to-br from-emerald-100 via-emerald-50 to-background dark:from-emerald-900/30 dark:via-emerald-950/20 dark:to-background p-5 border border-emerald-200 dark:border-emerald-800">
           <div className="flex items-start gap-3">
-            <div className="p-2 rounded-lg bg-primary/10">
-              <Sprout className="h-5 w-5 text-primary" />
+            <div className="p-2 rounded-lg bg-emerald-100 dark:bg-emerald-900/30">
+              <Sprout className="h-5 w-5 text-emerald-500" />
             </div>
             <div className="flex-1 space-y-2">
               <div>
@@ -167,7 +167,7 @@ const JourneySection = ({ journey }: JourneySectionProps) => {
         <div className="space-y-3 pt-2">
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">Progresso da jornada</span>
-            <span className="font-medium text-primary">{dynamicProgress}%</span>
+            <span className="font-medium text-emerald-600 dark:text-emerald-400">{dynamicProgress}%</span>
           </div>
           <div className="relative">
             <Progress value={dynamicProgress} className="h-3" />
@@ -176,7 +176,7 @@ const JourneySection = ({ journey }: JourneySectionProps) => {
                 <div
                   key={i}
                   className={`w-1.5 h-1.5 rounded-full ${
-                    dynamicProgress >= i * 20 ? "bg-primary-foreground" : "bg-primary/30"
+                    dynamicProgress >= i * 20 ? "bg-white" : "bg-emerald-200/50 dark:bg-emerald-700/50"
                   }`}
                 />
               ))}
