@@ -64,12 +64,6 @@ const Index = () => {
               Zion
             </h1>
           </div>
-          <p
-            className="mt-2 text-white/80 drop-shadow-md opacity-0 animate-fade-slide-up"
-            style={{ animationDelay: "100ms", animationFillMode: "forwards" }}
-          >
-            Seu refúgio espiritual
-          </p>
         </div>
 
         {/* Hero Content */}
