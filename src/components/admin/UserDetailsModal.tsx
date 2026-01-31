@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import type { AppRole } from "@/hooks/useUserRole";
@@ -24,6 +24,7 @@ interface UserWithRoles {
   email: string | null;
   phone: string | null;
   created_at: string;
+  avatar_url?: string | null;
   roles: AppRole[];
   fase_jornada?: string | null;
   active_themes_count?: number | null;
@@ -180,7 +181,10 @@ export function UserDetailsModal({
           {/* User Info */}
           <div className="flex items-start gap-4">
             <Avatar className="h-16 w-16">
-              <AvatarFallback className="bg-primary/10 text-primary text-xl">
+              {user.avatar_url && (
+                <AvatarImage src={user.avatar_url} alt={user.nome || "Avatar"} className="object-cover" />
+              )}
+              <AvatarFallback className="bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 text-xl">
                 <User className="h-8 w-8" />
               </AvatarFallback>
             </Avatar>
