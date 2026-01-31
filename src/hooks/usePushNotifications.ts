@@ -1,8 +1,19 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
+export type SupportStatus = "checking" | "supported" | "unsupported";
+export type UnsupportedReason = 
+  | "no-service-worker" 
+  | "no-push-manager" 
+  | "no-notification" 
+  | "not-secure-context"
+  | "ios-not-standalone"
+  | null;
+
 interface PushState {
   isSupported: boolean;
+  supportStatus: SupportStatus;
+  unsupportedReason: UnsupportedReason;
   isSubscribed: boolean;
   isLoading: boolean;
   permission: NotificationPermission | null;
@@ -13,6 +24,8 @@ interface PushState {
 export function usePushNotifications(userId: string | null) {
   const [state, setState] = useState<PushState>({
     isSupported: false,
+    supportStatus: "checking",
+    unsupportedReason: null,
     isSubscribed: false,
     isLoading: true,
     permission: null,
@@ -41,18 +54,38 @@ export function usePushNotifications(userId: string | null) {
       console.log("[Push] isInStandaloneMode:", isInStandaloneMode);
       console.log("[Push] isSecureContext:", window.isSecureContext);
 
+      // Verificar razões específicas de não suporte
+      let unsupportedReason: UnsupportedReason = null;
+
+      if (!window.isSecureContext) {
+        unsupportedReason = "not-secure-context";
+      } else if (!("serviceWorker" in navigator)) {
+        unsupportedReason = "no-service-worker";
+      } else if (!("PushManager" in window)) {
+        unsupportedReason = "no-push-manager";
+      } else if (!("Notification" in window)) {
+        unsupportedReason = "no-notification";
+      } else if (isIOS && !isInStandaloneMode) {
+        // iOS Safari normal (não instalado) - Push não funciona
+        unsupportedReason = "ios-not-standalone";
+      }
+
       const isSupported =
         "serviceWorker" in navigator &&
         "PushManager" in window &&
-        "Notification" in window;
+        "Notification" in window &&
+        !(isIOS && !isInStandaloneMode); // iOS precisa estar em standalone
 
       console.log("[Push] isSupported:", isSupported);
+      console.log("[Push] unsupportedReason:", unsupportedReason);
 
       if (!isSupported) {
         console.log("[Push] Push notifications not supported on this device/browser");
         setState((s) => ({ 
           ...s, 
-          isSupported: false, 
+          isSupported: false,
+          supportStatus: "unsupported",
+          unsupportedReason,
           isLoading: false,
           isIOS,
           isInStandaloneMode,
@@ -79,6 +112,8 @@ export function usePushNotifications(userId: string | null) {
 
       setState({
         isSupported: true,
+        supportStatus: "supported",
+        unsupportedReason: null,
         isSubscribed,
         isLoading: false,
         permission,
@@ -192,6 +227,8 @@ export function usePushNotifications(userId: string | null) {
       console.log("[Push] Subscription saved successfully!");
       setState({
         isSupported: true,
+        supportStatus: "supported",
+        unsupportedReason: null,
         isSubscribed: true,
         isLoading: false,
         permission: "granted",

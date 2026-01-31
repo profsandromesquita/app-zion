@@ -1,6 +1,6 @@
-import { Bell, BellOff, Loader2 } from "lucide-react";
+import { Bell, BellOff, Loader2, BellRing } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { usePushNotifications } from "@/hooks/usePushNotifications";
+import { usePushNotifications, type UnsupportedReason } from "@/hooks/usePushNotifications";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useToast } from "@/hooks/use-toast";
 import {
@@ -15,11 +15,58 @@ interface Props {
   variant?: "icon" | "full";
 }
 
+// Mensagens explicativas baseadas no motivo
+function getUnsupportedMessage(reason: UnsupportedReason, isIOS: boolean): { title: string; description: string } {
+  switch (reason) {
+    case "ios-not-standalone":
+      return {
+        title: "Adicione à Tela de Início",
+        description: "Para receber notificações no iPhone, adicione o Zion à tela inicial primeiro. Toque no ícone de compartilhar (quadrado com seta) e depois em 'Adicionar à Tela de Início'.",
+      };
+    case "no-push-manager":
+      if (isIOS) {
+        return {
+          title: "Adicione à Tela de Início",
+          description: "Para receber notificações no iPhone, adicione o Zion à tela inicial. Toque no ícone de compartilhar e depois em 'Adicionar à Tela de Início'.",
+        };
+      }
+      return {
+        title: "Navegador não suporta",
+        description: "Seu navegador não suporta notificações push. Tente usar Chrome, Firefox ou Edge.",
+      };
+    case "no-service-worker":
+    case "no-notification":
+      return {
+        title: "Recurso indisponível",
+        description: "Seu navegador não suporta notificações. Tente atualizar o navegador ou usar Chrome/Firefox.",
+      };
+    case "not-secure-context":
+      return {
+        title: "Conexão não segura",
+        description: "Notificações requerem uma conexão segura (HTTPS). Verifique se está acessando pelo link correto.",
+      };
+    default:
+      return {
+        title: "Notificações indisponíveis",
+        description: "Não foi possível ativar notificações neste dispositivo.",
+      };
+  }
+}
+
+function getDeniedMessage(): { title: string; description: string } {
+  return {
+    title: "Notificações bloqueadas",
+    description: "Você bloqueou as notificações anteriormente. Para desbloquear, acesse as configurações do seu navegador → Permissões de notificação e permita notificações para este site.",
+  };
+}
+
 export function PushNotificationPrompt({ userId, variant = "icon" }: Props) {
   const isMobile = useIsMobile();
   const { toast } = useToast();
   const {
     isSupported,
+    supportStatus,
+    unsupportedReason,
     isSubscribed,
     isLoading,
     permission,
@@ -33,6 +80,8 @@ export function PushNotificationPrompt({ userId, variant = "icon" }: Props) {
   useEffect(() => {
     console.log("[PushPrompt] State:", { 
       isSupported, 
+      supportStatus,
+      unsupportedReason,
       isLoading, 
       permission, 
       isSubscribed,
@@ -40,49 +89,127 @@ export function PushNotificationPrompt({ userId, variant = "icon" }: Props) {
       isInStandaloneMode,
       isMobile 
     });
-    
-    if (isIOS && !isInStandaloneMode && isSupported) {
-      console.log("[Push] iOS detected, not in standalone mode - push may not work");
-    }
-  }, [isIOS, isInStandaloneMode, isSupported, isLoading, permission, isSubscribed, isMobile]);
+  }, [isIOS, isInStandaloneMode, isSupported, supportStatus, unsupportedReason, isLoading, permission, isSubscribed, isMobile]);
 
-  // Handler que mostra aviso para iOS se necessário
-  const handleSubscribe = async () => {
-    if (isIOS && !isInStandaloneMode) {
+  // Handler para quando push não é suportado
+  const handleUnsupportedClick = () => {
+    const message = getUnsupportedMessage(unsupportedReason, isIOS);
+    toast({
+      title: message.title,
+      description: message.description,
+      duration: 8000,
+    });
+  };
+
+  // Handler para quando permissão foi negada
+  const handleDeniedClick = () => {
+    const message = getDeniedMessage();
+    toast({
+      title: message.title,
+      description: message.description,
+      duration: 8000,
+    });
+  };
+
+  // Handler principal de clique
+  const handleClick = async () => {
+    // Se não é suportado, mostrar mensagem explicativa
+    if (!isSupported && supportStatus === "unsupported") {
+      handleUnsupportedClick();
+      return;
+    }
+
+    // Se permissão foi negada, mostrar como desbloquear
+    if (permission === "denied") {
+      handleDeniedClick();
+      return;
+    }
+
+    // Se já inscrito, desinscrever
+    if (isSubscribed) {
+      await unsubscribe();
       toast({
-        title: "Adicione à Tela Inicial",
-        description: "Para receber notificações no iPhone, adicione o Zion à tela inicial primeiro. Toque no ícone de compartilhar e depois em 'Adicionar à Tela de Início'.",
-        duration: 8000,
+        title: "Lembretes desativados",
+        description: "Você não receberá mais lembretes do Zion.",
       });
       return;
     }
-    await subscribe();
+
+    // Tentar inscrever
+    const success = await subscribe();
+    if (success) {
+      toast({
+        title: "Lembretes ativados! 🔔",
+        description: "Você receberá lembretes gentis quando ficar um tempo sem conversar.",
+      });
+    } else {
+      // Se falhou, pode ter sido negado
+      handleDeniedClick();
+    }
   };
 
-  // Durante loading, mostrar ícone desabilitado (não esconder)
-  if (isLoading) {
-    if (variant === "icon") {
-      return (
-        <Button
-          variant="ghost"
-          size="icon"
-          disabled
-          className="h-8 w-8 text-muted-foreground opacity-50"
-        >
-          <BellOff className="h-4 w-4" />
-        </Button>
-      );
+  // Determinar o estado visual do botão
+  const getButtonState = () => {
+    if (supportStatus === "checking" || isLoading) {
+      return "loading";
     }
-    return (
-      <Button variant="ghost" size="sm" disabled className="text-muted-foreground opacity-50">
-        <BellOff className="h-4 w-4 mr-2" />
-        Verificando...
-      </Button>
-    );
-  }
+    if (supportStatus === "unsupported") {
+      return "unsupported";
+    }
+    if (permission === "denied") {
+      return "denied";
+    }
+    if (isSubscribed) {
+      return "subscribed";
+    }
+    return "available";
+  };
 
-  // Só ocultar se CONFIRMADO que não é suportado (após loading completar)
-  if (!isSupported || permission === "denied") return null;
+  const buttonState = getButtonState();
+
+  // Determinar classes e ícone baseado no estado
+  const getButtonConfig = () => {
+    switch (buttonState) {
+      case "loading":
+        return {
+          icon: <Loader2 className="h-4 w-4 animate-spin" />,
+          className: "text-muted-foreground opacity-50",
+          disabled: true,
+          tooltip: "Verificando...",
+        };
+      case "unsupported":
+        return {
+          icon: <BellOff className="h-4 w-4" />,
+          className: "text-muted-foreground/50 hover:text-muted-foreground",
+          disabled: false,
+          tooltip: isIOS ? "Toque para saber como ativar" : "Notificações indisponíveis",
+        };
+      case "denied":
+        return {
+          icon: <BellOff className="h-4 w-4" />,
+          className: "text-destructive/70 hover:text-destructive",
+          disabled: false,
+          tooltip: "Notificações bloqueadas • Toque para saber como desbloquear",
+        };
+      case "subscribed":
+        return {
+          icon: <BellRing className="h-4 w-4" />,
+          className: "text-emerald-500 hover:text-emerald-600",
+          disabled: false,
+          tooltip: "Lembretes ativos • Clique para desativar",
+        };
+      case "available":
+      default:
+        return {
+          icon: <Bell className="h-4 w-4" />,
+          className: "text-muted-foreground hover:text-emerald-500",
+          disabled: false,
+          tooltip: "Ativar lembretes",
+        };
+    }
+  };
+
+  const config = getButtonConfig();
 
   // Versão compacta (ícone apenas)
   if (variant === "icon") {
@@ -90,21 +217,11 @@ export function PushNotificationPrompt({ userId, variant = "icon" }: Props) {
       <Button
         variant="ghost"
         size="icon"
-        onClick={isSubscribed ? unsubscribe : handleSubscribe}
-        disabled={isLoading}
-        className={`h-8 w-8 ${
-          isSubscribed 
-            ? "text-emerald-500 hover:text-emerald-600" 
-            : "text-muted-foreground hover:text-emerald-500"
-        }`}
+        onClick={handleClick}
+        disabled={config.disabled}
+        className={`h-8 w-8 ${config.className}`}
       >
-        {isLoading ? (
-          <Loader2 className="h-4 w-4 animate-spin" />
-        ) : isSubscribed ? (
-          <Bell className="h-4 w-4" />
-        ) : (
-          <BellOff className="h-4 w-4" />
-        )}
+        {config.icon}
       </Button>
     );
 
@@ -120,46 +237,67 @@ export function PushNotificationPrompt({ userId, variant = "icon" }: Props) {
           {buttonElement}
         </TooltipTrigger>
         <TooltipContent>
-          <p>{isSubscribed ? "Lembretes ativos • Clique para desativar" : "Ativar lembretes"}</p>
+          <p>{config.tooltip}</p>
         </TooltipContent>
       </Tooltip>
     );
   }
 
   // Versão completa (com texto)
-  if (isSubscribed) {
-    return (
-      <Button
-        variant="ghost"
-        size="sm"
-        onClick={unsubscribe}
-        disabled={isLoading}
-        className="text-muted-foreground hover:text-foreground"
-      >
-        {isLoading ? (
-          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-        ) : (
-          <Bell className="h-4 w-4 mr-2 text-emerald-500" />
-        )}
-        Notificações ativas
-      </Button>
-    );
-  }
+  const getFullButtonContent = () => {
+    switch (buttonState) {
+      case "loading":
+        return (
+          <>
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            Verificando...
+          </>
+        );
+      case "unsupported":
+        return (
+          <>
+            <BellOff className="h-4 w-4 mr-2" />
+            {isIOS ? "Saiba como ativar" : "Indisponível"}
+          </>
+        );
+      case "denied":
+        return (
+          <>
+            <BellOff className="h-4 w-4 mr-2 text-destructive" />
+            Bloqueado
+          </>
+        );
+      case "subscribed":
+        return (
+          <>
+            <BellRing className="h-4 w-4 mr-2 text-emerald-500" />
+            Notificações ativas
+          </>
+        );
+      case "available":
+      default:
+        return (
+          <>
+            <Bell className="h-4 w-4 mr-2" />
+            Ativar lembretes
+          </>
+        );
+    }
+  };
 
   return (
     <Button
-      variant="outline"
+      variant={buttonState === "available" ? "outline" : "ghost"}
       size="sm"
-      onClick={handleSubscribe}
-      disabled={isLoading}
-      className="border-emerald-500/50 hover:border-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
+      onClick={handleClick}
+      disabled={config.disabled}
+      className={
+        buttonState === "available"
+          ? "border-emerald-500/50 hover:border-emerald-500 hover:bg-emerald-50 dark:hover:bg-emerald-950/30"
+          : "text-muted-foreground hover:text-foreground"
+      }
     >
-      {isLoading ? (
-        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-      ) : (
-        <BellOff className="h-4 w-4 mr-2" />
-      )}
-      Ativar lembretes
+      {getFullButtonContent()}
     </Button>
   );
 }
