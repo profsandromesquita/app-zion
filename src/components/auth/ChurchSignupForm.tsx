@@ -80,7 +80,8 @@ export function ChurchSignupForm({ onBack }: ChurchSignupFormProps) {
     setIsLoading(true);
 
     try {
-      // 1. Create auth user
+      // 1. Create auth user com account_type: 'igreja'
+      // Isso faz o trigger handle_new_user() atribuir role 'igreja' automaticamente
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: formData.email,
         password: formData.password,
@@ -88,6 +89,7 @@ export function ChurchSignupForm({ onBack }: ChurchSignupFormProps) {
           emailRedirectTo: `${window.location.origin}/`,
           data: {
             nome: formData.responsibleName,
+            account_type: "igreja", // CRÍTICO: Define role no backend
           },
         },
       });

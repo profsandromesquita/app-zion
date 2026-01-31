@@ -104,32 +104,65 @@ const Chat = () => {
   }, [user, loading, isNicodemosMode, anonSessionId]);
 
   // Check if user has completed onboarding and fetch profile
+  // REGRA CRÍTICA: Igreja NUNCA tem onboarding
   const checkOnboardingAndInit = async () => {
     if (!user) return;
 
-    // First check user roles - igreja and profissional skip onboarding
+    // === DETECTOR INSTITUCIONAL ROBUSTO ===
+    // Prioridade 1: Verificar role 'igreja' em user_roles
     const { data: rolesData } = await supabase
       .from("user_roles")
       .select("role")
       .eq("user_id", user.id);
 
     const userRoles = rolesData?.map((r) => r.role) || [];
+    const isIgrejaByRole = userRoles.includes("igreja");
+    const isProfissional = userRoles.includes("profissional");
 
-    // Igreja and Profissional accounts skip onboarding entirely
-    if (userRoles.includes("igreja") || userRoles.includes("profissional")) {
+    // Prioridade 2 (fallback): Verificar se é pastor de alguma igreja
+    let isIgrejaByChurch = false;
+    if (!isIgrejaByRole) {
+      const { data: churchData } = await supabase
+        .from("churches")
+        .select("id")
+        .eq("pastor_id", user.id)
+        .limit(1)
+        .maybeSingle();
+
+      isIgrejaByChurch = !!churchData;
+
+      // Auto-corrigir role se for igreja mas não tem a role
+      if (isIgrejaByChurch) {
+        console.log("Detectada igreja sem role. Tentando corrigir...");
+        // Corrigir role de forma assíncrona (fire-and-forget)
+        (async () => {
+          try {
+            await supabase.rpc("add_user_role", { _user_id: user.id, _role: "igreja" });
+            console.log("Role 'igreja' adicionada com sucesso");
+          } catch (err) {
+            console.warn("Erro ao adicionar role igreja:", err);
+          }
+        })();
+      }
+    }
+
+    const isInstitucional = isIgrejaByRole || isIgrejaByChurch || isProfissional;
+
+    // REGRA FINAL: Institucional = NUNCA onboarding
+    if (isInstitucional) {
       setOnboardingChecked(true);
+      setShowOnboarding(false); // Garantir que está false
       initAuthenticatedSession();
       return;
     }
 
-    // Fetch user_profiles for onboarding check
+    // === FLUXO NORMAL PARA PESSOAS ===
     const { data: userProfileData } = await supabase
       .from("user_profiles")
       .select("onboarding_completed_at, initial_pain_focus")
       .eq("id", user.id)
       .maybeSingle();
 
-    // Fetch profiles for name
     const { data: profileData } = await supabase
       .from("profiles")
       .select("nome")
