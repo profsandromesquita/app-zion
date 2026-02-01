@@ -1,116 +1,89 @@
 
-## Objetivo (o que você pediu)
-Remover toda a “engenharia” extra (state machine, fades condicionais, force-play, etc.) e deixar **somente** a funcionalidade de **escolha automática de formato**:
-- **WebM** para navegadores que suportam
-- **MP4** como fallback para os demais (Safari/iOS, etc.)
 
-Além disso, como parte da auditoria, vou eliminar os pontos do código que podem estar **induzindo instabilidade** (incluindo interferência do Service Worker em requests de mídia).
+# Plano: Substituir Favicon pela Logo Zion
 
----
+## Visão Geral
 
-## Auditoria (o que está hoje e o que foi alterado)
+Vou utilizar a imagem fornecida (logo "Z" com gradiente verde/lima e preto) para gerar todas as variações de ícone necessárias para compatibilidade completa com navegadores e PWA.
 
-### 1) `src/pages/Index.tsx` (estado atual)
-Hoje o arquivo contém:
-- `showVideo` + `hasShownVideoRef` + `videoRef`
-- `useEffect` chamando `video.play()` no mount
-- handlers `onPlaying` e `onTimeUpdate` para decidir quando “mostrar o vídeo”
-- um `div` de poster com `opacity` alternando
-- wrapper com `animate-ken-burns` + `opacity` alternando
+## Arquivos Atuais que Serão Substituídos
 
-Embora o estado pareça “one-way”, na prática esse tipo de montagem (camadas + opacity + vídeo) pode resultar em sensação de “vai e volta” quando:
-- o vídeo fica momentaneamente sem frame decodificado e “some”, deixando a imagem de baixo aparente
-- ou o browser realiza rebuffer/queda de frames em conjunto com transform/paint
+| Arquivo | Uso Atual |
+|---------|-----------|
+| `public/favicon.ico` | Favicon padrão (aba do navegador) |
+| `public/icons/icon-192.png` | PWA + Apple Touch Icon |
+| `public/icons/icon-512.png` | PWA + OG/Twitter cards |
+| `public/icons/badge-72.png` | Notificações push |
 
-### 2) `public/sw.js` (estado atual)
-O Service Worker está configurado para **cache-first** para extensões incluindo:
-- `webm` e `mp4`
+## Variações a Serem Geradas
 
-Isso é um grande sinal de risco para mídia, porque vídeos frequentemente usam **Range Requests** (206 Partial Content). Um SW cache-first simples pode:
-- cachear respostas parciais
-- servir respostas incompatíveis com o que o player espera
-- causar stutter/interrupções visuais
+A partir da imagem `user-uploads://Untitled_design-5.png`, vou gerar:
 
-Mesmo que isso não seja “a única causa”, é uma fonte clássica de instabilidade em playback e precisa ser removida para um comportamento previsível.
+| Arquivo | Tamanho | Uso |
+|---------|---------|-----|
+| `public/favicon.ico` | 32x32 | Favicon clássico (ICO) |
+| `public/favicon-16x16.png` | 16x16 | Favicon pequeno |
+| `public/favicon-32x32.png` | 32x32 | Favicon padrão |
+| `public/icons/icon-192.png` | 192x192 | PWA, Apple Touch Icon |
+| `public/icons/icon-512.png` | 512x512 | PWA, OG/Twitter |
+| `public/icons/badge-72.png` | 72x72 | Notificações push |
+| `public/apple-touch-icon.png` | 180x180 | iOS home screen |
 
----
+## Etapas de Implementação
 
-## Correção definitiva (mantendo somente “WebM se suportado, senão MP4”)
+### 1. Copiar Imagem Original para o Projeto
+Copiar `user-uploads://Untitled_design-5.png` para `public/icons/zion-logo-original.png` como fonte.
 
-### A) Simplificar `src/pages/Index.tsx` para “zero lógica” (sem state machine)
-Vamos transformar o background em:
-- Um container com **background-image** do poster (sempre presente)
-- Um `<video>` por cima, **sem** estado React, **sem** handlers de playback, **sem** `useRef`, **sem** `useEffect` de `play()`
-- Dois `<source>` em ordem de prioridade:
-  1. WebM
-  2. MP4
+### 2. Gerar Variações de Ícone
+Utilizar a AI de geração de imagem para criar versões otimizadas nos tamanhos necessários, ou processar a imagem original para gerar as variações.
 
-Modelo (conceito):
-- Manter o poster como `backgroundImage` do container (ou `poster` do vídeo, mas recomendo **background** para reduzir “trocas”)
-- Video sempre montado, o browser escolhe a melhor fonte automaticamente
+### 3. Atualizar index.html
+Adicionar referências para favicons modernos:
 
-Mudanças específicas:
-1) Remover do `Index.tsx`:
-   - `useState`, `useRef` (se não forem usados para mais nada)
-   - `showVideo`, `hasShownVideoRef`, `videoRef`
-   - `useEffect` que chama `video.play()`
-   - `handlePlaying`, `handleTimeUpdate`
-   - toda lógica de `opacity` condicional com `showVideo`
-2) Ajustar JSX do hero background para algo estável e simples:
-   - `div` de fundo com `style={{ backgroundImage: 'url(/videos/hero-poster.webp)' }}`
-   - `<video autoPlay muted loop playsInline preload="metadata">`
-   - `<source src="/videos/hero-background.webm" type="video/webm" />`
-   - `<source src="/videos/hero-background.mp4" type="video/mp4" />`
+```html
+<!-- Favicons -->
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+<link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+<link rel="icon" href="/favicon.ico" type="image/x-icon" />
 
-Observação: isso por si só já garante “WebM quando suportado; caso contrário MP4”, porque o browser avalia `type` e seleciona a primeira fonte que consegue decodificar.
+<!-- Apple Touch Icon -->
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+```
 
----
+### 4. Verificar manifest.json
+O manifest.json já está configurado corretamente com referências a `/icons/icon-192.png` e `/icons/icon-512.png`. Apenas precisamos substituir esses arquivos pelas novas imagens.
 
-### B) Service Worker: parar de cachear vídeo (crítico)
-Vamos ajustar `public/sw.js` para garantir que **vídeo não passa pelo cache-first**.
+## Resultado Esperado
 
-Mudanças específicas:
-1) Antes da lógica `isHashedAsset / isStaticAsset`, adicionar um “early return” para mídia:
-   - Se `url.pathname` terminar em `.mp4` ou `.webm`, **não interceptar** com cache-first:
-     - `event.respondWith(fetch(event.request))`
-2) (Recomendado) também bypass para Range Requests:
-   - Se existir `event.request.headers.get('range')`, bypass total do cache (mesmo para outras extensões), porque Range + Cache API sem implementação dedicada é receita para bugs.
-3) Manter cache para ícones/manifest e assets pequenos normalmente.
+```text
+public/
+├── favicon.ico              (32x32 - novo)
+├── favicon-16x16.png        (16x16 - novo)
+├── favicon-32x32.png        (32x32 - novo)
+├── apple-touch-icon.png     (180x180 - novo)
+└── icons/
+    ├── icon-192.png         (192x192 - substituído)
+    ├── icon-512.png         (512x512 - substituído)
+    ├── badge-72.png         (72x72 - substituído)
+    └── zion-logo-original.png (original - backup)
+```
 
-Isso remove uma classe inteira de problemas de playback.
+## Compatibilidade Garantida
 
----
+| Navegador/Contexto | Arquivo Utilizado |
+|--------------------|-------------------|
+| Chrome/Edge/Firefox (aba) | favicon-32x32.png ou favicon.ico |
+| Safari (aba) | favicon.ico |
+| iOS (home screen) | apple-touch-icon.png |
+| Android (home screen) | icon-192.png via manifest |
+| PWA (splash screen) | icon-512.png via manifest |
+| Notificações push | badge-72.png |
+| Compartilhamento social | icon-512.png (OG/Twitter) |
 
-## Sequência de implementação (passo a passo)
-1) **Editar `src/pages/Index.tsx`**
-   - Remover toda a lógica de estado e eventos do vídeo
-   - Deixar o `<video>` com apenas os `<source>` (webm primeiro, mp4 depois)
-   - Manter overlay/gradiente e o resto do layout inalterado
+## Técnica de Processamento
 
-2) **Editar `public/sw.js`**
-   - Bypass explícito para `.webm` e `.mp4` (network-only)
-   - Bypass para requests com header `Range`
-   - (Opcional) Incrementar `CACHE_VERSION` para forçar atualização do SW e evitar que o browser fique rodando uma versão antiga
-
-3) **Validação**
-   - Chrome/Edge/Firefox: confirmar que o vídeo tocando é WebM (DevTools Network → olhar a request de `hero-background.webm`)
-   - Safari/iOS: confirmar que a request usada é `hero-background.mp4`
-   - Testar com rede lenta (throttling): poster aparece imediatamente, vídeo carrega quando der, sem “vai e volta” induzido por lógica de opacity/estado
-
----
-
-## Critérios de aceite (definitivo)
-- Não existe mais nenhum controle React para “mostrar/esconder vídeo”
-- O único mecanismo de seleção de formato é o padrão do HTML:
-  - `<source webm>` primeiro
-  - `<source mp4>` fallback
-- Service Worker não interfere em requests de vídeo (especialmente Range)
-- Em navegadores compatíveis, WebM é sempre a mídia carregada; caso contrário, MP4
-
----
-
-## Notas técnicas (para garantir que “só o formato” está sendo controlado)
-- Não vamos usar `canPlayType()` em JS, porque isso reintroduz lógica e edge cases.
-- O padrão `<source>` é o caminho mais confiável e “limpo” para esse requisito.
-- Remover o cache de vídeo do SW é essencial para evitar efeitos colaterais invisíveis (principalmente em PWA).
+Como a imagem fornecida já é de alta qualidade com fundo branco, vou:
+1. Manter o fundo transparente onde possível (PNG)
+2. Para favicon.ico, usar fundo branco para máxima compatibilidade
+3. Garantir que o "Z" fique centralizado e visível em todos os tamanhos
 
