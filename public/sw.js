@@ -1,6 +1,6 @@
 // Zion Service Worker - PWA + Push Notifications
 // Versão com timestamp para forçar atualização
-const CACHE_VERSION = 'zion-v2-' + '20260131';
+const CACHE_VERSION = 'zion-v3-' + '20260201';
 
 // Apenas cachear assets estáticos essenciais
 const STATIC_CACHE = [
@@ -63,6 +63,18 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // CRITICAL: Bypass cache for video files (WebM/MP4)
+  // Videos use Range Requests (206 Partial Content) which don't work well with simple cache
+  if (url.pathname.endsWith('.mp4') || url.pathname.endsWith('.webm')) {
+    return; // Let the browser handle it directly (network-only)
+  }
+
+  // CRITICAL: Bypass cache for Range Requests (partial content)
+  // This is essential for proper video/audio streaming
+  if (event.request.headers.get('range')) {
+    return; // Let the browser handle it directly (network-only)
+  }
+
   // Para navegação (HTML), sempre buscar da rede
   if (event.request.mode === 'navigate') {
     event.respondWith(
@@ -75,9 +87,9 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Para assets estáticos (JS/CSS com hash, imagens, vídeos), usar cache first
+  // Para assets estáticos (JS/CSS com hash, imagens), usar cache first
   const isHashedAsset = /\.[a-f0-9]{8,}\.(js|css)$/.test(url.pathname);
-  const isStaticAsset = /\.(png|jpg|jpeg|gif|svg|ico|woff2?|webp|webm|mp4)$/.test(url.pathname);
+  const isStaticAsset = /\.(png|jpg|jpeg|gif|svg|ico|woff2?|webp)$/.test(url.pathname);
   
   if (isHashedAsset || isStaticAsset) {
     event.respondWith(

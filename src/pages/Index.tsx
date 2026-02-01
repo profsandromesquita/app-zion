@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { useEffect, useState, useRef } from "react";
+import { useEffect } from "react";
 import { Heart, Shield, MessageCircle, LogIn } from "lucide-react";
 import zionLogo from "@/assets/zion-logo.png";
 import { Button } from "@/components/ui/button";
@@ -10,27 +10,12 @@ import { InstallAppButton } from "@/components/InstallAppButton";
 const Index = () => {
   const navigate = useNavigate();
   const { user, loading } = useAuth();
-  
-  // Robust video state machine
-  const [showVideo, setShowVideo] = useState(false);
-  const hasShownVideoRef = useRef(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     if (!loading && user) {
       navigate("/chat");
     }
   }, [user, loading, navigate]);
-
-  // Force play on mount (helps some browsers)
-  useEffect(() => {
-    const video = videoRef.current;
-    if (video) {
-      video.play().catch(() => {
-        // Autoplay blocked - poster will remain visible
-      });
-    }
-  }, []);
 
   const handleNeedHelp = () => {
     navigate("/chat?mode=nicodemos");
@@ -40,61 +25,31 @@ const Index = () => {
     navigate("/auth");
   };
 
-  // Only show video when confirmed playing with progress
-  const handlePlaying = () => {
-    const video = videoRef.current;
-    if (video && video.currentTime > 0 && !video.paused && !hasShownVideoRef.current) {
-      // Small delay to ensure stable playback
-      setTimeout(() => {
-        if (video && !video.paused && video.currentTime > 0.1) {
-          setShowVideo(true);
-          hasShownVideoRef.current = true;
-        }
-      }, 250);
-    }
-  };
-
-  // Handle timeupdate as backup confirmation
-  const handleTimeUpdate = () => {
-    const video = videoRef.current;
-    if (video && video.currentTime > 0.3 && !hasShownVideoRef.current) {
-      setShowVideo(true);
-      hasShownVideoRef.current = true;
-    }
-  };
-
   return (
     <div className="relative min-h-screen overflow-hidden">
       <SafetyExit />
 
-      {/* Video Background with Ken Burns on wrapper */}
+      {/* Video Background - Simple native format selection */}
       <div className="absolute inset-0 -z-20 overflow-hidden">
-        {/* Static poster - always behind, fades out when video ready */}
+        {/* Static poster as background (always visible behind video) */}
         <div 
-          className={`absolute inset-0 bg-cover bg-center transition-opacity duration-1000 ${
-            showVideo ? 'opacity-0' : 'opacity-100'
-          }`}
+          className="absolute inset-0 bg-cover bg-center"
           style={{ backgroundImage: 'url(/videos/hero-poster.webp)' }}
         />
         
-        {/* Ken Burns wrapper - animation on container, not video */}
-        <div className={`absolute inset-0 animate-ken-burns transition-opacity duration-1000 ${
-          showVideo ? 'opacity-100' : 'opacity-0'
-        }`}>
+        {/* Video with Ken Burns on wrapper */}
+        <div className="absolute inset-0 animate-ken-burns">
           <video
-            ref={videoRef}
             autoPlay
             muted
             loop
             playsInline
-            preload="auto"
-            onPlaying={handlePlaying}
-            onTimeUpdate={handleTimeUpdate}
+            preload="metadata"
             className="h-full w-full object-cover"
           >
-            {/* WebM first - smaller and more efficient (Chrome/Edge/Firefox) */}
+            {/* WebM first - Chrome/Edge/Firefox will use this */}
             <source src="/videos/hero-background.webm" type="video/webm" />
-            {/* MP4 fallback - Safari/iOS and older browsers */}
+            {/* MP4 fallback - Safari/iOS will use this */}
             <source src="/videos/hero-background.mp4" type="video/mp4" />
           </video>
         </div>
