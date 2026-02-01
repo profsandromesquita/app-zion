@@ -1,6 +1,6 @@
 // Zion Service Worker - PWA + Push Notifications
 // Versão com timestamp para forçar atualização
-const CACHE_VERSION = 'zion-v3-' + '20260201';
+const CACHE_VERSION = 'zion-v4-' + '20260201';
 
 // Apenas cachear assets estáticos essenciais
 const STATIC_CACHE = [
