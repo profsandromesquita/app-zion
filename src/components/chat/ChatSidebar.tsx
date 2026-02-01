@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Plus, Search, LogOut, BookOpen, Shield, User, Star, Settings, ChevronDown } from "lucide-react";
+import { Plus, Search, LogOut, BookOpen, Shield, User, Star, Settings, ChevronDown, Download } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import zionLogo from "@/assets/zion-logo.png";
 import { Button } from "@/components/ui/button";
@@ -32,6 +32,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import { ChatSessionContextMenu } from "./ChatSessionContextMenu";
 import { ColorDot, type ColorTag } from "./ColorTagPicker";
+import { InstallAppButton } from "@/components/InstallAppButton";
 
 interface ChatSession {
   id: string;
@@ -379,6 +380,7 @@ export function ChatSidebar({
               <BookOpen className="mr-2 h-4 w-4" />
               Diário Espiritual
             </Button>
+            <InstallAppButton variant="sidebar" />
           </div>
         )}
 
