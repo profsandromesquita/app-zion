@@ -128,6 +128,21 @@
   body {
     @apply bg-background text-foreground antialiased;
   }
+
+  /* Prevenir zoom automático em inputs no iOS/mobile */
+  input,
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}
+
+@media screen and (min-width: 768px) {
+  input,
+  textarea,
+  select {
+    font-size: inherit;
+  }
 }
 
 /* Animações suaves */
