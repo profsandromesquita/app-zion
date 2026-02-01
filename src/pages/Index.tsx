@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Heart, Shield, MessageCircle, LogIn } from "lucide-react";
 import zionLogo from "@/assets/zion-logo.png";
 import { Button } from "@/components/ui/button";
@@ -10,6 +10,7 @@ import { InstallAppButton } from "@/components/InstallAppButton";
 const Index = () => {
   const navigate = useNavigate();
   const { user, loading } = useAuth();
+  const [videoLoaded, setVideoLoaded] = useState(false);
 
   useEffect(() => {
     if (!loading && user) {
@@ -31,13 +32,29 @@ const Index = () => {
 
       {/* Video Background com Ken Burns */}
       <div className="absolute inset-0 -z-20 overflow-hidden">
+        {/* Poster instantâneo enquanto vídeo carrega */}
+        <div 
+          className={`absolute inset-0 bg-cover bg-center transition-opacity duration-1000 ${
+            videoLoaded ? 'opacity-0' : 'opacity-100'
+          }`}
+          style={{ backgroundImage: 'url(/videos/hero-poster.webp)' }}
+        />
+        
         <video
           autoPlay
           muted
           loop
           playsInline
-          className="h-full w-full object-cover animate-ken-burns"
+          preload="auto"
+          poster="/videos/hero-poster.webp"
+          onLoadedData={() => setVideoLoaded(true)}
+          className={`h-full w-full object-cover animate-ken-burns transition-opacity duration-1000 ${
+            videoLoaded ? 'opacity-100' : 'opacity-0'
+          }`}
         >
+          {/* WebM primeiro - menor e mais eficiente (Chrome/Edge/Firefox) */}
+          <source src="/videos/hero-background.webm" type="video/webm" />
+          {/* MP4 fallback - Safari/iOS e navegadores antigos */}
           <source src="/videos/hero-background.mp4" type="video/mp4" />
         </video>
 
