@@ -11,6 +11,7 @@ import SafetyExit from "@/components/SafetyExit";
 import { AccountTypeSelector, type AccountType } from "@/components/auth/AccountTypeSelector";
 import { ChurchSignupForm } from "@/components/auth/ChurchSignupForm";
 import { ProfessionalSignupForm } from "@/components/auth/ProfessionalSignupForm";
+import { InstallAppButton } from "@/components/InstallAppButton";
 import { z } from "zod";
 import zionLogo from "@/assets/zion-logo.png";
 const loginSchema = z.object({
@@ -258,6 +259,11 @@ const Auth = () => {
             Acesse o chat anônimo
           </button>
         </p>
+
+        {/* Install App Button */}
+        <div className="mt-4 animate-fade-in">
+          <InstallAppButton variant="compact" />
+        </div>
       </div>
     </div>;
 };

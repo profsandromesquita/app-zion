@@ -5,6 +5,7 @@ import zionLogo from "@/assets/zion-logo.png";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import SafetyExit from "@/components/SafetyExit";
+import { InstallAppButton } from "@/components/InstallAppButton";
 
 const Index = () => {
   const navigate = useNavigate();
@@ -113,12 +114,19 @@ const Index = () => {
               Entrar / Cadastrar
             </Button>
           </div>
+
+          <div
+            className="opacity-0 animate-fade-slide-up"
+            style={{ animationDelay: "600ms", animationFillMode: "forwards" }}
+          >
+            <InstallAppButton variant="hero" />
+          </div>
         </div>
 
         {/* Trust Indicators */}
         <div
           className="mt-16 flex flex-wrap items-center justify-center gap-8 text-sm text-white/80 opacity-0 animate-fade-slide-up"
-          style={{ animationDelay: "600ms", animationFillMode: "forwards" }}
+          style={{ animationDelay: "700ms", animationFillMode: "forwards" }}
         >
           <div className="flex items-center gap-2 drop-shadow-md">
             <Shield className="h-4 w-4 text-emerald-400" />
