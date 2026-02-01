@@ -47,7 +47,7 @@ const Index = () => {
           playsInline
           preload="auto"
           poster="/videos/hero-poster.webp"
-          onLoadedData={() => setVideoLoaded(true)}
+          onCanPlayThrough={() => setVideoLoaded(true)}
           className={`h-full w-full object-cover animate-ken-burns transition-opacity duration-1000 ${
             videoLoaded ? 'opacity-100' : 'opacity-0'
           }`}
