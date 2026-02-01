@@ -102,6 +102,13 @@ const Chat = () => {
 
   const loading = authLoading || (isNicodemosMode && anonLoading);
 
+  // Redirect to auth if not logged in and not in anonymous mode
+  useEffect(() => {
+    if (!loading && !isNicodemosMode && !user) {
+      navigate("/auth");
+    }
+  }, [loading, isNicodemosMode, user, navigate]);
+
   // Initialize chat session
   useEffect(() => {
     if (loading) return;
@@ -643,7 +650,7 @@ const Chat = () => {
   // Anonymous mode (Nicodemos) - no sidebar
   if (isNicodemosMode || !user) {
     return (
-      <div className="flex h-screen flex-col bg-background">
+      <div className="flex h-[100dvh] flex-col bg-background">
         <SafetyExit />
         
         {/* Crisis Banner */}
@@ -653,7 +660,10 @@ const Chat = () => {
         />
 
         {/* Header */}
-        <header className="flex items-center justify-between border-b border-border px-4 py-3">
+        <header 
+          className="flex items-center justify-between border-b border-border px-4 py-3"
+          style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}
+        >
           <div className="flex items-center gap-3">
             <Button variant="ghost" size="icon" onClick={() => navigate("/")}>
               <ArrowLeft className="h-5 w-5" />
@@ -717,7 +727,7 @@ const Chat = () => {
         </ScrollArea>
 
         {/* Input */}
-        <div className="border-t border-border p-4">
+        <div className="border-t border-border p-4" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
           <div className="mx-auto flex max-w-2xl gap-2">
             <Textarea
               value={input}
@@ -751,7 +761,7 @@ const Chat = () => {
   // Authenticated mode - with sidebar
   return (
     <SidebarProvider>
-      <div className="flex h-screen w-full bg-background">
+      <div className="flex h-[100dvh] w-full bg-background">
         <SafetyExit />
 
         <ChatSidebar
@@ -782,7 +792,7 @@ const Chat = () => {
           />
 
           {/* Header */}
-          <header className="flex items-center justify-between border-b border-border px-4 py-3">
+          <header className="flex items-center justify-between border-b border-border px-4 py-3" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
             <div className="flex items-center gap-3">
               <SidebarTrigger />
               <div className="flex items-center gap-2">
@@ -843,7 +853,7 @@ const Chat = () => {
           </ScrollArea>
 
           {/* Input */}
-          <div className="border-t border-border p-4">
+          <div className="border-t border-border p-4" style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}>
             <div className="mx-auto flex max-w-2xl gap-2">
               <Textarea
                 value={input}
