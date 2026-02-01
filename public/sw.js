@@ -75,9 +75,9 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Para assets estáticos (JS/CSS com hash, imagens), usar cache first
+  // Para assets estáticos (JS/CSS com hash, imagens, vídeos), usar cache first
   const isHashedAsset = /\.[a-f0-9]{8,}\.(js|css)$/.test(url.pathname);
-  const isStaticAsset = /\.(png|jpg|jpeg|gif|svg|ico|woff2?)$/.test(url.pathname);
+  const isStaticAsset = /\.(png|jpg|jpeg|gif|svg|ico|woff2?|webp|webm|mp4)$/.test(url.pathname);
   
   if (isHashedAsset || isStaticAsset) {
     event.respondWith(

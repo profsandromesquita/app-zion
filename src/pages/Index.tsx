@@ -1,5 +1,5 @@
 import { useNavigate } from "react-router-dom";
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import { Heart, Shield, MessageCircle, LogIn } from "lucide-react";
 import zionLogo from "@/assets/zion-logo.png";
 import { Button } from "@/components/ui/button";
@@ -10,13 +10,27 @@ import { InstallAppButton } from "@/components/InstallAppButton";
 const Index = () => {
   const navigate = useNavigate();
   const { user, loading } = useAuth();
-  const [videoLoaded, setVideoLoaded] = useState(false);
+  
+  // Robust video state machine
+  const [showVideo, setShowVideo] = useState(false);
+  const hasShownVideoRef = useRef(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
     if (!loading && user) {
       navigate("/chat");
     }
   }, [user, loading, navigate]);
+
+  // Force play on mount (helps some browsers)
+  useEffect(() => {
+    const video = videoRef.current;
+    if (video) {
+      video.play().catch(() => {
+        // Autoplay blocked - poster will remain visible
+      });
+    }
+  }, []);
 
   const handleNeedHelp = () => {
     navigate("/chat?mode=nicodemos");
@@ -26,42 +40,69 @@ const Index = () => {
     navigate("/auth");
   };
 
+  // Only show video when confirmed playing with progress
+  const handlePlaying = () => {
+    const video = videoRef.current;
+    if (video && video.currentTime > 0 && !video.paused && !hasShownVideoRef.current) {
+      // Small delay to ensure stable playback
+      setTimeout(() => {
+        if (video && !video.paused && video.currentTime > 0.1) {
+          setShowVideo(true);
+          hasShownVideoRef.current = true;
+        }
+      }, 250);
+    }
+  };
+
+  // Handle timeupdate as backup confirmation
+  const handleTimeUpdate = () => {
+    const video = videoRef.current;
+    if (video && video.currentTime > 0.3 && !hasShownVideoRef.current) {
+      setShowVideo(true);
+      hasShownVideoRef.current = true;
+    }
+  };
+
   return (
     <div className="relative min-h-screen overflow-hidden">
       <SafetyExit />
 
-      {/* Video Background com Ken Burns */}
+      {/* Video Background with Ken Burns on wrapper */}
       <div className="absolute inset-0 -z-20 overflow-hidden">
-        {/* Poster instantâneo enquanto vídeo carrega */}
+        {/* Static poster - always behind, fades out when video ready */}
         <div 
           className={`absolute inset-0 bg-cover bg-center transition-opacity duration-1000 ${
-            videoLoaded ? 'opacity-0' : 'opacity-100'
+            showVideo ? 'opacity-0' : 'opacity-100'
           }`}
           style={{ backgroundImage: 'url(/videos/hero-poster.webp)' }}
         />
         
-        <video
-          autoPlay
-          muted
-          loop
-          playsInline
-          preload="auto"
-          poster="/videos/hero-poster.webp"
-          onCanPlayThrough={() => setVideoLoaded(true)}
-          className={`h-full w-full object-cover animate-ken-burns transition-opacity duration-1000 ${
-            videoLoaded ? 'opacity-100' : 'opacity-0'
-          }`}
-        >
-          {/* WebM primeiro - menor e mais eficiente (Chrome/Edge/Firefox) */}
-          <source src="/videos/hero-background.webm" type="video/webm" />
-          {/* MP4 fallback - Safari/iOS e navegadores antigos */}
-          <source src="/videos/hero-background.mp4" type="video/mp4" />
-        </video>
+        {/* Ken Burns wrapper - animation on container, not video */}
+        <div className={`absolute inset-0 animate-ken-burns transition-opacity duration-1000 ${
+          showVideo ? 'opacity-100' : 'opacity-0'
+        }`}>
+          <video
+            ref={videoRef}
+            autoPlay
+            muted
+            loop
+            playsInline
+            preload="auto"
+            onPlaying={handlePlaying}
+            onTimeUpdate={handleTimeUpdate}
+            className="h-full w-full object-cover"
+          >
+            {/* WebM first - smaller and more efficient (Chrome/Edge/Firefox) */}
+            <source src="/videos/hero-background.webm" type="video/webm" />
+            {/* MP4 fallback - Safari/iOS and older browsers */}
+            <source src="/videos/hero-background.mp4" type="video/mp4" />
+          </video>
+        </div>
 
-        {/* Overlay para legibilidade */}
+        {/* Overlay for readability */}
         <div className="absolute inset-0 bg-black/40" />
 
-        {/* Gradiente suave na base */}
+        {/* Gradient at bottom */}
         <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/60 to-transparent" />
       </div>
 
