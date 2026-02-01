@@ -1,283 +1,130 @@
 
 
-# Plano: Botão "Instalar App" para Facilitar Experiência do Usuário
+# Plano de Implementação: Otimização do Carregamento de Vídeo
 
-## Análise das Possibilidades Técnicas
+## Resumo
 
-### O que é possível fazer automaticamente?
-
-| Plataforma | Instalação com 1 clique? | Motivo |
-|------------|--------------------------|--------|
-| **Chrome/Edge (Desktop e Android)** | SIM | O navegador dispara o evento `beforeinstallprompt` que podemos capturar e chamar `.prompt()` |
-| **Safari iOS (iPhone/iPad)** | NÃO | A Apple **não permite** instalação automática. O usuário precisa ir em "Compartilhar → Adicionar à Tela de Início" manualmente |
-| **Safari Mac** | NÃO | Precisa ir em "Arquivo → Adicionar ao Dock" manualmente |
-| **Firefox** | NÃO | Firefox desktop não suporta PWA (mobile suporta parcialmente) |
-
-### Conclusão
-- Para **Chrome/Edge** (que representa ~70% dos usuários): podemos criar um botão que faz a instalação automática
-- Para **Safari/iOS**: o máximo que podemos fazer é mostrar instruções claras
+Com os arquivos fornecidos (poster WebP e vídeo WebM), vamos otimizar a página inicial para carregar instantaneamente uma imagem enquanto o vídeo é baixado em segundo plano, com transição suave.
 
 ---
 
-## Solução Proposta
+## Arquivos a Adicionar
 
-### Componente `InstallAppButton`
-Um componente reutilizável que:
-1. **Captura o evento `beforeinstallprompt`** quando disponível
-2. **Renderiza um botão "Instalar App"** quando instalação automática é possível
-3. **Mostra tooltip/modal com instruções** quando não é possível (iOS)
-4. **Se esconde automaticamente** quando o app já está instalado
+| Arquivo | Destino | Propósito |
+|---------|---------|-----------|
+| `Zion-folder-load-pagina-inicial.webp` | `public/videos/hero-poster.webp` | Imagem exibida instantaneamente |
+| `zion-video-expandido.webm` | `public/videos/hero-background.webm` | Vídeo otimizado (Chrome/Edge/Firefox) |
 
-### Onde exibir o botão?
-
-| Local | Por quê? |
-|-------|----------|
-| **Página inicial (Index.tsx)** | Primeiro contato do usuário |
-| **Página de Login (Auth.tsx)** | Momento de decisão do usuário |
-| **Sidebar do Chat** | Acesso fácil após login |
-| **Página /install existente** | Já tem (manter como está) |
+**Nota**: O MP4 original será mantido como fallback para Safari/iOS.
 
 ---
 
-## Implementação Detalhada
+## Modificações no Código
 
-### Fase 1: Criar Hook Reutilizável `useInstallPrompt`
+### Arquivo: `src/pages/Index.tsx`
 
-**Arquivo:** `src/hooks/useInstallPrompt.ts`
-
-Este hook centraliza toda a lógica de instalação PWA:
-
-```typescript
-interface UseInstallPromptReturn {
-  canInstallNatively: boolean;     // Chrome/Edge - pode instalar com 1 clique
-  isInstalled: boolean;            // Já está instalado
-  isIOS: boolean;                  // Precisa de instruções manuais
-  isAndroid: boolean;              // Android Chrome
-  promptInstall: () => Promise<boolean>; // Chamar para instalar
-}
-```
-
-**Funcionalidades:**
-- Captura `beforeinstallprompt` em qualquer página
-- Armazena o prompt para uso posterior
-- Detecta se já está em modo standalone
-- Detecta plataforma (iOS, Android, Desktop)
-
----
-
-### Fase 2: Criar Componente `InstallAppButton`
-
-**Arquivo:** `src/components/InstallAppButton.tsx`
-
-**Comportamento:**
-1. Se `isInstalled = true`: não renderiza nada
-2. Se `canInstallNatively = true`: 
-   - Mostra botão "Instalar App" com ícone de download
-   - Ao clicar: chama `promptInstall()` → abre o diálogo nativo do navegador
-3. Se `isIOS = true`:
-   - Mostra botão "Instalar App"
-   - Ao clicar: abre modal/toast com instruções "Compartilhar → Adicionar à Tela de Início"
-4. Se nenhum dos acima:
-   - Navega para `/install` com instruções detalhadas
-
-**Props opcionais:**
-- `variant`: "hero" (grande, para página inicial) | "compact" (pequeno, para sidebar)
-- `className`: customização de estilo
-
----
-
-### Fase 3: Adicionar Botão na Página Inicial (Index.tsx)
-
-**Local:** Abaixo dos botões "Preciso de Ajuda Agora" e "Entrar/Cadastrar"
+**1. Adicionar estado para controlar carregamento**
 
 ```tsx
-{/* Install Button - aparece só se não instalado */}
-<InstallAppButton variant="hero" />
+import { useNavigate } from "react-router-dom";
+import { useEffect, useState } from "react";  // Adicionar useState
 ```
 
-**Visual sugerido:**
-- Texto: "Adicionar à Tela Inicial"
-- Ícone: Download ou Smartphone
-- Estilo: outline sutil (não competir com CTAs principais)
-
----
-
-### Fase 4: Adicionar Botão na Página de Login (Auth.tsx)
-
-**Local:** No footer, abaixo do link "Acesse o chat anônimo"
+**2. Criar estado de loading do vídeo**
 
 ```tsx
-<InstallAppButton variant="compact" />
+const [videoLoaded, setVideoLoaded] = useState(false);
 ```
 
----
+**3. Atualizar o bloco do vídeo (linhas 32-49)**
 
-### Fase 5: Adicionar no Sidebar do Chat
-
-**Local:** Em `ChatSidebar.tsx`, no footer (antes do menu de usuário)
+Substituir por:
 
 ```tsx
-{!isInstalled && (
-  <Button
-    variant="ghost"
-    size="sm"
-    className="w-full justify-start"
-    onClick={handleInstall}
+{/* Video Background com Ken Burns */}
+<div className="absolute inset-0 -z-20 overflow-hidden">
+  {/* Poster instantâneo enquanto vídeo carrega */}
+  <div 
+    className={`absolute inset-0 bg-cover bg-center transition-opacity duration-1000 ${
+      videoLoaded ? 'opacity-0' : 'opacity-100'
+    }`}
+    style={{ backgroundImage: 'url(/videos/hero-poster.webp)' }}
+  />
+  
+  <video
+    autoPlay
+    muted
+    loop
+    playsInline
+    preload="auto"
+    poster="/videos/hero-poster.webp"
+    onLoadedData={() => setVideoLoaded(true)}
+    className={`h-full w-full object-cover animate-ken-burns transition-opacity duration-1000 ${
+      videoLoaded ? 'opacity-100' : 'opacity-0'
+    }`}
   >
-    <Download className="mr-2 h-4 w-4" />
-    Instalar App
-  </Button>
-)}
+    {/* WebM primeiro - menor e mais eficiente (Chrome/Edge/Firefox) */}
+    <source src="/videos/hero-background.webm" type="video/webm" />
+    {/* MP4 fallback - Safari/iOS e navegadores antigos */}
+    <source src="/videos/hero-background.mp4" type="video/mp4" />
+  </video>
+
+  {/* Overlay para legibilidade */}
+  <div className="absolute inset-0 bg-black/40" />
+
+  {/* Gradiente suave na base */}
+  <div className="absolute inset-x-0 bottom-0 h-1/3 bg-gradient-to-t from-black/60 to-transparent" />
+</div>
 ```
 
 ---
 
-## Arquivos a Criar/Modificar
-
-| Arquivo | Ação |
-|---------|------|
-| `src/hooks/useInstallPrompt.ts` | **CRIAR** - Hook centralizado de instalação |
-| `src/components/InstallAppButton.tsx` | **CRIAR** - Componente de botão inteligente |
-| `src/pages/Index.tsx` | **MODIFICAR** - Adicionar botão na hero |
-| `src/pages/Auth.tsx` | **MODIFICAR** - Adicionar botão no footer |
-| `src/components/chat/ChatSidebar.tsx` | **MODIFICAR** - Adicionar opção no menu |
-
----
-
-## Fluxo do Usuário (Visual)
+## Fluxo de Carregamento Otimizado
 
 ```text
-┌─────────────────────────────────────────────────────────────────┐
-│                      PÁGINA INICIAL                              │
-│                                                                  │
-│                         [Logo Zion]                              │
-│                                                                  │
-│              [ Preciso de Ajuda Agora ]  (CTA principal)         │
-│              [   Entrar / Cadastrar   ]  (secundário)            │
-│              [  Adicionar à Tela ↓    ]  (novo - terciário)      │
-│                                                                  │
-│              ────────────────────────                            │
-│              Você não está sozinho...                            │
-└─────────────────────────────────────────────────────────────────┘
+ANTES (atual):
+┌─────────────────────────────────────────────────────────────┐
+│  0ms      500ms    1000ms    2000ms    3000ms              │
+│  [──────── Tela vazia ────────][Vídeo aparece de repente]  │
+└─────────────────────────────────────────────────────────────┘
 
-    │ Usuário clica em "Adicionar à Tela"
-    ▼
+DEPOIS (otimizado):
+┌─────────────────────────────────────────────────────────────┐
+│  0ms      500ms    1000ms    2000ms    3000ms              │
+│  [Poster instantâneo]────[Fade suave para vídeo]──────────  │
+└─────────────────────────────────────────────────────────────┘
+```
 
-┌─────────────────────────────────────────────────────────────────┐
-│  SE Chrome/Edge:                                                 │
-│  ┌──────────────────────────────────────┐                       │
-│  │  Instalar "Zion"?                    │  ← Diálogo nativo     │
-│  │  [Instalar]  [Cancelar]              │                       │
-│  └──────────────────────────────────────┘                       │
-│                                                                  │
-│  SE iPhone:                                                      │
-│  ┌──────────────────────────────────────┐                       │
-│  │  📱 Para instalar no iPhone:         │  ← Modal/Toast        │
-│  │  1. Toque em "Compartilhar" ⬆️        │                       │
-│  │  2. Role e toque em "Adicionar à     │                       │
-│  │     Tela de Início"                  │                       │
-│  │  3. Confirme tocando em "Adicionar"  │                       │
-│  └──────────────────────────────────────┘                       │
-└─────────────────────────────────────────────────────────────────┘
+---
+
+## Benefícios da Implementação
+
+| Aspecto | Melhoria |
+|---------|----------|
+| **Primeira impressão** | Imagem aparece em ~50ms vs ~3000ms do vídeo |
+| **Experiência visual** | Transição suave (fade 1 segundo) |
+| **Tamanho do download** | WebM ~30% menor que MP4 |
+| **Compatibilidade** | Safari usa MP4, demais usam WebM |
+| **Ken Burns** | Efeito continua funcionando normalmente |
+
+---
+
+## Estrutura Final de Arquivos
+
+```text
+public/videos/
+├── hero-background.mp4     (existente - fallback Safari)
+├── hero-background.webm    (novo - navegadores modernos)
+└── hero-poster.webp        (novo - loading instantâneo)
 ```
 
 ---
 
 ## Detalhes Técnicos
 
-### Hook useInstallPrompt.ts
-
-```typescript
-import { useState, useEffect, useCallback } from "react";
-
-interface BeforeInstallPromptEvent extends Event {
-  prompt(): Promise<void>;
-  userChoice: Promise<{ outcome: "accepted" | "dismissed" }>;
-}
-
-export function useInstallPrompt() {
-  const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
-  const [isInstalled, setIsInstalled] = useState(false);
-  
-  const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent);
-  const isAndroid = /Android/.test(navigator.userAgent);
-  const canInstallNatively = deferredPrompt !== null;
-
-  useEffect(() => {
-    // Capturar prompt
-    const handlePrompt = (e: BeforeInstallPromptEvent) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-    };
-
-    // Detectar instalação concluída
-    const handleInstalled = () => setIsInstalled(true);
-
-    // Verificar se já está instalado
-    if (window.matchMedia("(display-mode: standalone)").matches) {
-      setIsInstalled(true);
-    }
-
-    window.addEventListener("beforeinstallprompt", handlePrompt);
-    window.addEventListener("appinstalled", handleInstalled);
-
-    return () => {
-      window.removeEventListener("beforeinstallprompt", handlePrompt);
-      window.removeEventListener("appinstalled", handleInstalled);
-    };
-  }, []);
-
-  const promptInstall = useCallback(async (): Promise<boolean> => {
-    if (!deferredPrompt) return false;
-    
-    await deferredPrompt.prompt();
-    const { outcome } = await deferredPrompt.userChoice;
-    setDeferredPrompt(null);
-    
-    return outcome === "accepted";
-  }, [deferredPrompt]);
-
-  return {
-    canInstallNatively,
-    isInstalled,
-    isIOS,
-    isAndroid,
-    promptInstall,
-  };
-}
-```
-
-### Componente InstallAppButton.tsx
-
-```typescript
-interface InstallAppButtonProps {
-  variant?: "hero" | "compact" | "sidebar";
-  className?: string;
-}
-```
-
-**Variante "hero"**: Botão grande com gradiente sutil, para página inicial
-**Variante "compact"**: Botão pequeno com texto, para footer
-**Variante "sidebar"**: Botão ghost para menu lateral
-
----
-
-## Validação (Checklist de Testes)
-
-| Cenário | Esperado |
-|---------|----------|
-| Chrome Desktop, não instalado | Botão aparece → clique abre prompt nativo |
-| Chrome Android, não instalado | Botão aparece → clique abre prompt nativo |
-| Safari iPhone, não instalado | Botão aparece → clique mostra instruções |
-| App já instalado (qualquer) | Botão não aparece |
-| Firefox Desktop | Botão leva para /install com instruções |
-
----
-
-## Resultado Esperado
-
-Após a implementação:
-1. **Chrome/Edge**: Usuário clica em "Instalar" → o Zion "se instala sozinho" (na verdade, mostra o diálogo nativo e o usuário confirma)
-2. **iPhone**: Usuário clica → recebe instruções claras sem precisar ir no navegador
-3. **Qualquer plataforma**: O botão some automaticamente após a instalação
+- **`preload="auto"`**: Instrui o navegador a priorizar o download do vídeo
+- **`poster`**: Atributo nativo do HTML5 para imagem de placeholder
+- **`onLoadedData`**: Evento disparado quando o vídeo está pronto para reproduzir
+- **`transition-opacity duration-1000`**: Fade suave de 1 segundo entre poster e vídeo
+- **Ordem dos `<source>`**: WebM primeiro (preferido), MP4 segundo (fallback)
 
