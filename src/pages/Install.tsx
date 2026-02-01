@@ -272,8 +272,8 @@ export default function Install() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-start gap-3">
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                  <span className="text-sm font-medium">1</span>
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-r from-emerald-500 to-lime-500 flex items-center justify-center">
+                  <span className="text-sm font-medium text-white">1</span>
                 </div>
                 <div>
                   <p className="font-medium">Toque no ícone de Compartilhar</p>
@@ -284,8 +284,8 @@ export default function Install() {
               </div>
               
               <div className="flex items-start gap-3">
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                  <span className="text-sm font-medium">2</span>
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-r from-emerald-500 to-lime-500 flex items-center justify-center">
+                  <span className="text-sm font-medium text-white">2</span>
                 </div>
                 <div>
                   <p className="font-medium">Role para baixo e toque em "Adicionar à Tela de Início"</p>
@@ -296,8 +296,8 @@ export default function Install() {
               </div>
 
               <div className="flex items-start gap-3">
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                  <span className="text-sm font-medium">3</span>
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-r from-emerald-500 to-lime-500 flex items-center justify-center">
+                  <span className="text-sm font-medium text-white">3</span>
                 </div>
                 <div>
                   <p className="font-medium">Confirme tocando em "Adicionar"</p>
@@ -330,8 +330,8 @@ export default function Install() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-start gap-3">
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                  <span className="text-sm font-medium">1</span>
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-r from-emerald-500 to-lime-500 flex items-center justify-center">
+                  <span className="text-sm font-medium text-white">1</span>
                 </div>
                 <div>
                   <p className="font-medium">Abra o menu do navegador</p>
@@ -342,8 +342,8 @@ export default function Install() {
               </div>
               
               <div className="flex items-start gap-3">
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                  <span className="text-sm font-medium">2</span>
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-r from-emerald-500 to-lime-500 flex items-center justify-center">
+                  <span className="text-sm font-medium text-white">2</span>
                 </div>
                 <div>
                   <p className="font-medium">
@@ -358,8 +358,8 @@ export default function Install() {
               </div>
 
               <div className="flex items-start gap-3">
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                  <span className="text-sm font-medium">3</span>
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-r from-emerald-500 to-lime-500 flex items-center justify-center">
+                  <span className="text-sm font-medium text-white">3</span>
                 </div>
                 <div>
                   <p className="font-medium">Confirme a instalação</p>
@@ -383,8 +383,8 @@ export default function Install() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-start gap-3">
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                  <span className="text-sm font-medium">1</span>
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-r from-emerald-500 to-lime-500 flex items-center justify-center">
+                  <span className="text-sm font-medium text-white">1</span>
                 </div>
                 <div>
                   <p className="font-medium">No menu, vá em "Arquivo"</p>
@@ -392,8 +392,8 @@ export default function Install() {
               </div>
               
               <div className="flex items-start gap-3">
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                  <span className="text-sm font-medium">2</span>
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-r from-emerald-500 to-lime-500 flex items-center justify-center">
+                  <span className="text-sm font-medium text-white">2</span>
                 </div>
                 <div>
                   <p className="font-medium">Clique em "Adicionar ao Dock"</p>
@@ -417,8 +417,8 @@ export default function Install() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-start gap-3">
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                  <span className="text-sm font-medium">1</span>
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-r from-emerald-500 to-lime-500 flex items-center justify-center">
+                  <span className="text-sm font-medium text-white">1</span>
                 </div>
                 <div>
                   <p className="font-medium">Abra o menu do Chrome</p>
@@ -429,8 +429,8 @@ export default function Install() {
               </div>
               
               <div className="flex items-start gap-3">
-                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
-                  <span className="text-sm font-medium">2</span>
+                <div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-r from-emerald-500 to-lime-500 flex items-center justify-center">
+                  <span className="text-sm font-medium text-white">2</span>
                 </div>
                 <div>
                   <p className="font-medium">Toque em "Adicionar à tela inicial"</p>
@@ -447,7 +447,7 @@ export default function Install() {
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <AlertCircle className="h-5 w-5" />
+              <AlertCircle className="h-5 w-5 text-emerald-500" />
               Diagnóstico
             </CardTitle>
             <CardDescription>
@@ -457,28 +457,40 @@ export default function Install() {
           <CardContent className="space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-sm">Service Worker</span>
-              <Badge variant={swStatus === "active" ? "default" : "secondary"}>
+              <Badge 
+                variant="secondary"
+                className={swStatus === "active" ? "bg-gradient-to-r from-emerald-500 to-lime-500 text-white border-0" : ""}
+              >
                 {swStatus === "checking" ? "Verificando..." : swStatus === "active" ? "Ativo" : "Inativo"}
               </Badge>
             </div>
             
             <div className="flex items-center justify-between">
               <span className="text-sm">Manifest</span>
-              <Badge variant={manifestStatus === "loaded" ? "default" : "secondary"}>
+              <Badge 
+                variant="secondary"
+                className={manifestStatus === "loaded" ? "bg-gradient-to-r from-emerald-500 to-lime-500 text-white border-0" : ""}
+              >
                 {manifestStatus === "checking" ? "Verificando..." : manifestStatus === "loaded" ? "OK" : "Erro"}
               </Badge>
             </div>
 
             <div className="flex items-center justify-between">
               <span className="text-sm">Modo Standalone</span>
-              <Badge variant={platform.isStandalone ? "default" : "secondary"}>
+              <Badge 
+                variant="secondary"
+                className={platform.isStandalone ? "bg-gradient-to-r from-emerald-500 to-lime-500 text-white border-0" : ""}
+              >
                 {platform.isStandalone ? "Sim" : "Não"}
               </Badge>
             </div>
 
             <div className="flex items-center justify-between">
               <span className="text-sm">Prompt de Instalação</span>
-              <Badge variant={deferredPrompt ? "default" : "secondary"}>
+              <Badge 
+                variant="secondary"
+                className={deferredPrompt ? "bg-gradient-to-r from-emerald-500 to-lime-500 text-white border-0" : ""}
+              >
                 {deferredPrompt ? "Disponível" : "Indisponível"}
               </Badge>
             </div>
