@@ -299,7 +299,7 @@ export function ChatSidebar({
         {grouped.today.length > 0 && (
           <>
             {!collapsed && (
-              <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+              <div className="mx-2 px-2 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300 uppercase tracking-wider bg-emerald-100 dark:bg-emerald-900/30 rounded-md">
                 Hoje
               </div>
             )}
@@ -310,7 +310,7 @@ export function ChatSidebar({
         {grouped.lastWeek.length > 0 && (
           <>
             {!collapsed && (
-              <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider mt-2">
+              <div className="mx-2 px-2 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300 uppercase tracking-wider bg-emerald-100 dark:bg-emerald-900/30 rounded-md mt-2">
                 Últimos 7 dias
               </div>
             )}
@@ -321,7 +321,7 @@ export function ChatSidebar({
         {grouped.lastMonth.length > 0 && (
           <>
             {!collapsed && (
-              <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider mt-2">
+              <div className="mx-2 px-2 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300 uppercase tracking-wider bg-emerald-100 dark:bg-emerald-900/30 rounded-md mt-2">
                 Último mês
               </div>
             )}
@@ -332,7 +332,7 @@ export function ChatSidebar({
         {grouped.older.length > 0 && (
           <>
             {!collapsed && (
-              <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider mt-2">
+              <div className="mx-2 px-2 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300 uppercase tracking-wider bg-emerald-100 dark:bg-emerald-900/30 rounded-md mt-2">
                 Antigas
               </div>
             )}
