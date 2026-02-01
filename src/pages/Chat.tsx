@@ -762,7 +762,6 @@ const Chat = () => {
   return (
     <SidebarProvider>
       <div className="flex h-[100dvh] w-full bg-background">
-        <SafetyExit />
 
         <ChatSidebar
           user={user}
@@ -805,6 +804,9 @@ const Chat = () => {
             </div>
 
             <div className="flex items-center gap-1">
+              {/* Safety Exit Button */}
+              <SafetyExit variant="header" />
+
               {/* Push notification toggle */}
               <PushNotificationPrompt userId={user?.id || null} variant="icon" />
 

@@ -135,6 +135,27 @@ export function ChatSidebar({
 
   const canFavorite = favoriteSessions.length < MAX_FAVORITES;
 
+  // Group sessions by time period
+  const groupSessionsByTime = (sessionList: ChatSession[]) => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    return {
+      today: sessionList.filter(s => new Date(s.updated_at) >= today),
+      lastWeek: sessionList.filter(s => {
+        const date = new Date(s.updated_at);
+        return date >= weekAgo && date < today;
+      }),
+      lastMonth: sessionList.filter(s => {
+        const date = new Date(s.updated_at);
+        return date >= monthAgo && date < weekAgo;
+      }),
+      older: sessionList.filter(s => new Date(s.updated_at) < monthAgo),
+    };
+  };
+
   const handleRename = async (sessionId: string, newTitle: string) => {
     const { error } = await supabase
       .from("chat_sessions")
@@ -247,16 +268,9 @@ export function ChatSidebar({
       >
         <div className="flex items-center gap-2 overflow-hidden flex-1 min-w-0">
           <ColorDot color={session.color_tag as ColorTag} />
-          <div className="flex flex-col items-start overflow-hidden min-w-0 flex-1">
-            <span className="truncate w-full text-sm">
-              {session.title || "Nova Conversa"}
-            </span>
-            {!collapsed && (
-              <span className="text-xs text-muted-foreground truncate w-full">
-                {formatDate(session.updated_at)}
-              </span>
-            )}
-          </div>
+          <span className="truncate w-full text-sm">
+            {session.title || "Nova Conversa"}
+          </span>
         </div>
       </SidebarMenuButton>
       {!collapsed && (
@@ -274,6 +288,60 @@ export function ChatSidebar({
       )}
     </SidebarMenuItem>
   );
+
+  // Render grouped sessions with section headers
+  const renderGroupedSessions = () => {
+    const filteredRegular = filterSessions(regularSessions);
+    const grouped = groupSessionsByTime(filteredRegular);
+
+    return (
+      <>
+        {grouped.today.length > 0 && (
+          <>
+            {!collapsed && (
+              <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                Hoje
+              </div>
+            )}
+            {grouped.today.map(renderSessionItem)}
+          </>
+        )}
+
+        {grouped.lastWeek.length > 0 && (
+          <>
+            {!collapsed && (
+              <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider mt-2">
+                Últimos 7 dias
+              </div>
+            )}
+            {grouped.lastWeek.map(renderSessionItem)}
+          </>
+        )}
+
+        {grouped.lastMonth.length > 0 && (
+          <>
+            {!collapsed && (
+              <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider mt-2">
+                Último mês
+              </div>
+            )}
+            {grouped.lastMonth.map(renderSessionItem)}
+          </>
+        )}
+
+        {grouped.older.length > 0 && (
+          <>
+            {!collapsed && (
+              <div className="px-3 py-1.5 text-xs font-medium text-muted-foreground uppercase tracking-wider mt-2">
+                Antigas
+              </div>
+            )}
+            {grouped.older.map(renderSessionItem)}
+          </>
+        )}
+      </>
+    );
+  };
 
   return (
     <Sidebar className="border-r border-border">
@@ -347,7 +415,7 @@ export function ChatSidebar({
                     {searchQuery ? "Nenhum chat encontrado" : "Nenhuma conversa ainda"}
                   </div>
                 ) : (
-                  filterSessions(regularSessions).map(renderSessionItem)
+                  renderGroupedSessions()
                 )}
               </SidebarMenu>
             </ScrollArea>
