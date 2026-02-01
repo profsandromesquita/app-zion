@@ -6,11 +6,36 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-const SafetyExit = () => {
+interface SafetyExitProps {
+  variant?: "floating" | "header";
+}
+
+const SafetyExit = ({ variant = "floating" }: SafetyExitProps) => {
   const handleSafetyExit = () => {
     // Redireciona imediatamente para o Google
     window.location.replace("https://www.google.com");
   };
+
+  if (variant === "header") {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            onClick={handleSafetyExit}
+            variant="ghost"
+            size="icon"
+            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+            aria-label="Sair rápido"
+          >
+            <X className="h-4 w-4" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="bottom" className="bg-destructive text-destructive-foreground">
+          <p>Sair Rápido</p>
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
 
   return (
     <Tooltip>
