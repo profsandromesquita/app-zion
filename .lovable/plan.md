@@ -1,152 +1,112 @@
 
-# Plano: Corrigir Zoom Automático no Campo de Chat Mobile
+# Plano: Atualizar Página de Instalação para o Design System Zion
 
-## Diagnóstico Completo
+## Problema Identificado
 
-### Causa Raiz Identificada
-O zoom automático que acontece quando você toca no campo de texto do chat é um **comportamento padrão dos navegadores mobile** (especialmente Safari/iOS). Os navegadores fazem zoom automaticamente em campos de input que têm fonte menor que **16px** para melhorar a legibilidade.
+A página `/install` está usando o design antigo com cores azul/lavanda (variáveis `primary`), enquanto o resto do app Zion utiliza o padrão **"Golden Hour"** com gradiente verde esmeralda e lima (`from-emerald-500 to-lime-500`).
 
-### Análise do Código Atual
-
-**Componente responsável:** `src/components/ui/textarea.tsx`
-```tsx
-// Linha 11 - fonte definida como text-sm (14px)
-"flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ..."
-```
-
-**Uso no Chat:** `src/pages/Chat.tsx` (linhas 732-739 e 858-865)
-```tsx
-<Textarea
-  value={input}
-  onChange={(e) => setInput(e.target.value)}
-  onKeyDown={handleKeyDown}
-  placeholder="Compartilhe o que está em seu coração..."
-  className="min-h-[50px] max-h-32 resize-none"
-  disabled={isLoading}
-/>
-```
-
-**Meta viewport atual:** `index.html` (linha 5)
-```html
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-```
-
-### Por que o zoom acontece?
-1. A classe `text-sm` no Tailwind equivale a `font-size: 0.875rem` (14px)
-2. Safari/iOS faz zoom automático em inputs com fonte < 16px
-3. Isso é uma "feature" de acessibilidade do navegador, não um bug do código
+### Elementos fora do padrão (visíveis na screenshot):
+1. **Círculos numerados** (1, 2, 3) - estão usando `bg-primary/10` (azul/lavanda)
+2. **Badges de status** ("Ativo", "OK") - estão usando `variant="default"` que é azul
+3. **Ícones de diagnóstico** - sem cor temática
 
 ---
 
 ## Solução
 
-### Estratégia (Múltiplas Camadas)
-
-A correção envolve 3 ajustes complementares para garantir que funcione em todos os navegadores mobile:
-
-### 1. CSS Global - Prevenir ajuste automático de tamanho de texto
-**Arquivo:** `src/index.css`
-```css
-/* Prevenir zoom automático em inputs no mobile */
-input, textarea, select {
-  -webkit-text-size-adjust: 100%;
-  text-size-adjust: 100%;
-  font-size: 16px !important; /* iOS requer mínimo 16px para não dar zoom */
-}
-
-@media screen and (min-width: 768px) {
-  input, textarea, select {
-    font-size: inherit !important; /* Desktop volta ao normal */
-  }
-}
-```
-
-### 2. Atualizar Componente Textarea
-**Arquivo:** `src/components/ui/textarea.tsx`
-
-Adicionar classe condicional para garantir 16px no mobile:
-```tsx
-className={cn(
-  "flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-base md:text-sm ring-offset-background ...",
-  className,
-)}
-```
-
-A mudança de `text-sm` para `text-base md:text-sm` garante:
-- **Mobile (< 768px):** `text-base` = 16px (sem zoom)
-- **Desktop (≥ 768px):** `text-sm` = 14px (visual original)
-
-### 3. Atualizar Meta Viewport (Opcional - Reforço)
-**Arquivo:** `index.html`
-
-Adicionar atributos para desabilitar zoom do usuário também:
-```html
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-```
-
-> **Nota de Acessibilidade:** Desabilitar `user-scalable` pode prejudicar usuários com baixa visão. A solução CSS (opções 1 e 2) é preferível e menos intrusiva.
+Atualizar todos os elementos da página `src/pages/Install.tsx` para usar o padrão emerald/lime, mantendo consistência visual com o resto do app.
 
 ---
 
-## Arquivos a Serem Modificados
+## Alterações Detalhadas
 
-| Arquivo | Modificação |
-|---------|-------------|
-| `src/index.css` | Adicionar regras CSS para prevenir zoom em inputs |
-| `src/components/ui/textarea.tsx` | Mudar `text-sm` para `text-base md:text-sm` |
-
----
-
-## Detalhes Técnicos
-
-### Regras CSS a Adicionar em `src/index.css`
-
-Após a linha 131 (após o fechamento de `@layer base`):
-
-```css
-/* Prevenir zoom automático em inputs no iOS/mobile */
-@layer base {
-  input, textarea, select, button {
-    font-size: 16px;
-  }
-}
-
-@media screen and (min-width: 768px) {
-  input, textarea, select, button {
-    font-size: inherit;
-  }
-}
-```
-
-### Alteração no Textarea Component
+### 1. Círculos Numerados (Steps)
 
 **De:**
 ```tsx
-"flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background..."
+<div className="flex-shrink-0 w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center">
+  <span className="text-sm font-medium">1</span>
+</div>
 ```
 
 **Para:**
 ```tsx
-"flex min-h-[80px] w-full rounded-md border border-input bg-background px-3 py-2 text-base md:text-sm ring-offset-background..."
+<div className="flex-shrink-0 w-8 h-8 rounded-full bg-gradient-to-r from-emerald-500 to-lime-500 flex items-center justify-center">
+  <span className="text-sm font-medium text-white">1</span>
+</div>
 ```
+
+### 2. Badges de Status no Diagnóstico
+
+Os badges para "Ativo", "OK", "Sim", "Disponível" devem usar classes customizadas com cores emerald em vez de `variant="default"`.
+
+**De:**
+```tsx
+<Badge variant={swStatus === "active" ? "default" : "secondary"}>
+  {swStatus === "active" ? "Ativo" : "Inativo"}
+</Badge>
+```
+
+**Para:**
+```tsx
+<Badge 
+  variant="secondary"
+  className={swStatus === "active" ? "bg-gradient-to-r from-emerald-500 to-lime-500 text-white border-0" : ""}
+>
+  {swStatus === "active" ? "Ativo" : "Inativo"}
+</Badge>
+```
+
+### 3. Ícones Temáticos
+
+Atualizar ícones para usar cores emerald onde apropriado:
+- Ícone de Diagnóstico: `text-emerald-500`
+- Outros ícones decorativos
+
+### 4. Botão "Limpar Cache"
+
+Manter como `variant="outline"` (padrão neutro está OK para ações secundárias).
+
+---
+
+## Arquivos a Modificar
+
+| Arquivo | Descrição |
+|---------|-----------|
+| `src/pages/Install.tsx` | Atualizar cores dos steps e badges para padrão emerald/lime |
+
+---
+
+## Contagem de Alterações
+
+A página possui **6 seções** com steps numerados que precisam ser atualizados:
+1. iOS/iPhone (3 steps) - linhas 274-308
+2. Chrome/Edge Desktop (3 steps) - linhas 331-371
+3. Safari Mac (2 steps) - linhas 384-405
+4. Android (2 steps) - linhas 418-442
+
+E **4 badges** de diagnóstico:
+1. Service Worker - linha 460
+2. Manifest - linha 467
+3. Modo Standalone - linha 474
+4. Prompt de Instalação - linha 481
 
 ---
 
 ## Resultado Esperado
 
-1. ✅ Zoom automático eliminado ao tocar no campo de chat no mobile
-2. ✅ Tamanho da fonte visualmente mantido no desktop (14px)
-3. ✅ Fonte legível no mobile (16px) - melhor UX
-4. ✅ Funciona em Safari, Chrome, Firefox mobile
-5. ✅ Compatível com modo PWA standalone
+1. Círculos numerados com gradiente verde/lima (como botões primários)
+2. Badges de status positivo ("Ativo", "OK", "Sim") com gradiente emerald
+3. Aparência visual consistente com o resto do app Zion
+4. Melhor experiência visual seguindo o design system "Golden Hour"
 
 ---
 
-## Impacto em Outros Componentes
+## Visualização do Antes/Depois
 
-Esta alteração também beneficiará outros campos de input no app:
-- Formulários de login/cadastro
-- Campos de busca
-- Outros textareas
-
-A mudança é segura e melhora a experiência geral do usuário mobile.
+| Elemento | Antes (Azul) | Depois (Emerald) |
+|----------|--------------|------------------|
+| Círculos Steps | `bg-primary/10` (lavanda) | `bg-gradient-to-r from-emerald-500 to-lime-500` |
+| Badge "Ativo" | `bg-primary` (azul) | `from-emerald-500 to-lime-500` |
+| Badge "OK" | `bg-primary` (azul) | `from-emerald-500 to-lime-500` |
+| Ícone Diagnóstico | Sem cor especial | `text-emerald-500` |
