@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Plus, Search, LogOut, BookOpen, Shield, User, Star, Settings, ChevronDown, Download } from "lucide-react";
+import { Plus, Search, LogOut, BookOpen, Shield, User, Star, Settings, ChevronDown, Download, ChevronRight } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import zionLogo from "@/assets/zion-logo.png";
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import {
   Sidebar,
   SidebarContent,
@@ -73,6 +74,12 @@ export function ChatSidebar({
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [openGroups, setOpenGroups] = useState({
+    today: true,
+    lastWeek: true,
+    lastMonth: false,
+    older: false,
+  });
 
   useEffect(() => {
     if (user) {
@@ -289,7 +296,38 @@ export function ChatSidebar({
     </SidebarMenuItem>
   );
 
-  // Render grouped sessions with section headers
+  // Group Header Component with dashboard-style design
+  const GroupHeader = ({ 
+    label, 
+    count, 
+    isOpen, 
+    onToggle 
+  }: { 
+    label: string; 
+    count: number; 
+    isOpen: boolean; 
+    onToggle: () => void 
+  }) => (
+    <CollapsibleTrigger 
+      onClick={onToggle}
+      className="mx-2 px-3 py-2 w-[calc(100%-1rem)] flex items-center justify-between 
+                 text-xs font-medium text-white uppercase tracking-wider 
+                 bg-gradient-to-r from-emerald-500 to-lime-500 
+                 rounded-lg cursor-pointer hover:opacity-90 transition-opacity"
+    >
+      <div className="flex items-center gap-2">
+        <ChevronRight 
+          className={`h-4 w-4 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`} 
+        />
+        <span>{label}</span>
+      </div>
+      <span className="text-white/80 text-[10px] font-normal">
+        {count}
+      </span>
+    </CollapsibleTrigger>
+  );
+
+  // Render grouped sessions with collapsible sections
   const renderGroupedSessions = () => {
     const filteredRegular = filterSessions(regularSessions);
     const grouped = groupSessionsByTime(filteredRegular);
@@ -297,47 +335,67 @@ export function ChatSidebar({
     return (
       <>
         {grouped.today.length > 0 && (
-          <>
+          <Collapsible open={openGroups.today} className="mb-2">
             {!collapsed && (
-              <div className="mx-2 px-2 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300 uppercase tracking-wider bg-emerald-100 dark:bg-emerald-900/30 rounded-md">
-                Hoje
-              </div>
+              <GroupHeader
+                label="Hoje"
+                count={grouped.today.length}
+                isOpen={openGroups.today}
+                onToggle={() => setOpenGroups(prev => ({ ...prev, today: !prev.today }))}
+              />
             )}
-            {grouped.today.map(renderSessionItem)}
-          </>
+            <CollapsibleContent className="mt-1">
+              {grouped.today.map(renderSessionItem)}
+            </CollapsibleContent>
+          </Collapsible>
         )}
 
         {grouped.lastWeek.length > 0 && (
-          <>
+          <Collapsible open={openGroups.lastWeek} className="mb-2">
             {!collapsed && (
-              <div className="mx-2 px-2 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300 uppercase tracking-wider bg-emerald-100 dark:bg-emerald-900/30 rounded-md mt-2">
-                Últimos 7 dias
-              </div>
+              <GroupHeader
+                label="Últimos 7 dias"
+                count={grouped.lastWeek.length}
+                isOpen={openGroups.lastWeek}
+                onToggle={() => setOpenGroups(prev => ({ ...prev, lastWeek: !prev.lastWeek }))}
+              />
             )}
-            {grouped.lastWeek.map(renderSessionItem)}
-          </>
+            <CollapsibleContent className="mt-1">
+              {grouped.lastWeek.map(renderSessionItem)}
+            </CollapsibleContent>
+          </Collapsible>
         )}
 
         {grouped.lastMonth.length > 0 && (
-          <>
+          <Collapsible open={openGroups.lastMonth} className="mb-2">
             {!collapsed && (
-              <div className="mx-2 px-2 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300 uppercase tracking-wider bg-emerald-100 dark:bg-emerald-900/30 rounded-md mt-2">
-                Último mês
-              </div>
+              <GroupHeader
+                label="Último mês"
+                count={grouped.lastMonth.length}
+                isOpen={openGroups.lastMonth}
+                onToggle={() => setOpenGroups(prev => ({ ...prev, lastMonth: !prev.lastMonth }))}
+              />
             )}
-            {grouped.lastMonth.map(renderSessionItem)}
-          </>
+            <CollapsibleContent className="mt-1">
+              {grouped.lastMonth.map(renderSessionItem)}
+            </CollapsibleContent>
+          </Collapsible>
         )}
 
         {grouped.older.length > 0 && (
-          <>
+          <Collapsible open={openGroups.older} className="mb-2">
             {!collapsed && (
-              <div className="mx-2 px-2 py-1 text-xs font-medium text-emerald-700 dark:text-emerald-300 uppercase tracking-wider bg-emerald-100 dark:bg-emerald-900/30 rounded-md mt-2">
-                Antigas
-              </div>
+              <GroupHeader
+                label="Antigas"
+                count={grouped.older.length}
+                isOpen={openGroups.older}
+                onToggle={() => setOpenGroups(prev => ({ ...prev, older: !prev.older }))}
+              />
             )}
-            {grouped.older.map(renderSessionItem)}
-          </>
+            <CollapsibleContent className="mt-1">
+              {grouped.older.map(renderSessionItem)}
+            </CollapsibleContent>
+          </Collapsible>
         )}
       </>
     );
