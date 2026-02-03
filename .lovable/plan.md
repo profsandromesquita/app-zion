@@ -1,598 +1,483 @@
 
-# Plano de Implementacao - ETAPA 3: Gravacao de Testemunho (Audio)
+# Plano de Implementacao - ETAPA 4: Processamento de Testemunho (Edge Function)
 
 ## Verificacao de Pre-requisitos
 
 ### Etapa 1 - Status: COMPLETO
-- Tabela `soldado_applications` com campo `testimony_id` (uuid, nullable)
-- Enum `soldado_application_status` inclui `testimony_required`
-- RLS policies configuradas para candidaturas
-- Trigger de auto-aprovacao funcionando
+- Tabela `soldado_applications` com campo `testimony_id`
+- Enum `soldado_application_status` com todos os status necessarios
+- Trigger `on_testimony_created` para atualizar application status
 
 ### Etapa 2 - Status: COMPLETO
-- Pagina `SoldadoApplications.tsx` implementada
-- Formulario de nova candidatura criando status `testimony_required`
-- Cards de aprovacao funcionando
-- Navegacao integrada
+- UI de gestao de candidaturas funcionando
+- Cards de aprovacao implementados
 
-### GAP Identificado
-A tabela `testimonies` e o storage bucket `testimonies` ainda NAO existem no banco de dados. Serao criados nesta etapa.
+### Etapa 3 - Status: COMPLETO
+- Tabela `testimonies` criada com campos:
+  - `id`, `user_id`, `application_id`
+  - `audio_url`, `duration_seconds`, `file_size_bytes`, `mime_type`
+  - `status` (testimony_status enum)
+  - `transcript` (text, nullable)
+  - `analysis` (jsonb)
+  - `embedding` (vector 1536)
+  - `curator_notes`, `curated_by`, `curated_at`
+- Storage bucket `testimonies` (privado)
+- Pagina de gravacao `SoldadoTestimony.tsx` funcionando
+- Upload para storage criando registro com `status: 'processing'`
+
+### Infraestrutura Existente
+- **Lovable AI Gateway** disponivel (`LOVABLE_API_KEY` configurado)
+- **Push Notifications** configuradas (VAPID keys, `send-push-reminder`)
+- **Embedding system** usando hash-based de 1536 dimensoes (`simple-hash-v1`)
+- **Taxonomia ZION** definida (Scenario, Center, Security Matrix)
 
 ---
 
 ## Arquitetura da Solucao
 
 ```text
-Candidato Soldado
-       │
-       ▼
-┌─────────────────────────────────────────────────────┐
-│  /testimony/:applicationId                          │
-│  (Pagina SoldadoTestimony.tsx)                      │
-│                                                     │
-│  ┌─────────────────────────────────────────────┐   │
-│  │ Instrucoes de Gravacao                       │   │
-│  │ - Diretrizes teologicas                      │   │
-│  │ - Tempo recomendado (5-15 min)               │   │
-│  │ - Dicas para estruturar o testemunho         │   │
-│  └─────────────────────────────────────────────┘   │
-│                                                     │
-│  ┌─────────────────────────────────────────────┐   │
-│  │ AudioRecorder Component                       │   │
-│  │ ┌─────────────────────────────────────────┐  │   │
-│  │ │  [Waveform Visualization]                │  │   │
-│  │ │   ▁▂▃▄▅▆▇█▇▆▅▄▃▂▁                        │  │   │
-│  │ │                                          │  │   │
-│  │ │   00:00:00 / 15:00                        │  │   │
-│  │ └─────────────────────────────────────────┘  │   │
-│  │                                               │   │
-│  │   [○ Gravar]  [⏸ Pausar]  [↻ Reiniciar]     │   │
-│  └─────────────────────────────────────────────┘   │
-│                                                     │
-│  ┌─────────────────────────────────────────────┐   │
-│  │ Preview + Envio                              │   │
-│  │ - Player de audio                            │   │
-│  │ - Botao Enviar Testemunho                    │   │
-│  └─────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────┘
-       │
-       ▼
-┌─────────────────────────────────────────────────────┐
-│  Upload para Storage Bucket: testimonies/           │
-│  - Arquivo: {user_id}/{application_id}.webm         │
-│  - Bucket privado (RLS)                             │
-└─────────────────────────────────────────────────────┘
-       │
-       ▼
-┌─────────────────────────────────────────────────────┐
-│  Tabela: testimonies                                │
-│  - status: 'uploading' -> 'processing'              │
-│  - Trigger: atualiza soldado_applications           │
-│    (status -> 'under_review')                       │
-└─────────────────────────────────────────────────────┘
-       │
-       ▼
-  [ETAPA 4: Edge Function process-testimony]
+┌─────────────────────────────────────────────────────────────┐
+│  Upload Testemunho (SoldadoTestimony.tsx)                   │
+│  status: 'processing'                                        │
+└─────────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────┐
+│  Trigger: process-testimony (chamado via webhook ou cron)   │
+│  OU: Chamada manual via Admin UI                            │
+└─────────────────────────────────────────────────────────────┘
+                           │
+           ┌───────────────┴───────────────┐
+           ▼                               ▼
+┌──────────────────────────┐  ┌──────────────────────────────┐
+│ 1. Download Audio        │  │ Fallback: Marcar como        │
+│    do Storage            │  │ 'curator_required'           │
+└──────────────────────────┘  └──────────────────────────────┘
+           │
+           ▼
+┌──────────────────────────────────────────────────────────────┐
+│ 2. Transcricao (Lovable AI - gemini-2.5-flash multimodal)   │
+│    - Input: Audio base64                                     │
+│    - Output: Texto transcrito                                │
+└──────────────────────────────────────────────────────────────┘
+           │
+           ▼
+┌──────────────────────────────────────────────────────────────┐
+│ 3. Analise Teologica (Lovable AI - gemini-3-flash-preview)  │
+│    - Tool calling para extracao estruturada                  │
+│    - Schema: TestimonyAnalysis                               │
+└──────────────────────────────────────────────────────────────┘
+           │
+           ▼
+┌──────────────────────────────────────────────────────────────┐
+│ 4. Vetorizacao (Hash-based embedding 1536)                   │
+│    - Compativel com sistema de chunks existente              │
+└──────────────────────────────────────────────────────────────┘
+           │
+           ▼
+┌──────────────────────────────────────────────────────────────┐
+│ 5. Update Testimony                                          │
+│    - transcript, analysis, embedding                         │
+│    - status: 'analyzed' (aguardando curadoria humana)        │
+└──────────────────────────────────────────────────────────────┘
+           │
+           ▼
+┌──────────────────────────────────────────────────────────────┐
+│ 6. Notificacoes                                              │
+│    - Push notification para candidato                        │
+│    - Alerta para curadores (Admin/Pastor/Profissional)       │
+└──────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## PARTE 1: Migracao de Banco de Dados
+## PARTE 1: Edge Function `process-testimony`
 
-### Nova Tabela: testimonies
+### Arquivo: `supabase/functions/process-testimony/index.ts`
 
-```sql
--- Enum para status do testemunho
-CREATE TYPE testimony_status AS ENUM (
-  'uploading',
-  'processing',
-  'analyzed',
-  'curated',
-  'published',
-  'rejected'
-);
-
--- Tabela principal de testemunhos
-CREATE TABLE public.testimonies (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id uuid NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-  application_id uuid REFERENCES soldado_applications(id) ON DELETE SET NULL,
-  
-  -- Arquivo de audio
-  audio_url text NOT NULL,
-  duration_seconds integer NOT NULL DEFAULT 0,
-  file_size_bytes integer,
-  mime_type text DEFAULT 'audio/webm',
-  
-  -- Status e processamento
-  status testimony_status NOT NULL DEFAULT 'uploading',
-  
-  -- Dados preenchidos pela IA (Etapa 4)
-  transcript text,
-  analysis jsonb DEFAULT '{}',
-  
-  -- Curadoria humana (Etapa 5)
-  curator_notes text,
-  curated_by uuid REFERENCES profiles(id),
-  curated_at timestamptz,
-  
-  -- Embedding para matchmaking (Etapa 7)
-  embedding vector(1536),
-  
-  -- Timestamps
-  created_at timestamptz NOT NULL DEFAULT now(),
-  updated_at timestamptz NOT NULL DEFAULT now(),
-  
-  -- Apenas um testemunho ativo por usuario
-  CONSTRAINT unique_active_testimony UNIQUE (user_id, application_id)
-);
-
--- Index para buscas
-CREATE INDEX idx_testimonies_user_id ON testimonies(user_id);
-CREATE INDEX idx_testimonies_application_id ON testimonies(application_id);
-CREATE INDEX idx_testimonies_status ON testimonies(status);
-
--- Trigger para updated_at
-CREATE TRIGGER set_testimonies_updated_at
-  BEFORE UPDATE ON testimonies
-  FOR EACH ROW
-  EXECUTE FUNCTION trigger_set_updated_at();
-```
-
-### RLS Policies para testimonies
-
-```sql
--- Habilitar RLS
-ALTER TABLE testimonies ENABLE ROW LEVEL SECURITY;
-
--- Usuarios podem ver seus proprios testemunhos
-CREATE POLICY "Users can view own testimonies"
-  ON testimonies FOR SELECT
-  USING (auth.uid() = user_id);
-
--- Usuarios podem inserir seus proprios testemunhos
-CREATE POLICY "Users can insert own testimonies"
-  ON testimonies FOR INSERT
-  WITH CHECK (auth.uid() = user_id);
-
--- Usuarios podem atualizar seus proprios testemunhos (status uploading apenas)
-CREATE POLICY "Users can update own uploading testimonies"
-  ON testimonies FOR UPDATE
-  USING (auth.uid() = user_id AND status = 'uploading');
-
--- Admin/Dev/Profissional/Pastor podem ver todos para curadoria
-CREATE POLICY "Authorized roles can view all testimonies"
-  ON testimonies FOR SELECT
-  USING (
-    has_role(auth.uid(), 'admin') OR
-    has_role(auth.uid(), 'desenvolvedor') OR
-    has_role(auth.uid(), 'profissional') OR
-    has_role(auth.uid(), 'pastor')
-  );
-
--- Admin/Profissional/Pastor podem atualizar para curadoria
-CREATE POLICY "Authorized roles can update testimonies"
-  ON testimonies FOR UPDATE
-  USING (
-    has_role(auth.uid(), 'admin') OR
-    has_role(auth.uid(), 'desenvolvedor') OR
-    has_role(auth.uid(), 'profissional') OR
-    has_role(auth.uid(), 'pastor')
-  );
-```
-
-### Storage Bucket: testimonies
-
-```sql
--- Criar bucket privado para testemunhos
-INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-VALUES (
-  'testimonies',
-  'testimonies',
-  false,
-  104857600, -- 100MB max
-  ARRAY['audio/webm', 'audio/ogg', 'audio/mp4', 'audio/mpeg']
-);
-
--- RLS para storage
-CREATE POLICY "Users can upload own testimonies"
-  ON storage.objects FOR INSERT
-  WITH CHECK (
-    bucket_id = 'testimonies' AND
-    auth.uid()::text = (storage.foldername(name))[1]
-  );
-
-CREATE POLICY "Users can view own testimonies"
-  ON storage.objects FOR SELECT
-  USING (
-    bucket_id = 'testimonies' AND
-    (
-      auth.uid()::text = (storage.foldername(name))[1] OR
-      has_role(auth.uid(), 'admin') OR
-      has_role(auth.uid(), 'desenvolvedor') OR
-      has_role(auth.uid(), 'profissional') OR
-      has_role(auth.uid(), 'pastor')
-    )
-  );
-
-CREATE POLICY "Authorized roles can access all testimonies"
-  ON storage.objects FOR SELECT
-  USING (
-    bucket_id = 'testimonies' AND
-    (
-      has_role(auth.uid(), 'admin') OR
-      has_role(auth.uid(), 'desenvolvedor')
-    )
-  );
-```
-
-### Funcao para atualizar status da candidatura
-
-```sql
-CREATE OR REPLACE FUNCTION update_application_on_testimony()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = public
-AS $$
-BEGIN
-  -- Quando testemunho e criado, atualizar candidatura
-  IF TG_OP = 'INSERT' THEN
-    -- Linkar testemunho na candidatura
-    UPDATE soldado_applications
-    SET testimony_id = NEW.id,
-        status = 'under_review',
-        updated_at = now()
-    WHERE id = NEW.application_id
-      AND status = 'testimony_required';
-  END IF;
-  
-  RETURN NEW;
-END;
-$$;
-
-CREATE TRIGGER on_testimony_created
-  AFTER INSERT ON testimonies
-  FOR EACH ROW
-  EXECUTE FUNCTION update_application_on_testimony();
-```
-
----
-
-## PARTE 2: Componente AudioRecorder.tsx
-
-### Funcionalidades
-1. **MediaRecorder API** para captura de audio
-2. **Visualizacao de Waveform** usando Web Audio API (AnalyserNode)
-3. **Timer** com limite maximo (15 minutos)
-4. **Estados**: idle, recording, paused, stopped
-5. **Preview** do audio gravado antes de enviar
-
-### Interface do Componente
-
+### Entrada
 ```typescript
-interface AudioRecorderProps {
-  maxDurationSeconds?: number; // default 900 (15 min)
-  minDurationSeconds?: number; // default 60 (1 min)
-  onRecordingComplete: (blob: Blob, durationSeconds: number) => void;
-  onRecordingStart?: () => void;
-  disabled?: boolean;
+interface ProcessTestimonyRequest {
+  testimony_id: string;
+  skip_transcription?: boolean; // Para reprocessar apenas analise
 }
 ```
 
-### Estrutura Visual
+### Pipeline de Processamento
 
-```text
-┌─────────────────────────────────────────────────────────────┐
-│                                                             │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │                                                       │   │
-│  │     [Canvas Waveform - altura 80px]                   │   │
-│  │      ▁▂▃▄▅▆▇█▇▆▅▄▃▂▁▂▃▄▅▆▇█▇▆▅▄▃▂▁                   │   │
-│  │                                                       │   │
-│  └─────────────────────────────────────────────────────┘   │
-│                                                             │
-│                     03:45 / 15:00                           │
-│               ████████████░░░░░░░░░░░░░░                    │
-│                                                             │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │                                                       │   │
-│  │   [🎤 Gravar]    [⏸ Pausar]    [↻ Reiniciar]        │   │
-│  │                                                       │   │
-│  └─────────────────────────────────────────────────────┘   │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
+#### Passo 1: Download do Audio
+```typescript
+// Extrair path do storage a partir da audio_url
+const audioPath = extractStoragePath(testimony.audio_url);
+
+// Download do arquivo
+const { data: audioData, error } = await supabase.storage
+  .from('testimonies')
+  .download(audioPath);
+
+// Converter para base64 para envio ao Lovable AI
+const audioBase64 = await blobToBase64(audioData);
 ```
 
-### Estados do Componente
-
+#### Passo 2: Transcricao com Lovable AI
 ```typescript
-type RecordingState = 'idle' | 'recording' | 'paused' | 'stopped';
+// Usar Gemini 2.5 Flash (multimodal) para transcricao
+const transcriptionResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+  method: "POST",
+  headers: {
+    Authorization: `Bearer ${LOVABLE_API_KEY}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    model: "google/gemini-2.5-flash",
+    messages: [
+      {
+        role: "system",
+        content: "Voce e um transcriptor de audio em portugues brasileiro. Transcreva o audio fielmente, mantendo pausas como '...' e expressoes emocionais entre colchetes [choro], [riso]. Nao adicione nenhum comentario proprio."
+      },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "Transcreva este audio de testemunho:" },
+          { type: "audio_url", audio_url: { url: `data:audio/webm;base64,${audioBase64}` } }
+        ]
+      }
+    ],
+    max_tokens: 16000,
+  }),
+});
 
-const [state, setState] = useState<RecordingState>('idle');
-const [duration, setDuration] = useState(0);
-const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
-const [audioUrl, setAudioUrl] = useState<string | null>(null);
+const transcription = transcriptionResponse.choices[0].message.content;
 ```
 
-### Implementacao do Waveform
-
+#### Passo 3: Analise Teologica
 ```typescript
-// Usar Web Audio API para capturar frequencias
-const audioContextRef = useRef<AudioContext | null>(null);
-const analyserRef = useRef<AnalyserNode | null>(null);
-const canvasRef = useRef<HTMLCanvasElement>(null);
+const ANALYSIS_SYSTEM_PROMPT = `Voce e um analista teologico especializado na metodologia ZION.
+Analise o testemunho transcrito e extraia informacoes estruturadas.
 
-// Animacao do waveform
-const drawWaveform = useCallback(() => {
-  if (!analyserRef.current || !canvasRef.current) return;
-  
-  const analyser = analyserRef.current;
-  const canvas = canvasRef.current;
-  const ctx = canvas.getContext('2d');
-  
-  const bufferLength = analyser.frequencyBinCount;
-  const dataArray = new Uint8Array(bufferLength);
-  analyser.getByteTimeDomainData(dataArray);
-  
-  // Desenhar waveform com gradiente emerald/lime
-  // ...
-  
-  if (state === 'recording') {
-    requestAnimationFrame(drawWaveform);
+TAXONOMIA ZION:
+- CENARIO (onde doi): CASAMENTO, CARREIRA, FAMILIA, VIDA_SOCIAL, AUTOESTIMA, 
+  SAUDE, FINANCAS, MINISTERIO, LUTO, SEXUALIDADE, PATERNIDADE, MATERNIDADE
+- CENTRO (como reage): INSTINTIVO (raiva/controle), EMOCIONAL (magoa/vergonha), MENTAL (ansiedade/paralisia)
+- MATRIZ DE SEGURANCA (raiz): SOBREVIVENCIA (Eu estou seguro?), IDENTIDADE (Eu sou amado?), CAPACIDADE (Eu sou capaz?)
+
+CLASSIFICACAO DE ARREPENDIMENTO:
+- ARREPENDIMENTO VERDADEIRO: Reconhece que ofendeu a Deus, nao apenas consequencias. 
+  Palavras-chave: "pequei contra Deus", "desobedeci", "me arrependi diante de Deus"
+- REMORSO: Foco nas consequencias, dor propria, medo do castigo.
+  Palavras-chave: "me arrependo das consequencias", "foi dificil para mim", "nao quero sofrer de novo"
+
+REGRAS:
+- Se nao identificar claramente, use confidence baixa
+- Cite evidencias diretas do texto
+- Anonimize nomes de terceiros com [PESSOA_1], [PESSOA_2]
+- Sinalize conteudo potencialmente problematico para curadoria`;
+
+const analysisResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+  method: "POST",
+  headers: {
+    Authorization: `Bearer ${LOVABLE_API_KEY}`,
+    "Content-Type": "application/json",
+  },
+  body: JSON.stringify({
+    model: "google/gemini-3-flash-preview",
+    messages: [
+      { role: "system", content: ANALYSIS_SYSTEM_PROMPT },
+      { role: "user", content: `Analise este testemunho:\n\n${transcription}` }
+    ],
+    tools: [ANALYSIS_EXTRACTION_TOOL],
+    tool_choice: { type: "function", function: { name: "extract_testimony_analysis" } },
+  }),
+});
+```
+
+### Schema de Analise (Tool Calling)
+```typescript
+const ANALYSIS_EXTRACTION_TOOL = {
+  type: "function",
+  function: {
+    name: "extract_testimony_analysis",
+    description: "Extrai analise estruturada do testemunho",
+    parameters: {
+      type: "object",
+      properties: {
+        repentance_classification: {
+          type: "string",
+          enum: ["true_repentance", "remorse", "unclear"],
+          description: "Classificacao do tipo de arrependimento"
+        },
+        repentance_confidence: {
+          type: "number",
+          minimum: 0,
+          maximum: 1,
+          description: "Confianca na classificacao (0-1)"
+        },
+        repentance_evidence: {
+          type: "array",
+          items: { type: "string" },
+          description: "Citacoes diretas que evidenciam a classificacao"
+        },
+        entities: {
+          type: "object",
+          properties: {
+            traumas: {
+              type: "array",
+              items: { type: "string" },
+              description: "Traumas identificados (abandono, abuso, etc)"
+            },
+            addictions: {
+              type: "array",
+              items: { type: "string" },
+              description: "Vicios mencionados (alcool, drogas, pornografia, etc)"
+            },
+            victories: {
+              type: "array",
+              items: { type: "string" },
+              description: "Vitorias alcancadas (sobriedade, reconciliacao, etc)"
+            }
+          }
+        },
+        lie_matrix: {
+          type: "object",
+          properties: {
+            security_lost: {
+              type: "string",
+              enum: ["SOBREVIVENCIA", "IDENTIDADE", "CAPACIDADE"],
+              description: "Qual matriz de seguranca foi ferida"
+            },
+            false_security: {
+              type: "string",
+              description: "O que a pessoa buscou como falsa seguranca"
+            },
+            lie_believed: {
+              type: "string",
+              description: "A mentira que a pessoa acreditou"
+            }
+          }
+        },
+        transformation_pattern: {
+          type: "array",
+          items: { type: "string" },
+          description: "Elementos do padrao de transformacao (oracao, jejum, comunidade, terapia, etc)"
+        },
+        suggested_tags: {
+          type: "array",
+          items: { type: "string" },
+          description: "Tags sugeridas no formato #Tag (ex: #Alcool, #Familia)"
+        },
+        scenario: {
+          type: "string",
+          enum: ["CASAMENTO", "CARREIRA", "FAMILIA", "VIDA_SOCIAL", "AUTOESTIMA",
+                 "SAUDE", "FINANCAS", "MINISTERIO", "LUTO", "SEXUALIDADE",
+                 "PATERNIDADE", "MATERNIDADE"],
+          description: "Cenario principal do testemunho"
+        },
+        related_scenarios: {
+          type: "array",
+          items: { type: "string" },
+          description: "Cenarios secundarios relacionados"
+        },
+        center: {
+          type: "string",
+          enum: ["INSTINTIVO", "EMOCIONAL", "MENTAL"],
+          description: "Centro dominante na experiencia"
+        },
+        security_matrix: {
+          type: "string",
+          enum: ["SOBREVIVENCIA", "IDENTIDADE", "CAPACIDADE"],
+          description: "Matriz de seguranca raiz"
+        },
+        safe_for_publication: {
+          type: "boolean",
+          description: "Se o conteudo parece seguro para publicacao sem curadoria adicional"
+        },
+        curator_required_reason: {
+          type: "string",
+          nullable: true,
+          description: "Razao pela qual curadoria humana e necessaria (heresia, conteudo sensivel, etc)"
+        },
+        anonymized_transcript: {
+          type: "string",
+          description: "Transcricao com nomes de terceiros anonimizados"
+        }
+      },
+      required: [
+        "repentance_classification", "repentance_confidence", "scenario", 
+        "center", "security_matrix", "safe_for_publication"
+      ]
+    }
   }
-}, [state]);
+};
+```
+
+#### Passo 4: Vetorizacao
+```typescript
+// Usar mesma funcao de embedding do ingest-document
+// Hash-based embedding de 1536 dimensoes (compativel com chunks)
+const embedding = await generateSimpleEmbedding(transcription);
+```
+
+#### Passo 5: Update no Banco
+```typescript
+const { error: updateError } = await supabase
+  .from('testimonies')
+  .update({
+    transcript: analysis.anonymized_transcript || transcription,
+    analysis: analysisData,
+    embedding: embedding,
+    status: 'analyzed',
+    updated_at: new Date().toISOString(),
+  })
+  .eq('id', testimony_id);
+```
+
+#### Passo 6: Notificacoes
+```typescript
+// Push notification para o candidato
+await sendPushToUser(testimony.user_id, {
+  title: "Testemunho Analisado",
+  body: "Seu testemunho foi processado e esta aguardando revisao.",
+  data: { url: "/profile" }
+});
+
+// Inserir alerta para curadores (via tabela ou canal realtime)
+// Os curadores verao na pagina de admin
 ```
 
 ---
 
-## PARTE 3: Pagina SoldadoTestimony.tsx
+## PARTE 2: Trigger de Processamento
 
-### Rota
-- `/testimony/:applicationId` - Pagina de gravacao de testemunho
+### Opcao A: Webhook apos INSERT (recomendado)
+Criar um Database Webhook que dispara a edge function quando um testemunho e inserido com `status = 'processing'`.
 
-### Validacoes de Acesso
-1. Usuario deve estar logado
-2. Usuario deve ser o candidato da application
-3. Application deve estar com status `testimony_required`
-4. Usuario NAO deve ter testemunho ativo em processamento
+### Opcao B: Chamada Manual via Admin
+Adicionar botao "Processar" na UI de curadoria para reprocessar testemunhos.
 
-### Estrutura da Pagina
+### Opcao C: Job Periodico (pg_cron)
+Similar ao `send-push-reminder`, rodar a cada hora para processar testemunhos pendentes.
 
-```text
-┌─────────────────────────────────────────────────────────────┐
-│ [←] Gravar Testemunho                                       │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │ 📖 Instrucoes para seu Testemunho                    │   │
-│  │                                                       │   │
-│  │ Seu testemunho sera usado para conectar voce com     │   │
-│  │ buscadores que enfrentam lutas semelhantes as que    │   │
-│  │ voce venceu.                                          │   │
-│  │                                                       │   │
-│  │ Dicas:                                                │   │
-│  │ • Fale sobre sua jornada de transformacao            │   │
-│  │ • Compartilhe como Deus agiu em sua vida             │   │
-│  │ • Mencione os desafios que enfrentou                 │   │
-│  │ • Descreva o momento de virada                        │   │
-│  │ • Tempo recomendado: 5 a 15 minutos                  │   │
-│  │                                                       │   │
-│  │ ⚠️ Evite mencionar nomes de terceiros                │   │
-│  └─────────────────────────────────────────────────────┘   │
-│                                                             │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │                                                       │   │
-│  │  [AudioRecorder Component]                            │   │
-│  │                                                       │   │
-│  └─────────────────────────────────────────────────────┘   │
-│                                                             │
-│  {audioUrl && (                                             │
-│    ┌─────────────────────────────────────────────────┐     │
-│    │ ✓ Gravacao pronta para envio                     │     │
-│    │                                                   │     │
-│    │ <audio controls src={audioUrl} />                 │     │
-│    │                                                   │     │
-│    │ Duracao: 08:32                                    │     │
-│    │                                                   │     │
-│    │ [🔄 Regravar]    [📤 Enviar Testemunho]          │     │
-│    └─────────────────────────────────────────────────┘     │
-│  )}                                                         │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
+```sql
+-- Job pg_cron para processar testemunhos pendentes
+SELECT cron.schedule(
+  'process-pending-testimonies',
+  '0 * * * *', -- A cada hora
+  $$
+  SELECT net.http_post(
+    url := 'https://nqbagdwufarytluhaaas.supabase.co/functions/v1/process-testimony-batch',
+    headers := '{"Content-Type": "application/json", "Authorization": "Bearer SERVICE_ROLE_KEY"}'::jsonb,
+    body := '{}'::jsonb
+  ) AS request_id;
+  $$
+);
 ```
 
-### Fluxo de Upload
+---
+
+## PARTE 3: Arquivos a Criar/Modificar
+
+| Arquivo | Acao | Descricao |
+|---------|------|-----------|
+| `supabase/functions/process-testimony/index.ts` | CRIAR | Edge function principal |
+| `supabase/config.toml` | MODIFICAR | Adicionar `[functions.process-testimony]` |
+
+---
+
+## PARTE 4: Detalhes Tecnicos
+
+### Modelo para Transcricao
+- **Modelo**: `google/gemini-2.5-flash` (multimodal, suporta audio)
+- **Formato de Audio**: WebM/Opus (como gravado no frontend)
+- **Limite**: Audio de ate 15 minutos (~5-10MB)
+
+### Modelo para Analise
+- **Modelo**: `google/gemini-3-flash-preview` (rapido, bom em tool calling)
+- **Estrategia**: Tool calling para extracao estruturada
+- **Fallback**: Se tool calling falhar, usar JSON schema em system prompt
+
+### Embeddings
+- **Metodo**: Hash-based (`simple-hash-v1`)
+- **Dimensoes**: 1536 (compativel com chunks existentes)
+- **Uso**: Matchmaking semantico na Etapa 7
+
+### Rate Limits e Custos
+- Lovable AI tem limites por workspace
+- Processar um testemunho de 10 min ~2-3 chamadas de API
+- Implementar retry com backoff exponencial
+
+---
+
+## PARTE 5: Tratamento de Erros
 
 ```typescript
-const handleSubmit = async () => {
-  if (!audioBlob || !user || !applicationId) return;
-  
-  setSubmitting(true);
-  
-  try {
-    // 1. Gerar nome do arquivo
-    const fileName = `${user.id}/${applicationId}.webm`;
-    
-    // 2. Upload para storage
-    const { error: uploadError } = await supabase.storage
-      .from('testimonies')
-      .upload(fileName, audioBlob, {
-        contentType: 'audio/webm',
-        upsert: true,
-      });
-    
-    if (uploadError) throw uploadError;
-    
-    // 3. Obter URL do arquivo
-    const { data: urlData } = supabase.storage
-      .from('testimonies')
-      .getPublicUrl(fileName);
-    
-    // 4. Criar registro no banco
-    const { error: dbError } = await supabase
-      .from('testimonies')
-      .insert({
-        user_id: user.id,
-        application_id: applicationId,
-        audio_url: urlData.publicUrl,
-        duration_seconds: duration,
-        file_size_bytes: audioBlob.size,
-        status: 'processing', // Trigger ira atualizar application
-      });
-    
-    if (dbError) throw dbError;
-    
-    // 5. Sucesso - redirecionar com mensagem
-    toast({
-      title: "Testemunho enviado!",
-      description: "Voce sera notificado quando a analise for concluida.",
-    });
-    
-    navigate('/profile');
-    
-  } catch (error) {
-    console.error('Error uploading testimony:', error);
-    toast({
-      title: "Erro ao enviar",
-      description: "Tente novamente mais tarde.",
-      variant: "destructive",
-    });
-  } finally {
-    setSubmitting(false);
+// Estados de erro possiveis
+const ERROR_STATES = {
+  AUDIO_DOWNLOAD_FAILED: {
+    status: 'processing', // Manter para retry
+    error_message: 'Falha ao baixar audio do storage'
+  },
+  TRANSCRIPTION_FAILED: {
+    status: 'processing',
+    error_message: 'Falha na transcricao'
+  },
+  ANALYSIS_FAILED: {
+    status: 'analyzed', // Continuar com transcricao apenas
+    error_message: 'Falha na analise, transcricao disponivel'
+  },
+  RATE_LIMITED: {
+    status: 'processing',
+    retry_after: '1 hour'
   }
 };
 ```
 
 ---
 
-## PARTE 4: Integracao com UI Existente
+## PARTE 6: Seguranca
 
-### ApplicationApprovalCard.tsx - Adicionar link para gravar
+### Acesso a Edge Function
+- `verify_jwt = false` para permitir chamadas via webhook/cron
+- Validar `SUPABASE_SERVICE_ROLE_KEY` internamente
+- Opcional: Secret header para webhooks
 
-Quando o candidato visualiza sua propria candidatura com status `testimony_required`:
-
-```tsx
-{application.candidate.id === user?.id && 
- application.status === 'testimony_required' && (
-  <Button 
-    onClick={() => navigate(`/testimony/${application.id}`)}
-    className="bg-gradient-to-r from-emerald-500 to-lime-500"
-  >
-    <Mic className="mr-2 h-4 w-4" />
-    Gravar Testemunho
-  </Button>
-)}
-```
-
-### Profile.tsx - Status da candidatura
-
-Adicionar card de status para usuarios com candidatura ativa:
-
-```tsx
-{pendingApplication && (
-  <Card className="border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950">
-    <CardContent className="pt-6">
-      <div className="flex items-center gap-4">
-        <Shield className="h-10 w-10 text-amber-600" />
-        <div>
-          <h3 className="font-semibold">Candidatura a Soldado</h3>
-          <p className="text-sm text-muted-foreground">
-            Status: <ApplicationStatusBadge status={pendingApplication.status} />
-          </p>
-          {pendingApplication.status === 'testimony_required' && (
-            <Button 
-              size="sm" 
-              className="mt-2"
-              onClick={() => navigate(`/testimony/${pendingApplication.id}`)}
-            >
-              Gravar Testemunho
-            </Button>
-          )}
-        </div>
-      </div>
-    </CardContent>
-  </Card>
-)}
-```
-
----
-
-## PARTE 5: Atualizacoes de Navegacao
-
-### App.tsx - Nova rota
-
-```typescript
-import SoldadoTestimony from "./pages/SoldadoTestimony";
-
-// Na lista de rotas
-<Route path="/testimony/:applicationId" element={<SoldadoTestimony />} />
-```
+### Dados Sensiveis
+- Transcricoes nao sao expostas publicamente
+- Anonimizacao de nomes de terceiros
+- RLS policies ja configuradas
 
 ---
 
 ## Ordem de Implementacao
 
-1. **Migracao SQL** - Criar tabela `testimonies`, enum, RLS, storage bucket
-2. **AudioRecorder.tsx** - Componente de gravacao com waveform
-3. **SoldadoTestimony.tsx** - Pagina completa de gravacao
-4. **Atualizacoes de UI** - Integrar botoes em ApplicationApprovalCard e Profile
-5. **App.tsx** - Adicionar rota
+1. **Criar Edge Function** `process-testimony/index.ts`
+2. **Atualizar config.toml** com nova funcao
+3. **Testar manualmente** com um testemunho existente
+4. **Implementar trigger** (webhook ou cron)
+5. **Testar fluxo completo** end-to-end
 
 ---
 
-## Arquivos a Criar/Modificar
+## Consideracoes
 
-| Arquivo | Acao |
-|---------|------|
-| `supabase/migrations/xxx_testimonies_schema.sql` | CRIAR (via tool) |
-| `src/components/soldado/AudioRecorder.tsx` | CRIAR |
-| `src/pages/SoldadoTestimony.tsx` | CRIAR |
-| `src/components/soldado/TestimonyInstructions.tsx` | CRIAR |
-| `src/components/soldado/AudioPreview.tsx` | CRIAR |
-| `src/components/soldado/ApplicationApprovalCard.tsx` | MODIFICAR |
-| `src/pages/Profile.tsx` | MODIFICAR |
-| `src/App.tsx` | MODIFICAR |
+### Audio Multimodal com Gemini
+O Gemini 2.5 Flash suporta audio como input multimodal. O audio deve ser enviado em base64 no formato:
+```json
+{
+  "type": "audio_url",
+  "audio_url": { "url": "data:audio/webm;base64,..." }
+}
+```
 
----
+**Nota**: Se o Lovable AI Gateway nao suportar input de audio diretamente, sera necessario:
+1. Usar ElevenLabs STT (conectar via connector)
+2. Ou implementar transcricao manual como fallback
 
-## Consideracoes Tecnicas
+### Compatibilidade com Etapa 5 (Curadoria)
+O status `analyzed` indica que o testemunho foi processado pela IA e esta pronto para revisao humana.
+A Etapa 5 criara a UI de curadoria onde Admin/Pastor/Profissional poderao:
+- Revisar transcricao
+- Corrigir classificacoes
+- Aprovar/rejeitar para publicacao
 
-### Compatibilidade de Navegadores
-- **MediaRecorder API**: Chrome 49+, Firefox 25+, Safari 14.1+, Edge 79+
-- **Web Audio API**: Suporte amplo, exceto IE
-- **Fallback**: Mensagem de navegador nao suportado
-
-### Formato de Audio
-- **Preferido**: WebM/Opus (menor tamanho, boa qualidade)
-- **Fallback**: MP4/AAC para Safari antigo
-- **Configuracao**: `mimeType: 'audio/webm;codecs=opus'`
-
-### Limite de Tamanho
-- **Storage**: 100MB por arquivo (configurado no bucket)
-- **Pratico**: 15 min de audio WebM ~ 5-10MB
-
-### Experiencia Offline
-- Gravar localmente, enviar quando tiver conexao
-- Mostrar indicador de conexao
-- Salvar blob temporariamente em IndexedDB (stretch goal)
-
----
-
-## Dependencias
-
-Nenhuma nova dependencia npm necessaria:
-- `MediaRecorder` - API nativa do browser
-- `Web Audio API` - API nativa do browser
-- `Supabase Storage` - Ja configurado
-
----
-
-## Proximos Passos (Etapa 4)
-
-Apos conclusao da Etapa 3, a Etapa 4 implementara:
-- Edge function `process-testimony` para:
-  - Transcricao de audio (Lovable AI/ElevenLabs STT)
-  - Analise teologica (LLM)
-  - Vetorizacao para matchmaking
-- Notificacao push ao usuario
+### Compatibilidade com Etapa 7 (Matchmaking)
+O embedding gerado sera usado para encontrar testemunhos semanticamente similares aos temas do Buscador (`user_themes`).
