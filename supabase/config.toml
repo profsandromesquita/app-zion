@@ -47,3 +47,6 @@ verify_jwt = false
 
 [functions.process-testimony]
 verify_jwt = false
+
+[functions.matchmaking-soldado]
+verify_jwt = false

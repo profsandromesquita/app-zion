@@ -94,6 +94,7 @@ export type Database = {
           is_anonymous: boolean
           is_favorite: boolean | null
           locale: string | null
+          matchmaking_state: Json | null
           session_token: string | null
           title: string | null
           updated_at: string
@@ -107,6 +108,7 @@ export type Database = {
           is_anonymous?: boolean
           is_favorite?: boolean | null
           locale?: string | null
+          matchmaking_state?: Json | null
           session_token?: string | null
           title?: string | null
           updated_at?: string
@@ -120,6 +122,7 @@ export type Database = {
           is_anonymous?: boolean
           is_favorite?: boolean | null
           locale?: string | null
+          matchmaking_state?: Json | null
           session_token?: string | null
           title?: string | null
           updated_at?: string
@@ -1237,6 +1240,7 @@ export type Database = {
           display_name: string | null
           id: string
           is_available: boolean | null
+          is_generalist: boolean | null
           max_weekly_sessions: number | null
           specialties: string[] | null
           testimony_id: string | null
@@ -1248,6 +1252,7 @@ export type Database = {
           display_name?: string | null
           id: string
           is_available?: boolean | null
+          is_generalist?: boolean | null
           max_weekly_sessions?: number | null
           specialties?: string[] | null
           testimony_id?: string | null
@@ -1259,6 +1264,7 @@ export type Database = {
           display_name?: string | null
           id?: string
           is_available?: boolean | null
+          is_generalist?: boolean | null
           max_weekly_sessions?: number | null
           specialties?: string[] | null
           testimony_id?: string | null
@@ -1784,6 +1790,21 @@ export type Database = {
           similarity: number
           tags_json: Json
           text: string
+        }[]
+      }
+      search_testimonies_by_embedding: {
+        Args: {
+          exclude_soldados?: string[]
+          match_count?: number
+          match_threshold?: number
+          query_embedding: string
+        }
+        Returns: {
+          analysis: Json
+          id: string
+          similarity: number
+          transcript: string
+          user_id: string
         }[]
       }
     }
