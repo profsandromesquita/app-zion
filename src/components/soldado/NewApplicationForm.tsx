@@ -165,20 +165,33 @@ const NewApplicationForm = ({
       }
 
       // Create application
-      const { error } = await supabase.from("soldado_applications").insert({
+      const { data: insertedApp, error } = await supabase.from("soldado_applications").insert({
         user_id: values.userId,
         sponsored_by: user.id,
         sponsor_role: sponsorRole,
         status: "testimony_required",
         sponsor_notes: values.justification,
-      });
+      }).select("id").single();
 
       if (error) throw error;
+
+      // Notify user via push notification (fire and forget)
+      if (insertedApp?.id) {
+        supabase.functions.invoke("notify-application-created", {
+          body: {
+            user_id: values.userId,
+            application_id: insertedApp.id,
+            sponsor_name: selectedUser?.nome || undefined,
+          },
+        }).catch((err) => {
+          console.warn("Failed to send notification:", err);
+        });
+      }
 
       toast({
         title: "Candidatura criada",
         description:
-          "O usuário foi indicado para Soldado e precisa gravar seu testemunho.",
+          "O usuário foi indicado para Soldado e receberá uma notificação.",
       });
 
       form.reset();

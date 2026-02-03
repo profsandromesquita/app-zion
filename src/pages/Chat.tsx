@@ -13,6 +13,7 @@ import { SoldadoSuggestionCard, SoldadoMatch, RejectionReason, AvailabilitySlot 
 import { TimeSlotPicker } from "@/components/chat/TimeSlotPicker";
 import { ScheduleConfirmation, ScheduleConfirmationData } from "@/components/chat/ScheduleConfirmation";
 import { PushNotificationPrompt } from "@/components/PushNotificationPrompt";
+import PendingApplicationBanner from "@/components/soldado/PendingApplicationBanner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -28,6 +29,9 @@ import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { OnboardingFlow, OnboardingData } from "@/components/onboarding/OnboardingFlow";
 import { calculateNextOccurrence, formatDateTimePtBr } from "@/lib/icalendar";
 import zionLogo from "@/assets/zion-logo.png";
+import type { Database } from "@/integrations/supabase/types";
+
+type SoldadoApplicationStatus = Database["public"]["Enums"]["soldado_application_status"];
 
 interface Message {
   id: string;
@@ -97,6 +101,12 @@ const Chat = () => {
   const [showTimeSlotPicker, setShowTimeSlotPicker] = useState(false);
   const [selectedSoldadoForScheduling, setSelectedSoldadoForScheduling] = useState<SoldadoMatch | null>(null);
   const [scheduleConfirmation, setScheduleConfirmation] = useState<ScheduleConfirmationData | null>(null);
+  
+  // Pending application state (for Soldado nomination banner)
+  const [pendingApplication, setPendingApplication] = useState<{
+    id: string;
+    status: SoldadoApplicationStatus;
+  } | null>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const refreshSidebarRef = useRef<(() => void) | null>(null);
@@ -240,6 +250,21 @@ const Chat = () => {
 
     const hasMultipleSessions = (sessionCount || 0) > 1;
     setIsReturningUser(hasMultipleSessions);
+
+    // Check for pending soldado application
+    const { data: applicationData } = await supabase
+      .from("soldado_applications")
+      .select("id, status")
+      .eq("user_id", user.id)
+      .in("status", ["pending", "testimony_required", "under_review"])
+      .maybeSingle();
+
+    if (applicationData) {
+      setPendingApplication({
+        id: applicationData.id,
+        status: applicationData.status as SoldadoApplicationStatus,
+      });
+    }
 
     // Check for existing session
     const { data: existingSession } = await supabase
@@ -1029,6 +1054,14 @@ const Chat = () => {
             visible={showCrisisBanner}
             onDismiss={() => setShowCrisisBanner(false)}
           />
+
+          {/* Pending Application Banner - show in header area */}
+          {pendingApplication && (
+            <PendingApplicationBanner
+              applicationId={pendingApplication.id}
+              status={pendingApplication.status}
+            />
+          )}
 
           {/* Header */}
           <header className="flex items-center justify-between border-b border-border px-4 py-3" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
