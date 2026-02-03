@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { Check, X, User, Loader2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { Check, X, User, Loader2, Mic } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -100,12 +101,16 @@ const ApplicationApprovalCard = ({
 }: ApplicationApprovalCardProps) => {
   const { user } = useAuth();
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [notes, setNotes] = useState("");
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean;
     type: "approve" | "reject";
   }>({ open: false, type: "approve" });
+
+  const isCandidate = user?.id === application.candidate.id;
+  const needsTestimony = application.status === "testimony_required";
 
   const canApprove = canUserApprove(
     currentUserRoles,
@@ -289,6 +294,19 @@ const ApplicationApprovalCard = ({
                       <strong>Motivo da rejeição:</strong>{" "}
                       {application.rejection_reason}
                     </p>
+                  </div>
+                )}
+
+                {/* Candidate can record testimony */}
+                {isCandidate && needsTestimony && (
+                  <div className="pt-3">
+                    <Button
+                      onClick={() => navigate(`/testimony/${application.id}`)}
+                      className="bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40"
+                    >
+                      <Mic className="mr-2 h-4 w-4" />
+                      Gravar Testemunho
+                    </Button>
                   </div>
                 )}
 

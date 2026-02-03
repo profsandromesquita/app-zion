@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { ArrowLeft, User, Save, Shield, Pencil } from "lucide-react";
+import { ArrowLeft, User, Save, Shield, Pencil, Mic } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -16,7 +16,11 @@ import SafetyExit from "@/components/SafetyExit";
 import AvatarEditor from "@/components/profile/AvatarEditor";
 import JourneySection from "@/components/profile/JourneySection";
 import ChurchProfileSection, { ChurchData } from "@/components/profile/ChurchProfileSection";
+import ApplicationStatusBadge from "@/components/soldado/ApplicationStatusBadge";
 import zionLogo from "@/assets/zion-logo.png";
+import type { Database } from "@/integrations/supabase/types";
+
+type SoldadoApplicationStatus = Database["public"]["Enums"]["soldado_application_status"];
 
 interface ProfileData {
   nome: string | null;
@@ -58,6 +62,11 @@ const roleColors: Record<AppRole, string> = {
   admin: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300",
 };
 
+interface PendingApplication {
+  id: string;
+  status: SoldadoApplicationStatus;
+}
+
 const Profile = () => {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
@@ -68,6 +77,7 @@ const Profile = () => {
   const [journey, setJourney] = useState<JourneyData | null>(null);
   const [churchData, setChurchData] = useState<ChurchData | null>(null);
   const [churchLoading, setChurchLoading] = useState(false);
+  const [pendingApplication, setPendingApplication] = useState<PendingApplication | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [avatarEditorOpen, setAvatarEditorOpen] = useState(false);
@@ -149,6 +159,18 @@ const Profile = () => {
       console.error("Error loading journey:", journeyError);
     } else if (journeyData) {
       setJourney(journeyData);
+    }
+
+    // Load pending soldado application
+    const { data: applicationData } = await supabase
+      .from("soldado_applications")
+      .select("id, status")
+      .eq("user_id", user.id)
+      .in("status", ["pending", "testimony_required", "under_review"])
+      .maybeSingle();
+
+    if (applicationData) {
+      setPendingApplication(applicationData as PendingApplication);
     }
 
     setLoading(false);
@@ -297,6 +319,43 @@ const Profile = () => {
               )}
             </CardContent>
           </Card>
+
+          {/* Pending Soldado Application Card */}
+          {pendingApplication && (
+            <Card className="border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950">
+              <CardContent className="pt-6">
+                <div className="flex items-start gap-4">
+                  <div className="rounded-full bg-amber-100 dark:bg-amber-900 p-3">
+                    <Shield className="h-6 w-6 text-amber-600 dark:text-amber-400" />
+                  </div>
+                  <div className="flex-1 space-y-2">
+                    <h3 className="font-semibold text-foreground">
+                      Candidatura a Soldado
+                    </h3>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">Status:</span>
+                      <ApplicationStatusBadge status={pendingApplication.status} />
+                    </div>
+                    {pendingApplication.status === "testimony_required" && (
+                      <Button
+                        size="sm"
+                        onClick={() => navigate(`/testimony/${pendingApplication.id}`)}
+                        className="mt-2 bg-gradient-to-r from-emerald-500 to-lime-500 text-white"
+                      >
+                        <Mic className="mr-2 h-4 w-4" />
+                        Gravar Testemunho
+                      </Button>
+                    )}
+                    {pendingApplication.status === "under_review" && (
+                      <p className="text-sm text-muted-foreground">
+                        Seu testemunho está sendo analisado. Você será notificado quando o processo for concluído.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Church Profile Section - Only for Igreja role */}
           {isIgreja && (
