@@ -53,3 +53,6 @@ verify_jwt = false
 
 [functions.schedule-connection]
 verify_jwt = false
+
+[functions.notify-application-created]
+verify_jwt = false

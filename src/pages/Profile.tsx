@@ -16,6 +16,7 @@ import SafetyExit from "@/components/SafetyExit";
 import AvatarEditor from "@/components/profile/AvatarEditor";
 import JourneySection from "@/components/profile/JourneySection";
 import ChurchProfileSection, { ChurchData } from "@/components/profile/ChurchProfileSection";
+import SoldadoConnectionTeaser from "@/components/profile/SoldadoConnectionTeaser";
 import ApplicationStatusBadge from "@/components/soldado/ApplicationStatusBadge";
 import zionLogo from "@/assets/zion-logo.png";
 import type { Database } from "@/integrations/supabase/types";
@@ -446,6 +447,11 @@ const Profile = () => {
           {/* Journey Card - Only for Buscadores */}
           {isBuscador && journey && (
             <JourneySection journey={journey} />
+          )}
+
+          {/* Soldado Connection Teaser - Only for Buscadores without pending application */}
+          {isBuscador && !pendingApplication && !isSoldado && (
+            <SoldadoConnectionTeaser />
           )}
         </div>
       </main>
