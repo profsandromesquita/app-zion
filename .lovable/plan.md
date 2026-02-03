@@ -1,421 +1,509 @@
 
-# Auditoria das Etapas 1-4 e Plano para Etapa 5
+# ETAPA 7: Matchmaking Semantico
 
-## AUDITORIA COMPLETA DAS ETAPAS ANTERIORES
+## Visao Geral
 
----
-
-### ETAPA 1: Schema de Candidaturas (Status: COMPLETO)
-
-**Banco de Dados - Verificado:**
-
-| Item | Status | Detalhes |
-|------|--------|----------|
-| Enum `soldado_application_status` | OK | pending, testimony_required, under_review, approved, rejected |
-| Enum `testimony_status` | OK | uploading, processing, analyzed, curated, published, rejected |
-| Tabela `soldado_applications` | OK | id, user_id, sponsored_by, sponsor_role, status, testimony_id, rejection_reason, created_at, updated_at |
-| Tabela `soldado_application_approvals` | OK | id, application_id, approver_id, approver_role, approved, notes, created_at |
-| Tabela `testimonies` | OK | 12 campos incluindo audio_url, transcript, analysis, embedding, curator_notes |
-| Storage bucket `testimonies` | OK | Bucket privado configurado |
-
-**Funcoes SQL - Verificado:**
-
-| Funcao | Status | Descricao |
-|--------|--------|-----------|
-| `can_sponsor_soldado(_sponsor_id)` | OK | Verifica se usuario pode indicar soldado |
-| `check_soldado_approval_complete()` | OK | Trigger que promove a soldado quando 3 aprovacoes |
-| `get_application_approval_status(_application_id)` | OK | Retorna status de cada aprovador |
-| `update_application_on_testimony()` | OK | Atualiza application para under_review quando testemunho criado |
-
-**Triggers Configurados:**
-
-| Trigger | Tabela | Funcao |
-|---------|--------|--------|
-| `trigger_check_soldado_approval` | soldado_application_approvals | check_soldado_approval_complete |
-| `set_soldado_applications_updated_at` | soldado_applications | trigger_set_updated_at |
-| `on_testimony_created` | testimonies | update_application_on_testimony |
-| `set_testimonies_updated_at` | testimonies | trigger_set_updated_at |
-
-**Dados de Teste:**
-- 1 candidatura existente em status `testimony_required`
-- 0 testemunhos gravados ainda
+Esta etapa cria o sistema de sugestao inteligente de Soldados compativeis com base na dor do Buscador, utilizando:
+1. Temas ativos do usuario (`user_themes`) com taxonomia ZION
+2. Embeddings semanticos dos testemunhos publicados
+3. Disponibilidade horaria dos Soldados
+4. Sistema de fallback para MVP com poucos soldados
 
 ---
 
-### ETAPA 2: UI de Candidatura (Status: COMPLETO)
-
-**Componentes Criados:**
-
-| Arquivo | Status | Funcionalidade |
-|---------|--------|----------------|
-| `ApplicationStatusBadge.tsx` | OK | Badge visual com icone e cor para cada status |
-| `NewApplicationForm.tsx` | OK | Dialog com busca de usuarios elegiveis, validacao Zod |
-| `ApplicationApprovalCard.tsx` | OK | Card com avatar, info sponsor, aprovacoes, botoes aprovar/rejeitar |
-| `SoldadoApplications.tsx` | OK | Pagina com tabs por status, lista de candidaturas |
-
-**Integracao na Navegacao:**
-- Rota `/admin/soldado-applications` funcionando
-- AdminLayout com item de menu "Candidatos Soldado"
-- AdminDashboard com card de contagem
-
----
-
-### ETAPA 3: Gravacao de Testemunho (Status: COMPLETO)
-
-**Componentes Criados:**
-
-| Arquivo | Status | Funcionalidade |
-|---------|--------|----------------|
-| `AudioRecorder.tsx` | OK | MediaRecorder API, waveform canvas, timer, estados idle/recording/paused/stopped |
-| `TestimonyInstructions.tsx` | OK | Instrucoes para gravacao do testemunho |
-| `SoldadoTestimony.tsx` | OK | Pagina de gravacao com upload para storage |
-
-**Fluxo de Upload:**
-1. Grava audio com WebM/Opus
-2. Upload para storage bucket `testimonies/{user_id}/{application_id}.webm`
-3. Cria registro em `testimonies` com status `processing`
-4. Trigger `on_testimony_created` atualiza application para `under_review`
-
-**Integracao com UI:**
-- Profile.tsx mostra card de candidatura pendente com botao "Gravar Testemunho"
-- ApplicationApprovalCard mostra botao para candidato gravar
-- Rota `/testimony/:applicationId` configurada
-
----
-
-### ETAPA 4: Processamento de Testemunho (Status: COMPLETO)
-
-**Edge Function `process-testimony`:**
-
-| Passo | Status | Detalhes |
-|-------|--------|----------|
-| Download audio | OK | Extrai path do audio_url e baixa do storage |
-| Transcricao | OK | Usa Gemini 2.5 Flash multimodal com `input_audio` |
-| Analise Teologica | OK | Usa Gemini 3 Flash com tool calling `extract_testimony_analysis` |
-| Vetorizacao | OK | Hash-based embedding de 1536 dimensoes |
-| Update testimony | OK | Atualiza transcript, analysis, embedding, status para `analyzed` |
-| Push notification | OK | Envia notificacao ao candidato |
-
-**Schema de Analise (JSONB):**
-```text
-repentance_classification: true_repentance | remorse | unclear
-repentance_confidence: 0-1
-repentance_evidence: []
-entities: { traumas, addictions, victories }
-lie_matrix: { security_lost, false_security, lie_believed }
-transformation_pattern: []
-suggested_tags: []
-scenario, center, security_matrix (Taxonomia ZION)
-safe_for_publication: boolean
-curator_required_reason: string | null
-anonymized_transcript: string
-```
-
-**Modos de Operacao:**
-- Modo individual: `{ testimony_id: "uuid" }`
-- Modo batch: `{ batch: true }` - processa ate 10 pendentes
-
----
-
-## GAPS IDENTIFICADOS (Ajustes para Etapa 5)
-
-### Gap 1: Trigger de Processamento Automatico
-- O testemunho e criado com status `processing`, mas nao ha trigger automatico para chamar a edge function
-- **Solucao na Etapa 5**: Adicionar botao "Processar" na UI de curadoria + opcao de cron job
-
-### Gap 2: Falta Badge para Status do Testemunho
-- Existe `ApplicationStatusBadge` mas nao existe `TestimonyStatusBadge`
-- **Solucao na Etapa 5**: Criar componente para exibir status do testemunho
-
-### Gap 3: Curadores nao conseguem ver testemunhos na UI
-- A pagina `SoldadoApplications` nao mostra informacoes do testemunho
-- **Solucao na Etapa 5**: Criar pagina dedicada de curadoria
-
-### Gap 4: Campo `justification` do formulario nao e salvo
-- O `NewApplicationForm` coleta justificativa mas nao salva em lugar nenhum
-- **Impacto baixo**: A justificativa e opcional, mas poderia ser util para os aprovadores
-
----
-
-## FLUXO COMPLETO VALIDADO
+## Arquitetura da Solucao
 
 ```text
-1. Igreja/Admin/Profissional cria candidatura
-   └─> soldado_applications.status = 'testimony_required'
-
-2. Candidato grava testemunho
-   └─> Upload para storage: testimonies/{user_id}/{app_id}.webm
-   └─> Insert testimonies com status = 'processing'
-   └─> Trigger: application.status = 'under_review', testimony_id linkado
-
-3. Edge function processa (manual ou batch)
-   └─> Transcricao + Analise + Embedding
-   └─> testimonies.status = 'analyzed'
-   └─> Push notification ao candidato
-
-4. [ETAPA 5] Curadores revisam testemunho
-   └─> Admin/Pastor/Profissional aprovam
-   └─> testimonies.status = 'curated' ou 'published'
-
-5. Triple-approval ja implementado
-   └─> Trigger check_soldado_approval_complete
-   └─> 3 aprovacoes -> user_roles += 'soldado'
-   └─> soldado_applications.status = 'approved'
+┌─────────────────────────────────────────────────────────────────┐
+│  BUSCADOR (Chat com Zyon)                                       │
+│  - Conversa normal                                              │
+│  - turn-insight-observer identifica lie_active com taxonomia    │
+│  - aggregate-user-journey cria/atualiza user_themes             │
+└─────────────────────────────────────────────────────────────────┘
+                           │
+                           ▼ (Trigger: Fase >= PADROES + lie_active identificado)
+┌─────────────────────────────────────────────────────────────────┐
+│  ZYON SUGERE CONEXAO                                            │
+│  "Parece que voce esta passando por algo com [CENARIO].         │
+│   Temos alguem que viveu algo parecido. Quer conhecer?"         │
+└─────────────────────────────────────────────────────────────────┘
+                           │
+                           ▼ (Usuario aceita)
+┌─────────────────────────────────────────────────────────────────┐
+│  EDGE FUNCTION: matchmaking-soldado                             │
+├─────────────────────────────────────────────────────────────────┤
+│  INPUT:                                                         │
+│  - user_id (buscador)                                           │
+│  - session_id (para rastrear tentativas)                        │
+│  - excluded_soldados (opcional, do matchmaking_state)           │
+│                                                                 │
+│  PIPELINE:                                                      │
+│  1. Buscar user_themes ativos do buscador                       │
+│  2. Gerar embedding combinado dos temas                         │
+│  3. Buscar testimonies publicados com embedding                 │
+│  4. Calcular similaridade semantica (cosine)                    │
+│  5. Filtrar por soldado disponivel (is_available = true)        │
+│  6. Filtrar por horarios (soldado_availability)                 │
+│  7. Ordenar por:                                                │
+│     a) Match de cenario (weight: 0.4)                           │
+│     b) Match de security_matrix (weight: 0.3)                   │
+│     c) Similaridade semantica (weight: 0.2)                     │
+│     d) Proximidade de horario (weight: 0.1)                     │
+│  8. Aplicar fallbacks se necessario                             │
+│                                                                 │
+│  OUTPUT:                                                        │
+│  - matches: Array de soldados ranqueados                        │
+│  - fallback_type: null | 'generalist' | 'passive' | 'ai_only'   │
+│  - suggestion: Texto formatado para exibir                      │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## RESUMO DAS ETAPAS FUTURAS
+## PARTE 1: Alteracoes no Banco de Dados
 
-| Etapa | Nome | Status | Dependencia |
-|-------|------|--------|-------------|
-| 5 | Curadoria de Testemunhos | **PROXIMO** | Etapa 4 |
-| 6 | Dashboard do Soldado | Pendente | Etapa 5 |
-| 7 | Matchmaking Semantico | Pendente | Etapas 4, 5, 6 |
-| 8 | Chat Soldado-Buscador | Pendente | Etapa 7 |
-
----
-
-# PLANO DE IMPLEMENTACAO - ETAPA 5: Curadoria de Testemunhos
-
-## Objetivo
-
-Criar interface para Admin/Pastor/Profissional validar testemunhos antes de ativar Soldado. O curador deve:
-1. Ouvir o audio
-2. Ler a transcricao
-3. Revisar sugestoes da IA (nao bloqueantes)
-4. Aprovar, rejeitar ou pedir regravacao
-
----
-
-## Arquitetura
-
-```text
-┌─────────────────────────────────────────────────────────────┐
-│  /admin/testimony-curation                                  │
-│  (Pagina TestimonyCuration.tsx)                             │
-├─────────────────────────────────────────────────────────────┤
-│                                                             │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │ Tabs: Todos | Pendentes | Em Curadoria | Publicados │   │
-│  └─────────────────────────────────────────────────────┘   │
-│                                                             │
-│  ┌─────────────────────────────────────────────────────┐   │
-│  │ TestimonyCurationCard                                │   │
-│  │ ┌─────────────────────────────────────────────────┐ │   │
-│  │ │ [Avatar] Candidato | Sponsor | Data              │ │   │
-│  │ │ [ApplicationStatusBadge] [TestimonyStatusBadge]  │ │   │
-│  │ └─────────────────────────────────────────────────┘ │   │
-│  │                                                       │   │
-│  │ ┌─────────────────────────────────────────────────┐ │   │
-│  │ │ TestimonyPlayer                                  │ │   │
-│  │ │ [Waveform + Play/Pause + Speed + Progress]      │ │   │
-│  │ └─────────────────────────────────────────────────┘ │   │
-│  │                                                       │   │
-│  │ ┌─────────────────────────────────────────────────┐ │   │
-│  │ │ Transcricao (ScrollArea)                         │ │   │
-│  │ │ [Texto anonimizado com highlights de emocao]    │ │   │
-│  │ └─────────────────────────────────────────────────┘ │   │
-│  │                                                       │   │
-│  │ ┌─────────────────────────────────────────────────┐ │   │
-│  │ │ Analise IA (Accordion)                           │ │   │
-│  │ │ > Arrependimento: true_repentance (85%)         │ │   │
-│  │ │ > Taxonomia: FAMILIA / EMOCIONAL / IDENTIDADE   │ │   │
-│  │ │ > Entidades: Traumas, Vicios, Vitorias          │ │   │
-│  │ │ > Tags Sugeridas: #Alcool #Familia              │ │   │
-│  │ │ > Aviso: [curator_required_reason]               │ │   │
-│  │ └─────────────────────────────────────────────────┘ │   │
-│  │                                                       │   │
-│  │ [Textarea: Notas do Curador]                         │   │
-│  │                                                       │   │
-│  │ [Rejeitar] [Pedir Regravacao] [Aprovar]              │   │
-│  └─────────────────────────────────────────────────────┘   │
-│                                                             │
-└─────────────────────────────────────────────────────────────┘
-```
-
----
-
-## Componentes a Criar
-
-### 1. TestimonyStatusBadge.tsx
-Badge visual para status do testemunho (uploading, processing, analyzed, curated, published, rejected).
-
-### 2. TestimonyPlayer.tsx
-Player de audio com:
-- Waveform visual (canvas)
-- Play/Pause/Stop
-- Controle de velocidade (0.75x, 1x, 1.25x, 1.5x, 2x)
-- Barra de progresso clicavel
-- Display de tempo atual/total
-
-### 3. TestimonyAnalysisPanel.tsx
-Painel com accordion para exibir:
-- Classificacao de arrependimento com badge de confianca
-- Taxonomia ZION (Cenario, Centro, Matriz)
-- Entidades extraidas (traumas, vicios, vitorias)
-- Tags sugeridas
-- Lie Matrix (Seguranca Perdida, Falsa Seguranca, Mentira)
-- Aviso do curador se `safe_for_publication = false`
-
-### 4. TestimonyCurationCard.tsx
-Card completo com:
-- Info do candidato e sponsor
-- TestimonyPlayer
-- Transcricao em ScrollArea
-- TestimonyAnalysisPanel (collapsible)
-- Campo de notas do curador
-- Botoes de acao: Rejeitar, Pedir Regravacao, Aprovar
-
-### 5. TestimonyCuration.tsx (Pagina)
-Pagina principal com:
-- Tabs: Pendentes (processing/analyzed) | Em Curadoria (curated) | Publicados | Rejeitados
-- Lista de TestimonyCurationCard
-- Botao para processar testemunhos pendentes (chamar edge function)
-
----
-
-## Fluxo de Aprovacao
-
-### Acao: Aprovar
-```typescript
-// 1. Atualizar testemunho
-await supabase.from("testimonies").update({
-  status: "curated", // ou "published" se auto-publicar
-  curator_notes: notes,
-  curated_by: user.id,
-  curated_at: new Date().toISOString(),
-}).eq("id", testimonyId);
-
-// 2. Registrar aprovacao na tabela de aprovacoes (se ainda nao existir)
-// O trigger check_soldado_approval_complete cuidara da promocao
-await supabase.from("soldado_application_approvals").insert({
-  application_id: applicationId,
-  approver_id: user.id,
-  approver_role: approverRole, // admin, profissional, ou pastor
-  approved: true,
-  notes: notes,
-});
-```
-
-### Acao: Rejeitar
-```typescript
-// 1. Atualizar testemunho
-await supabase.from("testimonies").update({
-  status: "rejected",
-  curator_notes: notes,
-  curated_by: user.id,
-  curated_at: new Date().toISOString(),
-}).eq("id", testimonyId);
-
-// 2. Atualizar candidatura
-await supabase.from("soldado_applications").update({
-  status: "rejected",
-  rejection_reason: notes,
-}).eq("id", applicationId);
-```
-
-### Acao: Pedir Regravacao
-```typescript
-// 1. Rejeitar testemunho atual
-await supabase.from("testimonies").update({
-  status: "rejected",
-  curator_notes: "Solicitada regravacao: " + notes,
-  curated_by: user.id,
-  curated_at: new Date().toISOString(),
-}).eq("id", testimonyId);
-
-// 2. Voltar candidatura para testimony_required
-await supabase.from("soldado_applications").update({
-  status: "testimony_required",
-  testimony_id: null,
-}).eq("id", applicationId);
-
-// 3. Enviar push notification ao candidato
-```
-
----
-
-## Integracao com Navegacao
-
-### AdminLayout.tsx
-Adicionar item de menu:
-```typescript
-{ to: "/admin/testimony-curation", icon: FileCheck, label: "Curadoria de Testemunhos" }
-```
-
-### App.tsx
-Adicionar rota:
-```typescript
-<Route path="/admin/testimony-curation" element={<TestimonyCuration />} />
-```
-
-### AdminDashboard.tsx
-Adicionar card de contagem de testemunhos pendentes.
-
----
-
-## Ajuste Identificado: Gap 4 (Justificativa)
-
-Adicionar campo `sponsor_notes` na tabela `soldado_applications` para armazenar a justificativa da indicacao:
+### 1.1 Nova coluna em chat_sessions para estado do matchmaking
 
 ```sql
-ALTER TABLE soldado_applications 
-ADD COLUMN sponsor_notes text;
+-- Adicionar coluna para rastrear estado do matchmaking
+ALTER TABLE public.chat_sessions 
+ADD COLUMN matchmaking_state jsonb DEFAULT '{}'::jsonb;
+
+-- Estrutura do matchmaking_state:
+-- {
+--   "attempts": 0,
+--   "excluded_soldados": [],
+--   "last_suggestion": null,
+--   "last_suggestion_at": null,
+--   "fallback_active": false,
+--   "mode": "searching" | "matched" | "rejected_all" | "ai_only"
+-- }
+
+-- Comentario para documentacao
+COMMENT ON COLUMN public.chat_sessions.matchmaking_state IS 
+  'Estado do matchmaking: tentativas, soldados excluidos, ultima sugestao';
 ```
 
-Atualizar `NewApplicationForm.tsx` para salvar a justificativa.
+### 1.2 Nova coluna em soldado_profiles para generalista
+
+```sql
+-- Adicionar flag de soldado generalista (fallback)
+ALTER TABLE public.soldado_profiles 
+ADD COLUMN is_generalist boolean DEFAULT false;
+
+-- Comentario
+COMMENT ON COLUMN public.soldado_profiles.is_generalist IS 
+  'Soldado generalista pode atender qualquer cenario como fallback';
+```
 
 ---
 
-## Arquivos a Criar/Modificar
+## PARTE 2: Edge Function matchmaking-soldado
+
+### Arquivo: supabase/functions/matchmaking-soldado/index.ts
+
+### Entrada (Request Body)
+
+```typescript
+interface MatchmakingRequest {
+  user_id: string;                    // ID do buscador
+  session_id: string;                 // ID da sessao do chat
+  excluded_soldados?: string[];       // Soldados ja rejeitados
+  preferred_days?: number[];          // Dias preferidos (0-6)
+  preferred_time_range?: {            // Horario preferido
+    start: string;                    // "09:00"
+    end: string;                      // "18:00"
+  };
+}
+```
+
+### Saida (Response Body)
+
+```typescript
+interface MatchmakingResponse {
+  success: boolean;
+  matches: SoldadoMatch[];            // Top 3 sugestoes
+  total_candidates: number;           // Total de soldados elegiveis
+  fallback_type: FallbackType | null; // Tipo de fallback aplicado
+  suggestion_text: string;            // Texto formatado para chat
+  debug?: {                           // Apenas para admins
+    theme_used: ThemeSummary;
+    semantic_scores: Record<string, number>;
+    availability_filter_removed: number;
+  };
+}
+
+interface SoldadoMatch {
+  soldado_id: string;
+  display_name: string;
+  bio: string | null;
+  specialties: string[];
+  scenario_match: boolean;            // Testemunho tem mesmo cenario
+  matrix_match: boolean;              // Testemunho tem mesma matriz
+  semantic_score: number;             // 0-1 similaridade
+  total_score: number;                // Score final ponderado
+  testimony_excerpt: string;          // Primeiros 200 chars do testemunho
+  available_slots: AvailabilitySlot[]; // Proximos horarios disponiveis
+}
+
+interface AvailabilitySlot {
+  day_of_week: number;
+  day_name: string;                   // "Segunda", "Terca"...
+  start_time: string;
+  end_time: string;
+  is_today: boolean;
+  is_tomorrow: boolean;
+}
+
+type FallbackType = 
+  | 'generalist'      // Soldado generalista (sem match de cenario)
+  | 'passive'         // Apenas ouvir testemunho (sem conexao ao vivo)
+  | 'ai_only';        // Voltar ao Zyon (apos 3 rejeicoes)
+```
+
+### Logica de Matching
+
+```typescript
+// 1. Buscar temas ativos do buscador
+const themes = await supabase
+  .from("user_themes")
+  .select("*")
+  .eq("user_id", user_id)
+  .in("status", ["active", "in_progress"])
+  .order("last_activity_at", { ascending: false })
+  .limit(3);
+
+// 2. Extrair taxonomia dominante
+const dominantTheme = {
+  scenario: themes[0]?.scenario,
+  center: themes[0]?.center,
+  security_matrix: themes[0]?.security_matrix,
+  lie_text: themes[0]?.primary_lie?.text
+};
+
+// 3. Gerar embedding do contexto do buscador
+const contextText = `
+  Cenario: ${dominantTheme.scenario}
+  Centro: ${dominantTheme.center}
+  Matriz: ${dominantTheme.security_matrix}
+  Mentira: ${dominantTheme.lie_text}
+`;
+const queryEmbedding = await generateSimpleEmbedding(contextText);
+
+// 4. Buscar testemunhos publicados com cosine similarity
+const { data: testimoniesWithScore } = await supabase.rpc(
+  "search_testimonies_by_embedding",
+  {
+    query_embedding: queryEmbedding,
+    match_threshold: 0.03,  // Threshold para hash-based
+    match_count: 20,
+    exclude_soldados: excluded_soldados || []
+  }
+);
+
+// 5. Buscar perfis e disponibilidade
+const soldadoIds = testimoniesWithScore.map(t => t.user_id);
+const { data: profiles } = await supabase
+  .from("soldado_profiles")
+  .select(`
+    id, display_name, bio, specialties, is_available, is_generalist,
+    soldado_availability (day_of_week, start_time, end_time)
+  `)
+  .in("id", soldadoIds)
+  .eq("is_available", true);
+
+// 6. Calcular scores compostos
+const scoredMatches = profiles.map(profile => {
+  const testimony = testimoniesWithScore.find(t => t.user_id === profile.id);
+  const analysis = testimony?.analysis || {};
+  
+  return {
+    ...profile,
+    scenario_match: analysis.scenario === dominantTheme.scenario,
+    matrix_match: analysis.security_matrix === dominantTheme.security_matrix,
+    semantic_score: testimony?.similarity || 0,
+    total_score: 
+      (analysis.scenario === dominantTheme.scenario ? 0.4 : 0) +
+      (analysis.security_matrix === dominantTheme.security_matrix ? 0.3 : 0) +
+      (testimony?.similarity || 0) * 0.2 +
+      (hasAvailabilityToday(profile) ? 0.1 : 0)
+  };
+});
+
+// 7. Ordenar e pegar top 3
+const topMatches = scoredMatches
+  .sort((a, b) => b.total_score - a.total_score)
+  .slice(0, 3);
+```
+
+### Logica de Fallback
+
+```typescript
+// Cenario A: Nenhum match semantico encontrado
+if (topMatches.length === 0) {
+  // Tentar soldado generalista
+  const { data: generalists } = await supabase
+    .from("soldado_profiles")
+    .select("*")
+    .eq("is_generalist", true)
+    .eq("is_available", true)
+    .limit(1);
+  
+  if (generalists.length > 0) {
+    return { 
+      matches: generalists, 
+      fallback_type: "generalist",
+      suggestion_text: "Temos um voluntario disponivel para conversar..."
+    };
+  }
+}
+
+// Cenario B: 3+ rejeicoes consecutivas
+const sessionState = await getSessionMatchmakingState(session_id);
+if (sessionState.attempts >= 3) {
+  return {
+    matches: [],
+    fallback_type: "ai_only",
+    suggestion_text: "Entendo que nenhuma sugestao foi ideal. Podemos continuar nossa conversa aqui, e quando sentir que esta pronto, volto a sugerir."
+  };
+}
+
+// Cenario C: Usuario nao quer conexao ao vivo
+// -> Sugerir ouvir testemunho passivamente
+if (preferred_mode === "passive") {
+  const testimony = await getPassiveTestimony(dominantTheme);
+  return {
+    matches: [],
+    fallback_type: "passive",
+    suggestion_text: `Encontrei um testemunho de alguem que passou por ${dominantTheme.scenario}. Quer ouvir?`,
+    passive_testimony_id: testimony?.id
+  };
+}
+```
+
+---
+
+## PARTE 3: Funcao RPC para busca semantica
+
+```sql
+-- Funcao para buscar testemunhos por similaridade semantica
+CREATE OR REPLACE FUNCTION public.search_testimonies_by_embedding(
+  query_embedding vector(1536),
+  match_threshold double precision DEFAULT 0.03,
+  match_count integer DEFAULT 10,
+  exclude_soldados uuid[] DEFAULT '{}'::uuid[]
+)
+RETURNS TABLE (
+  id uuid,
+  user_id uuid,
+  transcript text,
+  analysis jsonb,
+  similarity double precision
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = 'public'
+AS $$
+BEGIN
+  RETURN QUERY
+  SELECT 
+    t.id,
+    t.user_id,
+    t.transcript,
+    t.analysis,
+    1 - (t.embedding <=> query_embedding) AS similarity
+  FROM public.testimonies t
+  INNER JOIN public.soldado_profiles sp ON t.user_id = sp.id
+  WHERE 
+    t.status = 'published'
+    AND t.embedding IS NOT NULL
+    AND sp.is_available = true
+    AND NOT (t.user_id = ANY(exclude_soldados))
+    AND 1 - (t.embedding <=> query_embedding) > match_threshold
+  ORDER BY similarity DESC
+  LIMIT match_count;
+END;
+$$;
+```
+
+---
+
+## PARTE 4: Integracao com Chat (zyon-chat)
+
+### Trigger de Sugestao
+
+O zyon-chat deve detectar quando sugerir conexao. Criterios:
+1. Usuario autenticado (nao anonimo)
+2. Fase >= PADROES (turn-insight-observer)
+3. lie_active identificado com confidence >= 0.6
+4. Nao ha matchmaking_state.mode = 'ai_only'
+5. Ultima sugestao foi ha mais de 10 turnos OU tema mudou
+
+### Fluxo no Chat
+
+```typescript
+// Em zyon-chat, apos processar resposta normal:
+
+// 1. Verificar se deve sugerir conexao
+const shouldSuggest = await checkShouldSuggestConnection(
+  userId, 
+  sessionId, 
+  sessionContext // do observer
+);
+
+if (shouldSuggest) {
+  // 2. Chamar matchmaking
+  const matchResult = await supabase.functions.invoke("matchmaking-soldado", {
+    body: { user_id: userId, session_id: sessionId }
+  });
+  
+  // 3. Anexar sugestao a resposta
+  if (matchResult.data?.matches?.length > 0) {
+    response.next_actions = {
+      matchmaking_suggestion: {
+        soldado: matchResult.data.matches[0],
+        suggestion_text: matchResult.data.suggestion_text
+      }
+    };
+  }
+}
+```
+
+### UI de Sugestao no Chat
+
+Apos a resposta do Zyon, exibir card com:
+- Nome e foto do Soldado
+- Especialidades/tags
+- Trecho do testemunho
+- Horarios disponiveis
+- Botoes: [Quero conhecer] [Agora nao] [Ver outros]
+
+---
+
+## PARTE 5: Componente de Sugestao no Chat
+
+### Novo componente: SoldadoSuggestionCard.tsx
+
+```typescript
+interface SoldadoSuggestionCardProps {
+  soldado: SoldadoMatch;
+  onAccept: (soldadoId: string) => void;
+  onReject: (soldadoId: string, reason: RejectionReason) => void;
+  onViewOthers: () => void;
+}
+
+type RejectionReason = 
+  | 'schedule_mismatch'  // Horarios nao batem
+  | 'not_good_match'     // Nao parece bom match
+  | 'not_ready'          // Nao estou pronto
+  | 'prefer_ai';         // Prefiro continuar com IA
+```
+
+---
+
+## PARTE 6: Arquivos a Criar/Modificar
 
 | Arquivo | Acao | Descricao |
 |---------|------|-----------|
-| `src/components/soldado/TestimonyStatusBadge.tsx` | CRIAR | Badge para status do testemunho |
-| `src/components/soldado/TestimonyPlayer.tsx` | CRIAR | Player de audio com waveform |
-| `src/components/soldado/TestimonyAnalysisPanel.tsx` | CRIAR | Painel de analise da IA |
-| `src/components/soldado/TestimonyCurationCard.tsx` | CRIAR | Card completo de curadoria |
-| `src/pages/admin/TestimonyCuration.tsx` | CRIAR | Pagina principal |
-| `src/components/admin/AdminLayout.tsx` | MODIFICAR | Adicionar item de menu |
-| `src/pages/admin/AdminDashboard.tsx` | MODIFICAR | Adicionar card de pendentes |
-| `src/App.tsx` | MODIFICAR | Adicionar rota |
-| `src/components/soldado/NewApplicationForm.tsx` | MODIFICAR | Salvar justificativa |
-| Migracao SQL | CRIAR | Adicionar campo sponsor_notes |
+| `supabase/functions/matchmaking-soldado/index.ts` | CRIAR | Edge function principal |
+| `supabase/config.toml` | MODIFICAR | Adicionar funcao |
+| Migracao SQL | CRIAR | Adicionar colunas + funcao RPC |
+| `src/components/chat/SoldadoSuggestionCard.tsx` | CRIAR | Card de sugestao |
+| `src/pages/Chat.tsx` | MODIFICAR | Renderizar sugestao |
+| `supabase/functions/zyon-chat/index.ts` | MODIFICAR | Integrar matchmaking trigger |
 
 ---
 
-## Ordem de Implementacao
+## PARTE 7: Consideracoes de Performance
 
-1. **Migracao SQL** - Adicionar `sponsor_notes` em soldado_applications
-2. **TestimonyStatusBadge.tsx** - Componente simples
-3. **TestimonyPlayer.tsx** - Player de audio
-4. **TestimonyAnalysisPanel.tsx** - Painel de analise
-5. **TestimonyCurationCard.tsx** - Card principal
-6. **TestimonyCuration.tsx** - Pagina completa
-7. **Atualizacoes de navegacao** - AdminLayout, App.tsx, AdminDashboard
-8. **NewApplicationForm.tsx** - Salvar justificativa
+### Indices Necessarios
+
+```sql
+-- Indice para busca por embedding (HNSW)
+CREATE INDEX IF NOT EXISTS testimonies_embedding_idx 
+ON public.testimonies 
+USING hnsw (embedding vector_cosine_ops)
+WHERE status = 'published' AND embedding IS NOT NULL;
+
+-- Indice para busca de soldados disponiveis
+CREATE INDEX IF NOT EXISTS soldado_profiles_available_idx 
+ON public.soldado_profiles (is_available)
+WHERE is_available = true;
+
+-- Indice para busca de temas ativos
+CREATE INDEX IF NOT EXISTS user_themes_active_idx 
+ON public.user_themes (user_id, status)
+WHERE status IN ('active', 'in_progress');
+```
+
+### Cache de Embeddings
+
+Para evitar recalcular embeddings a cada request:
+1. Armazenar embedding do contexto do buscador em `chat_sessions.matchmaking_state`
+2. Invalidar quando `user_themes` for atualizado
 
 ---
 
-## Consideracoes Tecnicas
+## PARTE 8: Fluxo de Rejeicao
 
-### Acesso ao Audio
-O bucket `testimonies` e privado. Usar signed URLs:
-```typescript
-const { data } = await supabase.storage
-  .from("testimonies")
-  .createSignedUrl(path, 3600); // 1 hora
-```
+### Opcao A: Horarios nao batem
+1. Usuario clica "Horarios nao batem"
+2. Sistema pede dias/horarios preferidos
+3. Refaz busca com filtro de disponibilidade ajustado
+4. Atualiza `matchmaking_state.excluded_soldados` com soldado anterior
 
-### Permissoes de Curadoria
-Roles autorizados: admin, desenvolvedor, profissional, pastor
-Ja coberto pelas RLS policies existentes na tabela `testimonies`.
+### Opcao B: Nao parece bom match
+1. Usuario clica "Nao parece bom match"
+2. Sistema adiciona soldado a `excluded_soldados`
+3. Busca proximo candidato
+4. Incrementa `matchmaking_state.attempts`
 
-### Processamento Manual
-Adicionar botao "Processar Testemunho" que chama a edge function:
-```typescript
-await supabase.functions.invoke("process-testimony", {
-  body: { testimony_id: testimonyId },
-});
-```
+### Opcao C: Nao estou pronto
+1. Usuario clica "Nao estou pronto"
+2. Sistema oferece conteudo passivo (ouvir testemunho)
+3. Atualiza `matchmaking_state.mode = 'passive'`
+
+### Opcao D: Prefiro continuar com IA
+1. Usuario clica "Prefiro continuar com IA"
+2. Atualiza `matchmaking_state.mode = 'ai_only'`
+3. Sistema para de sugerir por 10 turnos ou ate reset
+
+---
+
+## PARTE 9: Ordem de Implementacao
+
+1. **Migracao SQL** - Colunas + funcao RPC + indices
+2. **matchmaking-soldado Edge Function** - Logica principal
+3. **config.toml** - Registrar funcao
+4. **SoldadoSuggestionCard.tsx** - Componente UI
+5. **Chat.tsx** - Renderizar sugestao
+6. **zyon-chat** - Integrar trigger de sugestao
+7. **Testes end-to-end** - Validar fluxo completo
+
+---
+
+## PARTE 10: Secao Tecnica - Calculo de Similaridade
+
+### Hash-Based vs Semantic Embedding
+
+O sistema atual usa embeddings hash-based (1536 dims) que:
+- NAO sao semanticos reais
+- Funcionam como fallback ate ter embeddings de verdade
+- Threshold de 0.03 (muito baixo porque hashes sao pseudo-aleatorios)
+
+### Migracao Futura
+
+Quando migrar para embeddings reais (OpenAI/Gemini):
+1. Criar coluna `embedding_model_id` em testimonies
+2. Reprocessar todos os testemunhos
+3. Ajustar threshold para 0.4-0.7
+
+### Matching Atual (MVP)
+
+Para o MVP com hash-based, o matching sera majoritariamente baseado em:
+1. Match exato de `scenario` (40%)
+2. Match exato de `security_matrix` (30%)
+3. Disponibilidade (10%)
+4. Semantic score como desempate (20%)
+
+Isso garante matches uteis mesmo sem embeddings semanticos reais.
