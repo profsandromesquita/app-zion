@@ -22,6 +22,7 @@ import PendingCredentials from "./pages/admin/PendingCredentials";
 import SoldadoApplications from "./pages/admin/SoldadoApplications";
 import TestimonyCuration from "./pages/admin/TestimonyCuration";
 import SoldadoTestimony from "./pages/SoldadoTestimony";
+import SoldadoDashboard from "./pages/SoldadoDashboard";
 
 const queryClient = new QueryClient();
 
@@ -38,6 +39,7 @@ const App = () => (
           <Route path="/diary" element={<Diary />} />
           <Route path="/profile" element={<Profile />} />
           <Route path="/install" element={<Install />} />
+          <Route path="/soldado" element={<SoldadoDashboard />} />
           <Route path="/testimony/:applicationId" element={<SoldadoTestimony />} />
           <Route path="/admin" element={<AdminDashboard />} />
           <Route path="/admin/documents" element={<Documents />} />

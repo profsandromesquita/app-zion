@@ -70,7 +70,7 @@ interface PendingApplication {
 const Profile = () => {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
-  const { roles, loading: rolesLoading, isBuscador, isIgreja } = useUserRole();
+  const { roles, loading: rolesLoading, isBuscador, isIgreja, isSoldado } = useUserRole();
   const { toast } = useToast();
 
   const [profile, setProfile] = useState<ProfileData | null>(null);
@@ -319,6 +319,34 @@ const Profile = () => {
               )}
             </CardContent>
           </Card>
+
+          {/* Soldado Dashboard Link - Only for approved Soldados */}
+          {isSoldado && (
+            <Card className="border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-950">
+              <CardContent className="pt-6">
+                <div className="flex items-start gap-4">
+                  <div className="rounded-full bg-emerald-100 dark:bg-emerald-900 p-3">
+                    <Shield className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
+                  </div>
+                  <div className="flex-1 space-y-2">
+                    <h3 className="font-semibold text-foreground">
+                      Você é um Soldado!
+                    </h3>
+                    <p className="text-sm text-muted-foreground">
+                      Acesse seu painel para gerenciar seu perfil, disponibilidade e acompanhar buscadores.
+                    </p>
+                    <Button
+                      onClick={() => navigate("/soldado")}
+                      className="mt-2 bg-gradient-to-r from-emerald-500 to-lime-500 text-white"
+                    >
+                      <Shield className="mr-2 h-4 w-4" />
+                      Acessar Dashboard do Soldado
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Pending Soldado Application Card */}
           {pendingApplication && (
