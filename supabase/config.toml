@@ -50,3 +50,6 @@ verify_jwt = false
 
 [functions.matchmaking-soldado]
 verify_jwt = false
+
+[functions.schedule-connection]
+verify_jwt = false

@@ -322,6 +322,71 @@ export type Database = {
           },
         ]
       }
+      connection_sessions: {
+        Row: {
+          buscador_feedback: Json | null
+          buscador_id: string
+          cancelled_by: string | null
+          cancelled_reason: string | null
+          chat_session_id: string | null
+          created_at: string
+          duration_minutes: number
+          ended_at: string | null
+          id: string
+          meeting_url: string | null
+          scheduled_at: string
+          soldado_id: string
+          soldado_notes: string | null
+          started_at: string | null
+          status: Database["public"]["Enums"]["connection_session_status"]
+          updated_at: string
+        }
+        Insert: {
+          buscador_feedback?: Json | null
+          buscador_id: string
+          cancelled_by?: string | null
+          cancelled_reason?: string | null
+          chat_session_id?: string | null
+          created_at?: string
+          duration_minutes?: number
+          ended_at?: string | null
+          id?: string
+          meeting_url?: string | null
+          scheduled_at: string
+          soldado_id: string
+          soldado_notes?: string | null
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["connection_session_status"]
+          updated_at?: string
+        }
+        Update: {
+          buscador_feedback?: Json | null
+          buscador_id?: string
+          cancelled_by?: string | null
+          cancelled_reason?: string | null
+          chat_session_id?: string | null
+          created_at?: string
+          duration_minutes?: number
+          ended_at?: string | null
+          id?: string
+          meeting_url?: string | null
+          scheduled_at?: string
+          soldado_id?: string
+          soldado_notes?: string | null
+          started_at?: string | null
+          status?: Database["public"]["Enums"]["connection_session_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "connection_sessions_chat_session_id_fkey"
+            columns: ["chat_session_id"]
+            isOneToOne: false
+            referencedRelation: "chat_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       crisis_events: {
         Row: {
           admin_notified: boolean | null
@@ -1287,6 +1352,53 @@ export type Database = {
           },
         ]
       }
+      soldado_session_feedback: {
+        Row: {
+          buscador_engagement: number | null
+          concerns: string | null
+          created_at: string
+          follow_up_needed: boolean | null
+          follow_up_notes: string | null
+          id: string
+          progress_observed: string | null
+          recommend_professional: boolean | null
+          session_id: string
+          soldado_id: string
+        }
+        Insert: {
+          buscador_engagement?: number | null
+          concerns?: string | null
+          created_at?: string
+          follow_up_needed?: boolean | null
+          follow_up_notes?: string | null
+          id?: string
+          progress_observed?: string | null
+          recommend_professional?: boolean | null
+          session_id: string
+          soldado_id: string
+        }
+        Update: {
+          buscador_engagement?: number | null
+          concerns?: string | null
+          created_at?: string
+          follow_up_needed?: boolean | null
+          follow_up_notes?: string | null
+          id?: string
+          progress_observed?: string | null
+          recommend_professional?: boolean | null
+          session_id?: string
+          soldado_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "soldado_session_feedback_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "connection_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       system_instructions: {
         Row: {
           content: string
@@ -1818,6 +1930,13 @@ export type Database = {
         | "profissional"
         | "auditor"
         | "desenvolvedor"
+      connection_session_status:
+        | "scheduled"
+        | "confirmed"
+        | "in_progress"
+        | "completed"
+        | "cancelled"
+        | "no_show"
       dataset_label: "useful" | "not_useful" | "theology_report"
       doc_layer: "CONSTITUICAO" | "NUCLEO" | "BIBLIOTECA"
       doc_status: "draft" | "review" | "published"
@@ -1988,6 +2107,14 @@ export const Constants = {
         "profissional",
         "auditor",
         "desenvolvedor",
+      ],
+      connection_session_status: [
+        "scheduled",
+        "confirmed",
+        "in_progress",
+        "completed",
+        "cancelled",
+        "no_show",
       ],
       dataset_label: ["useful", "not_useful", "theology_report"],
       doc_layer: ["CONSTITUICAO", "NUCLEO", "BIBLIOTECA"],
