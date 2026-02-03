@@ -1216,6 +1216,85 @@ export type Database = {
         }
         Relationships: []
       }
+      testimonies: {
+        Row: {
+          analysis: Json | null
+          application_id: string | null
+          audio_url: string
+          created_at: string
+          curated_at: string | null
+          curated_by: string | null
+          curator_notes: string | null
+          duration_seconds: number
+          embedding: string | null
+          file_size_bytes: number | null
+          id: string
+          mime_type: string | null
+          status: Database["public"]["Enums"]["testimony_status"]
+          transcript: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          analysis?: Json | null
+          application_id?: string | null
+          audio_url: string
+          created_at?: string
+          curated_at?: string | null
+          curated_by?: string | null
+          curator_notes?: string | null
+          duration_seconds?: number
+          embedding?: string | null
+          file_size_bytes?: number | null
+          id?: string
+          mime_type?: string | null
+          status?: Database["public"]["Enums"]["testimony_status"]
+          transcript?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          analysis?: Json | null
+          application_id?: string | null
+          audio_url?: string
+          created_at?: string
+          curated_at?: string | null
+          curated_by?: string | null
+          curator_notes?: string | null
+          duration_seconds?: number
+          embedding?: string | null
+          file_size_bytes?: number | null
+          id?: string
+          mime_type?: string | null
+          status?: Database["public"]["Enums"]["testimony_status"]
+          transcript?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "testimonies_application_id_fkey"
+            columns: ["application_id"]
+            isOneToOne: false
+            referencedRelation: "soldado_applications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "testimonies_curated_by_fkey"
+            columns: ["curated_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "testimonies_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       turn_insights: {
         Row: {
           admin_confirmed: boolean | null
@@ -1639,6 +1718,13 @@ export type Database = {
         | "under_review"
         | "approved"
         | "rejected"
+      testimony_status:
+        | "uploading"
+        | "processing"
+        | "analyzed"
+        | "curated"
+        | "published"
+        | "rejected"
       theme_status: "active" | "in_progress" | "resolved" | "dormant"
     }
     CompositeTypes: {
@@ -1804,6 +1890,14 @@ export const Constants = {
         "testimony_required",
         "under_review",
         "approved",
+        "rejected",
+      ],
+      testimony_status: [
+        "uploading",
+        "processing",
+        "analyzed",
+        "curated",
+        "published",
         "rejected",
       ],
       theme_status: ["active", "in_progress", "resolved", "dormant"],
