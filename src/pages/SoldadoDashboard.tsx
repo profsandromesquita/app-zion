@@ -5,6 +5,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useUserRole } from "@/hooks/useUserRole";
 import { ProfileEditor } from "@/components/soldado/ProfileEditor";
 import { AvailabilityCalendar } from "@/components/soldado/AvailabilityCalendar";
+import { UpcomingSessions } from "@/components/soldado/UpcomingSessions";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -19,7 +20,8 @@ import {
   ArrowLeft,
   CheckCircle,
   Clock,
-  TrendingUp
+  TrendingUp,
+  Video
 } from "lucide-react";
 
 interface SoldadoProfile {
@@ -244,8 +246,12 @@ export default function SoldadoDashboard() {
         </div>
 
         {/* Tabs */}
-        <Tabs defaultValue="profile" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3 lg:w-[400px]">
+        <Tabs defaultValue="sessions" className="space-y-6">
+          <TabsList className="grid w-full grid-cols-4 lg:w-[500px]">
+            <TabsTrigger value="sessions" className="flex items-center gap-2">
+              <Video className="h-4 w-4" />
+              Sessões
+            </TabsTrigger>
             <TabsTrigger value="profile" className="flex items-center gap-2">
               <Settings className="h-4 w-4" />
               Perfil
@@ -259,6 +265,10 @@ export default function SoldadoDashboard() {
               Buscadores
             </TabsTrigger>
           </TabsList>
+
+          <TabsContent value="sessions">
+            <UpcomingSessions soldadoId={user!.id} />
+          </TabsContent>
 
           <TabsContent value="profile">
             <ProfileEditor profile={profile} onUpdate={fetchProfile} />

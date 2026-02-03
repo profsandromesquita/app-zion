@@ -9,7 +9,9 @@ import { CrisisBanner } from "@/components/chat/CrisisBanner";
 import { DebugPanel } from "@/components/chat/DebugPanel";
 import { ConversationStarters } from "@/components/chat/ConversationStarters";
 import { WelcomeBackBanner } from "@/components/chat/WelcomeBackBanner";
-import { SoldadoSuggestionCard, SoldadoMatch, RejectionReason } from "@/components/chat/SoldadoSuggestionCard";
+import { SoldadoSuggestionCard, SoldadoMatch, RejectionReason, AvailabilitySlot } from "@/components/chat/SoldadoSuggestionCard";
+import { TimeSlotPicker } from "@/components/chat/TimeSlotPicker";
+import { ScheduleConfirmation, ScheduleConfirmationData } from "@/components/chat/ScheduleConfirmation";
 import { PushNotificationPrompt } from "@/components/PushNotificationPrompt";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -20,9 +22,11 @@ import { useAuth } from "@/hooks/useAuth";
 import { useAnonymousSession } from "@/hooks/useAnonymousSession";
 import { useUserRole } from "@/hooks/useUserRole";
 import { supabase } from "@/integrations/supabase/client";
+import { toast } from "@/hooks/use-toast";
 import SafetyExit from "@/components/SafetyExit";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { OnboardingFlow, OnboardingData } from "@/components/onboarding/OnboardingFlow";
+import { calculateNextOccurrence, formatDateTimePtBr } from "@/lib/icalendar";
 import zionLogo from "@/assets/zion-logo.png";
 
 interface Message {
@@ -88,6 +92,12 @@ const Chat = () => {
     fallbackType?: "generalist" | "passive" | "ai_only" | null;
   } | null>(null);
   const [matchmakingLoading, setMatchmakingLoading] = useState(false);
+  
+  // Scheduling states
+  const [showTimeSlotPicker, setShowTimeSlotPicker] = useState(false);
+  const [selectedSoldadoForScheduling, setSelectedSoldadoForScheduling] = useState<SoldadoMatch | null>(null);
+  const [scheduleConfirmation, setScheduleConfirmation] = useState<ScheduleConfirmationData | null>(null);
+  
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const refreshSidebarRef = useRef<(() => void) | null>(null);
 
@@ -597,18 +607,114 @@ const Chat = () => {
     if (!chatSessionId || !user) return;
     
     console.log("[Matchmaking] Accepted soldado:", soldadoId);
-    setMatchmakingSuggestion(null);
     
-    // TODO: Create assignment and redirect to connection flow
-    // For now, just acknowledge
-    const acceptMsg: Message = {
+    // If the soldado has available slots, show the time slot picker
+    if (matchmakingSuggestion?.soldado?.available_slots?.length > 0) {
+      setShowTimeSlotPicker(true);
+      setSelectedSoldadoForScheduling(matchmakingSuggestion.soldado);
+      setMatchmakingSuggestion(null);
+      return;
+    }
+    
+    // Fallback: No slots available, show message
+    const noSlotsMsg: Message = {
       id: `system-${Date.now()}`,
       sender: "ai",
-      content: "Ótimo! Vou preparar a conexão. Em breve você receberá mais informações sobre como conversar com esse voluntário.",
+      content: "Este voluntário não tem horários disponíveis no momento. Vamos tentar encontrar outra pessoa para você.",
       created_at: new Date().toISOString(),
     };
-    setMessages((prev) => [...prev, acceptMsg]);
-  }, [chatSessionId, user]);
+    setMessages((prev) => [...prev, noSlotsMsg]);
+    setMatchmakingSuggestion(null);
+    
+    // Trigger search for alternatives
+    handleViewOtherSoldados();
+  }, [chatSessionId, user, matchmakingSuggestion]);
+
+  // Handler for confirming the scheduled time slot
+  const handleConfirmSchedule = useCallback(async (slot: AvailabilitySlot) => {
+    if (!selectedSoldadoForScheduling || !user || !chatSessionId) return;
+    
+    setMatchmakingLoading(true);
+    
+    try {
+      // Calculate the actual scheduled_at based on the slot
+      const scheduledAt = calculateNextOccurrence(slot);
+      
+      console.log("[Schedule] Confirming:", {
+        soldado_id: selectedSoldadoForScheduling.soldado_id,
+        scheduled_at: scheduledAt.toISOString(),
+        slot,
+      });
+      
+      const response = await supabase.functions.invoke("schedule-connection", {
+        body: {
+          buscador_id: user.id,
+          soldado_id: selectedSoldadoForScheduling.soldado_id,
+          chat_session_id: chatSessionId,
+          scheduled_at: scheduledAt.toISOString(),
+        },
+      });
+
+      if (response.error) throw new Error(response.error.message);
+      
+      const data = response.data;
+      
+      if (!data.success) {
+        throw new Error(data.error || "Falha ao agendar");
+      }
+      
+      // Clear time slot picker
+      setShowTimeSlotPicker(false);
+      setSelectedSoldadoForScheduling(null);
+      
+      // Show confirmation card
+      setScheduleConfirmation({
+        id: data.session.id,
+        soldadoName: data.session.soldado_name,
+        scheduledAt: data.session.scheduled_at,
+        durationMinutes: data.session.duration_minutes,
+        meetingUrl: data.session.meeting_url,
+      });
+      
+      // Add confirmation message
+      const confirmMsg: Message = {
+        id: `system-${Date.now()}`,
+        sender: "ai",
+        content: `Perfeito! Sua conversa com ${data.session.soldado_name} foi agendada para ${formatDateTimePtBr(scheduledAt)}. Você receberá um lembrete antes do horário.`,
+        created_at: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, confirmMsg]);
+      
+      toast({
+        title: "Conexão agendada!",
+        description: `Conversa marcada para ${formatDateTimePtBr(scheduledAt)}`,
+      });
+      
+    } catch (error) {
+      console.error("[Schedule] Error:", error);
+      toast({
+        title: "Erro ao agendar",
+        description: error instanceof Error ? error.message : "Não foi possível agendar a conexão. Tente novamente.",
+        variant: "destructive",
+      });
+    } finally {
+      setMatchmakingLoading(false);
+    }
+  }, [selectedSoldadoForScheduling, user, chatSessionId, toast]);
+
+  // Handler for canceling the time slot picker
+  const handleCancelScheduling = useCallback(() => {
+    setShowTimeSlotPicker(false);
+    setSelectedSoldadoForScheduling(null);
+    
+    const cancelMsg: Message = {
+      id: `system-${Date.now()}`,
+      sender: "ai",
+      content: "Tudo bem, podemos continuar nossa conversa. Se mudar de ideia sobre falar com um voluntário, é só me avisar.",
+      created_at: new Date().toISOString(),
+    };
+    setMessages((prev) => [...prev, cancelMsg]);
+  }, []);
 
   const handleRejectSoldado = useCallback(async (soldadoId: string, reason: RejectionReason) => {
     if (!chatSessionId || !user) return;
@@ -973,7 +1079,7 @@ const Chat = () => {
               )}
 
               {/* Matchmaking suggestion card */}
-              {matchmakingSuggestion && (
+              {matchmakingSuggestion && !showTimeSlotPicker && (
                 <div className="mb-4 flex justify-start">
                   <div className="max-w-[90%]">
                     <SoldadoSuggestionCard
@@ -985,6 +1091,33 @@ const Chat = () => {
                       onViewOthers={handleViewOtherSoldados}
                       onListenTestimony={handleListenTestimony}
                       isLoading={matchmakingLoading}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Time Slot Picker - appears after accepting a soldado */}
+              {showTimeSlotPicker && selectedSoldadoForScheduling && (
+                <div className="mb-4 flex justify-start">
+                  <div className="max-w-[90%]">
+                    <TimeSlotPicker
+                      slots={selectedSoldadoForScheduling.available_slots}
+                      soldadoName={selectedSoldadoForScheduling.display_name}
+                      onConfirm={handleConfirmSchedule}
+                      onCancel={handleCancelScheduling}
+                      isLoading={matchmakingLoading}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Schedule Confirmation - appears after scheduling */}
+              {scheduleConfirmation && (
+                <div className="mb-4 flex justify-start">
+                  <div className="max-w-[90%]">
+                    <ScheduleConfirmation
+                      session={scheduleConfirmation}
+                      onDismiss={() => setScheduleConfirmation(null)}
                     />
                   </div>
                 </div>
