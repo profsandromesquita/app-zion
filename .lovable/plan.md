@@ -1,13 +1,10 @@
 
-# ETAPA 7: Matchmaking Semantico
+
+# ETAPA 8: Agendamento e Conexao - Plano de Implementacao
 
 ## Visao Geral
 
-Esta etapa cria o sistema de sugestao inteligente de Soldados compativeis com base na dor do Buscador, utilizando:
-1. Temas ativos do usuario (`user_themes`) com taxonomia ZION
-2. Embeddings semanticos dos testemunhos publicados
-3. Disponibilidade horaria dos Soldados
-4. Sistema de fallback para MVP com poucos soldados
+Esta etapa final implementa o sistema de agendamento de conexoes entre Buscadores e Soldados, completando o ciclo de matchmaking iniciado na Etapa 7.
 
 ---
 
@@ -15,46 +12,41 @@ Esta etapa cria o sistema de sugestao inteligente de Soldados compativeis com ba
 
 ```text
 ┌─────────────────────────────────────────────────────────────────┐
-│  BUSCADOR (Chat com Zyon)                                       │
-│  - Conversa normal                                              │
-│  - turn-insight-observer identifica lie_active com taxonomia    │
-│  - aggregate-user-journey cria/atualiza user_themes             │
+│  BUSCADOR aceita sugestao de Soldado                            │
+│  (handleAcceptSoldado em Chat.tsx - atualmente TODO)            │
 └─────────────────────────────────────────────────────────────────┘
                            │
-                           ▼ (Trigger: Fase >= PADROES + lie_active identificado)
+                           ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  ZYON SUGERE CONEXAO                                            │
-│  "Parece que voce esta passando por algo com [CENARIO].         │
-│   Temos alguem que viveu algo parecido. Quer conhecer?"         │
+│  1. SELECAO DE HORARIO                                          │
+│  - Exibir slots disponiveis do Soldado                          │
+│  - Buscador clica no horario desejado                           │
+│  - UI: TimeSlotPicker com pills clicaveis                       │
 └─────────────────────────────────────────────────────────────────┘
                            │
-                           ▼ (Usuario aceita)
+                           ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  EDGE FUNCTION: matchmaking-soldado                             │
-├─────────────────────────────────────────────────────────────────┤
-│  INPUT:                                                         │
-│  - user_id (buscador)                                           │
-│  - session_id (para rastrear tentativas)                        │
-│  - excluded_soldados (opcional, do matchmaking_state)           │
-│                                                                 │
-│  PIPELINE:                                                      │
-│  1. Buscar user_themes ativos do buscador                       │
-│  2. Gerar embedding combinado dos temas                         │
-│  3. Buscar testimonies publicados com embedding                 │
-│  4. Calcular similaridade semantica (cosine)                    │
-│  5. Filtrar por soldado disponivel (is_available = true)        │
-│  6. Filtrar por horarios (soldado_availability)                 │
-│  7. Ordenar por:                                                │
-│     a) Match de cenario (weight: 0.4)                           │
-│     b) Match de security_matrix (weight: 0.3)                   │
-│     c) Similaridade semantica (weight: 0.2)                     │
-│     d) Proximidade de horario (weight: 0.1)                     │
-│  8. Aplicar fallbacks se necessario                             │
-│                                                                 │
-│  OUTPUT:                                                        │
-│  - matches: Array de soldados ranqueados                        │
-│  - fallback_type: null | 'generalist' | 'passive' | 'ai_only'   │
-│  - suggestion: Texto formatado para exibir                      │
+│  2. CRIACAO DA CONNECTION_SESSION                               │
+│  - Edge Function: schedule-connection                           │
+│  - Cria registro com status 'scheduled'                         │
+│  - Gera meeting_url (placeholder ou Jitsi)                      │
+│  - Retorna dados da sessao                                      │
+└─────────────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  3. NOTIFICACOES                                                │
+│  - Push notification para Soldado                               │
+│  - (Futuro: email/SMS)                                          │
+└─────────────────────────────────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  4. CONFIRMACAO NO CHAT                                         │
+│  - ScheduleConfirmation.tsx                                     │
+│  - Resumo do agendamento                                        │
+│  - Botao "Adicionar ao Calendario" (.ics)                       │
+│  - Instrucoes pre-sessao                                        │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -62,448 +54,566 @@ Esta etapa cria o sistema de sugestao inteligente de Soldados compativeis com ba
 
 ## PARTE 1: Alteracoes no Banco de Dados
 
-### 1.1 Nova coluna em chat_sessions para estado do matchmaking
+### 1.1 Nova tabela connection_sessions
 
 ```sql
--- Adicionar coluna para rastrear estado do matchmaking
-ALTER TABLE public.chat_sessions 
-ADD COLUMN matchmaking_state jsonb DEFAULT '{}'::jsonb;
+-- Enum para status de sessao de conexao
+CREATE TYPE connection_session_status AS ENUM (
+  'scheduled',
+  'confirmed',
+  'in_progress',
+  'completed',
+  'cancelled',
+  'no_show'
+);
 
--- Estrutura do matchmaking_state:
--- {
---   "attempts": 0,
---   "excluded_soldados": [],
---   "last_suggestion": null,
---   "last_suggestion_at": null,
---   "fallback_active": false,
---   "mode": "searching" | "matched" | "rejected_all" | "ai_only"
--- }
+-- Tabela principal de sessoes de conexao
+CREATE TABLE public.connection_sessions (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  soldado_id uuid NOT NULL REFERENCES auth.users(id),
+  buscador_id uuid NOT NULL REFERENCES auth.users(id),
+  chat_session_id uuid REFERENCES public.chat_sessions(id),
+  scheduled_at timestamptz NOT NULL,
+  duration_minutes integer DEFAULT 30,
+  status connection_session_status DEFAULT 'scheduled',
+  meeting_url text,
+  soldado_notes text,
+  buscador_feedback jsonb DEFAULT '{}',
+  cancelled_by uuid,
+  cancelled_reason text,
+  started_at timestamptz,
+  ended_at timestamptz,
+  created_at timestamptz DEFAULT now(),
+  updated_at timestamptz DEFAULT now()
+);
 
--- Comentario para documentacao
-COMMENT ON COLUMN public.chat_sessions.matchmaking_state IS 
-  'Estado do matchmaking: tentativas, soldados excluidos, ultima sugestao';
+-- Indices
+CREATE INDEX idx_connection_sessions_soldado 
+ON public.connection_sessions(soldado_id, status);
+
+CREATE INDEX idx_connection_sessions_buscador 
+ON public.connection_sessions(buscador_id, status);
+
+CREATE INDEX idx_connection_sessions_scheduled 
+ON public.connection_sessions(scheduled_at) 
+WHERE status IN ('scheduled', 'confirmed');
+
+-- RLS
+ALTER TABLE public.connection_sessions ENABLE ROW LEVEL SECURITY;
+
+-- Soldados podem ver suas proprias sessoes
+CREATE POLICY "Soldados can view own sessions"
+ON public.connection_sessions FOR SELECT
+USING (soldado_id = auth.uid() AND has_role(auth.uid(), 'soldado'));
+
+-- Buscadores podem ver suas proprias sessoes
+CREATE POLICY "Buscadores can view own sessions"
+ON public.connection_sessions FOR SELECT
+USING (buscador_id = auth.uid());
+
+-- Service role pode inserir
+CREATE POLICY "Service role can insert sessions"
+ON public.connection_sessions FOR INSERT
+WITH CHECK (true);
+
+-- Soldados podem atualizar suas sessoes (notas, status)
+CREATE POLICY "Soldados can update own sessions"
+ON public.connection_sessions FOR UPDATE
+USING (soldado_id = auth.uid() AND has_role(auth.uid(), 'soldado'));
+
+-- Ambos podem cancelar
+CREATE POLICY "Participants can cancel"
+ON public.connection_sessions FOR UPDATE
+USING (soldado_id = auth.uid() OR buscador_id = auth.uid());
+
+-- Admins podem gerenciar tudo
+CREATE POLICY "Admins can manage all sessions"
+ON public.connection_sessions FOR ALL
+USING (has_role(auth.uid(), 'admin') OR has_role(auth.uid(), 'desenvolvedor'));
+
+-- Trigger para updated_at
+CREATE TRIGGER update_connection_sessions_updated_at
+BEFORE UPDATE ON public.connection_sessions
+FOR EACH ROW
+EXECUTE FUNCTION public.update_updated_at_column();
 ```
 
-### 1.2 Nova coluna em soldado_profiles para generalista
+### 1.2 Tabela soldado_session_feedback (Mocado para fase futura)
 
 ```sql
--- Adicionar flag de soldado generalista (fallback)
-ALTER TABLE public.soldado_profiles 
-ADD COLUMN is_generalist boolean DEFAULT false;
+-- Feedback pos-sessao do Soldado sobre o Buscador
+CREATE TABLE public.soldado_session_feedback (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  session_id uuid NOT NULL REFERENCES public.connection_sessions(id) ON DELETE CASCADE,
+  soldado_id uuid NOT NULL REFERENCES auth.users(id),
+  buscador_engagement integer CHECK (buscador_engagement BETWEEN 1 AND 5),
+  progress_observed text,
+  concerns text,
+  recommend_professional boolean DEFAULT false,
+  follow_up_needed boolean DEFAULT false,
+  follow_up_notes text,
+  created_at timestamptz DEFAULT now()
+);
 
--- Comentario
-COMMENT ON COLUMN public.soldado_profiles.is_generalist IS 
-  'Soldado generalista pode atender qualquer cenario como fallback';
+-- RLS
+ALTER TABLE public.soldado_session_feedback ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Soldados can manage own feedback"
+ON public.soldado_session_feedback FOR ALL
+USING (soldado_id = auth.uid() AND has_role(auth.uid(), 'soldado'))
+WITH CHECK (soldado_id = auth.uid() AND has_role(auth.uid(), 'soldado'));
+
+CREATE POLICY "Admins can view all feedback"
+ON public.soldado_session_feedback FOR SELECT
+USING (has_role(auth.uid(), 'admin') OR has_role(auth.uid(), 'profissional'));
 ```
 
 ---
 
-## PARTE 2: Edge Function matchmaking-soldado
+## PARTE 2: Edge Function schedule-connection
 
-### Arquivo: supabase/functions/matchmaking-soldado/index.ts
-
-### Entrada (Request Body)
+### Entrada
 
 ```typescript
-interface MatchmakingRequest {
-  user_id: string;                    // ID do buscador
-  session_id: string;                 // ID da sessao do chat
-  excluded_soldados?: string[];       // Soldados ja rejeitados
-  preferred_days?: number[];          // Dias preferidos (0-6)
-  preferred_time_range?: {            // Horario preferido
-    start: string;                    // "09:00"
-    end: string;                      // "18:00"
-  };
-}
-```
-
-### Saida (Response Body)
-
-```typescript
-interface MatchmakingResponse {
-  success: boolean;
-  matches: SoldadoMatch[];            // Top 3 sugestoes
-  total_candidates: number;           // Total de soldados elegiveis
-  fallback_type: FallbackType | null; // Tipo de fallback aplicado
-  suggestion_text: string;            // Texto formatado para chat
-  debug?: {                           // Apenas para admins
-    theme_used: ThemeSummary;
-    semantic_scores: Record<string, number>;
-    availability_filter_removed: number;
-  };
-}
-
-interface SoldadoMatch {
+interface ScheduleConnectionRequest {
+  buscador_id: string;
   soldado_id: string;
-  display_name: string;
-  bio: string | null;
-  specialties: string[];
-  scenario_match: boolean;            // Testemunho tem mesmo cenario
-  matrix_match: boolean;              // Testemunho tem mesma matriz
-  semantic_score: number;             // 0-1 similaridade
-  total_score: number;                // Score final ponderado
-  testimony_excerpt: string;          // Primeiros 200 chars do testemunho
-  available_slots: AvailabilitySlot[]; // Proximos horarios disponiveis
+  chat_session_id: string;
+  scheduled_at: string;      // ISO timestamp
+  duration_minutes?: number; // default 30
 }
-
-interface AvailabilitySlot {
-  day_of_week: number;
-  day_name: string;                   // "Segunda", "Terca"...
-  start_time: string;
-  end_time: string;
-  is_today: boolean;
-  is_tomorrow: boolean;
-}
-
-type FallbackType = 
-  | 'generalist'      // Soldado generalista (sem match de cenario)
-  | 'passive'         // Apenas ouvir testemunho (sem conexao ao vivo)
-  | 'ai_only';        // Voltar ao Zyon (apos 3 rejeicoes)
 ```
 
-### Logica de Matching
+### Saida
 
 ```typescript
-// 1. Buscar temas ativos do buscador
-const themes = await supabase
-  .from("user_themes")
-  .select("*")
-  .eq("user_id", user_id)
-  .in("status", ["active", "in_progress"])
-  .order("last_activity_at", { ascending: false })
-  .limit(3);
-
-// 2. Extrair taxonomia dominante
-const dominantTheme = {
-  scenario: themes[0]?.scenario,
-  center: themes[0]?.center,
-  security_matrix: themes[0]?.security_matrix,
-  lie_text: themes[0]?.primary_lie?.text
-};
-
-// 3. Gerar embedding do contexto do buscador
-const contextText = `
-  Cenario: ${dominantTheme.scenario}
-  Centro: ${dominantTheme.center}
-  Matriz: ${dominantTheme.security_matrix}
-  Mentira: ${dominantTheme.lie_text}
-`;
-const queryEmbedding = await generateSimpleEmbedding(contextText);
-
-// 4. Buscar testemunhos publicados com cosine similarity
-const { data: testimoniesWithScore } = await supabase.rpc(
-  "search_testimonies_by_embedding",
-  {
-    query_embedding: queryEmbedding,
-    match_threshold: 0.03,  // Threshold para hash-based
-    match_count: 20,
-    exclude_soldados: excluded_soldados || []
-  }
-);
-
-// 5. Buscar perfis e disponibilidade
-const soldadoIds = testimoniesWithScore.map(t => t.user_id);
-const { data: profiles } = await supabase
-  .from("soldado_profiles")
-  .select(`
-    id, display_name, bio, specialties, is_available, is_generalist,
-    soldado_availability (day_of_week, start_time, end_time)
-  `)
-  .in("id", soldadoIds)
-  .eq("is_available", true);
-
-// 6. Calcular scores compostos
-const scoredMatches = profiles.map(profile => {
-  const testimony = testimoniesWithScore.find(t => t.user_id === profile.id);
-  const analysis = testimony?.analysis || {};
-  
-  return {
-    ...profile,
-    scenario_match: analysis.scenario === dominantTheme.scenario,
-    matrix_match: analysis.security_matrix === dominantTheme.security_matrix,
-    semantic_score: testimony?.similarity || 0,
-    total_score: 
-      (analysis.scenario === dominantTheme.scenario ? 0.4 : 0) +
-      (analysis.security_matrix === dominantTheme.security_matrix ? 0.3 : 0) +
-      (testimony?.similarity || 0) * 0.2 +
-      (hasAvailabilityToday(profile) ? 0.1 : 0)
+interface ScheduleConnectionResponse {
+  success: boolean;
+  session: {
+    id: string;
+    scheduled_at: string;
+    duration_minutes: number;
+    meeting_url: string;
+    soldado_name: string;
   };
+  calendar_event: {
+    title: string;
+    description: string;
+    start: string;
+    end: string;
+    location: string;
+  };
+  error?: string;
+}
+```
+
+### Logica Principal
+
+1. Validar que soldado esta disponivel no horario
+2. Validar que nao ha conflitos de agendamento
+3. Criar registro em connection_sessions
+4. Gerar meeting_url (Jitsi ou placeholder)
+5. Atualizar matchmaking_state para 'matched'
+6. Enviar push notification para Soldado
+7. Retornar dados para UI
+
+---
+
+## PARTE 3: Componentes UI
+
+### 3.1 TimeSlotPicker.tsx
+
+Seletor de horario com pills clicaveis:
+
+```typescript
+interface TimeSlotPickerProps {
+  slots: AvailabilitySlot[];
+  selectedSlot: AvailabilitySlot | null;
+  onSelect: (slot: AvailabilitySlot) => void;
+  disabled?: boolean;
+}
+```
+
+Exibicao:
+- Agrupar por dia (Hoje, Amanha, Proximos dias)
+- Pills com horario de inicio/fim
+- Destaque visual para slot selecionado
+- Indicador "Hoje" / "Amanha"
+
+### 3.2 ScheduleConfirmation.tsx
+
+Card de confirmacao pos-agendamento:
+
+```typescript
+interface ScheduleConfirmationProps {
+  session: {
+    id: string;
+    soldadoName: string;
+    scheduledAt: string;
+    durationMinutes: number;
+    meetingUrl: string;
+  };
+  onAddToCalendar: () => void;
+  onDismiss: () => void;
+}
+```
+
+Conteudo:
+- Checkmark de sucesso
+- Nome do Soldado
+- Data/hora formatada
+- Duracao estimada
+- Botao "Adicionar ao Calendario" (gera .ics)
+- Instrucoes pre-sessao
+
+### 3.3 Funcao generateICalEvent
+
+Gerar arquivo .ics para download:
+
+```typescript
+function generateICalEvent(event: {
+  title: string;
+  description: string;
+  start: Date;
+  end: Date;
+  location?: string;
+}): string
+```
+
+---
+
+## PARTE 4: Integracao com Chat.tsx
+
+### Fluxo Atualizado do handleAcceptSoldado
+
+```typescript
+const handleAcceptSoldado = useCallback(async (soldadoId: string) => {
+  if (!chatSessionId || !user) return;
+  
+  // 1. Se ja tem slots, mostrar picker
+  if (matchmakingSuggestion?.soldado?.available_slots?.length > 0) {
+    setShowTimeSlotPicker(true);
+    setSelectedSoldadoForScheduling(matchmakingSuggestion.soldado);
+    return;
+  }
+  
+  // 2. Se nao tem slots, criar assignment direto (fallback)
+  // ... logica de fallback
+}, [chatSessionId, user, matchmakingSuggestion]);
+
+// Novo handler para confirmar agendamento
+const handleConfirmSchedule = useCallback(async (slot: AvailabilitySlot) => {
+  if (!selectedSoldadoForScheduling || !user || !chatSessionId) return;
+  
+  setMatchmakingLoading(true);
+  
+  try {
+    // Calcular scheduled_at baseado no slot
+    const scheduledAt = calculateNextOccurrence(slot);
+    
+    const response = await supabase.functions.invoke("schedule-connection", {
+      body: {
+        buscador_id: user.id,
+        soldado_id: selectedSoldadoForScheduling.soldado_id,
+        chat_session_id: chatSessionId,
+        scheduled_at: scheduledAt.toISOString(),
+      },
+    });
+    
+    if (response.error) throw new Error(response.error.message);
+    
+    // Limpar estado de matchmaking
+    setMatchmakingSuggestion(null);
+    setShowTimeSlotPicker(false);
+    
+    // Mostrar confirmacao
+    setScheduleConfirmation(response.data.session);
+    
+    // Adicionar mensagem de confirmacao no chat
+    const confirmMsg: Message = {
+      id: `system-${Date.now()}`,
+      sender: "ai",
+      content: `Perfeito! Sua conversa com ${response.data.session.soldado_name} foi agendada para ${formatDateTime(scheduledAt)}. Voce recebera um lembrete antes do horario.`,
+      created_at: new Date().toISOString(),
+    };
+    setMessages(prev => [...prev, confirmMsg]);
+    
+  } catch (error) {
+    console.error("Error scheduling connection:", error);
+    toast({
+      title: "Erro ao agendar",
+      description: "Nao foi possivel agendar a conexao. Tente novamente.",
+      variant: "destructive",
+    });
+  } finally {
+    setMatchmakingLoading(false);
+  }
+}, [selectedSoldadoForScheduling, user, chatSessionId, toast]);
+```
+
+---
+
+## PARTE 5: Atualizacao do SoldadoDashboard
+
+### Novo Tab: Proximos Agendamentos
+
+Adicionar na lista de tabs do dashboard:
+
+```typescript
+<TabsTrigger value="sessions" className="flex items-center gap-2">
+  <Calendar className="h-4 w-4" />
+  Sessoes
+</TabsTrigger>
+```
+
+### Componente UpcomingSessions.tsx
+
+Listar sessoes agendadas/confirmadas:
+
+```typescript
+interface UpcomingSessionsProps {
+  soldadoId: string;
+}
+```
+
+Exibicao:
+- Lista de cards com proximas sessoes
+- Nome do buscador
+- Data/hora
+- Status (scheduled/confirmed)
+- Botoes: Confirmar, Cancelar, Iniciar (quando hora chegar)
+
+---
+
+## PARTE 6: Notificacoes Push
+
+### Notificar Soldado ao Agendar
+
+Reutilizar padrao existente de `sendPushToUser`:
+
+```typescript
+// Em schedule-connection edge function
+await sendPushToUser(supabaseUrl, supabaseKey, soldadoId, {
+  title: "Nova conexao agendada 📅",
+  body: `${buscadorName} quer conversar com voce no ${formattedDate}`,
+  data: { 
+    url: "/soldado",
+    session_id: session.id 
+  },
 });
-
-// 7. Ordenar e pegar top 3
-const topMatches = scoredMatches
-  .sort((a, b) => b.total_score - a.total_score)
-  .slice(0, 3);
 ```
 
-### Logica de Fallback
+---
+
+## PARTE 7: Geracao de Calendario iCal
+
+### Funcao generateICalEvent
 
 ```typescript
-// Cenario A: Nenhum match semantico encontrado
-if (topMatches.length === 0) {
-  // Tentar soldado generalista
-  const { data: generalists } = await supabase
-    .from("soldado_profiles")
-    .select("*")
-    .eq("is_generalist", true)
-    .eq("is_available", true)
-    .limit(1);
-  
-  if (generalists.length > 0) {
-    return { 
-      matches: generalists, 
-      fallback_type: "generalist",
-      suggestion_text: "Temos um voluntario disponivel para conversar..."
-    };
-  }
-}
-
-// Cenario B: 3+ rejeicoes consecutivas
-const sessionState = await getSessionMatchmakingState(session_id);
-if (sessionState.attempts >= 3) {
-  return {
-    matches: [],
-    fallback_type: "ai_only",
-    suggestion_text: "Entendo que nenhuma sugestao foi ideal. Podemos continuar nossa conversa aqui, e quando sentir que esta pronto, volto a sugerir."
+export function generateICalEvent(event: {
+  title: string;
+  description: string;
+  start: Date;
+  end: Date;
+  location?: string;
+  organizer?: string;
+}): string {
+  const formatDate = (date: Date) => {
+    return date.toISOString().replace(/[-:]/g, '').split('.')[0] + 'Z';
   };
-}
 
-// Cenario C: Usuario nao quer conexao ao vivo
-// -> Sugerir ouvir testemunho passivamente
-if (preferred_mode === "passive") {
-  const testimony = await getPassiveTestimony(dominantTheme);
-  return {
-    matches: [],
-    fallback_type: "passive",
-    suggestion_text: `Encontrei um testemunho de alguem que passou por ${dominantTheme.scenario}. Quer ouvir?`,
-    passive_testimony_id: testimony?.id
-  };
-}
-```
-
----
-
-## PARTE 3: Funcao RPC para busca semantica
-
-```sql
--- Funcao para buscar testemunhos por similaridade semantica
-CREATE OR REPLACE FUNCTION public.search_testimonies_by_embedding(
-  query_embedding vector(1536),
-  match_threshold double precision DEFAULT 0.03,
-  match_count integer DEFAULT 10,
-  exclude_soldados uuid[] DEFAULT '{}'::uuid[]
-)
-RETURNS TABLE (
-  id uuid,
-  user_id uuid,
-  transcript text,
-  analysis jsonb,
-  similarity double precision
-)
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = 'public'
-AS $$
-BEGIN
-  RETURN QUERY
-  SELECT 
-    t.id,
-    t.user_id,
-    t.transcript,
-    t.analysis,
-    1 - (t.embedding <=> query_embedding) AS similarity
-  FROM public.testimonies t
-  INNER JOIN public.soldado_profiles sp ON t.user_id = sp.id
-  WHERE 
-    t.status = 'published'
-    AND t.embedding IS NOT NULL
-    AND sp.is_available = true
-    AND NOT (t.user_id = ANY(exclude_soldados))
-    AND 1 - (t.embedding <=> query_embedding) > match_threshold
-  ORDER BY similarity DESC
-  LIMIT match_count;
-END;
-$$;
-```
-
----
-
-## PARTE 4: Integracao com Chat (zyon-chat)
-
-### Trigger de Sugestao
-
-O zyon-chat deve detectar quando sugerir conexao. Criterios:
-1. Usuario autenticado (nao anonimo)
-2. Fase >= PADROES (turn-insight-observer)
-3. lie_active identificado com confidence >= 0.6
-4. Nao ha matchmaking_state.mode = 'ai_only'
-5. Ultima sugestao foi ha mais de 10 turnos OU tema mudou
-
-### Fluxo no Chat
-
-```typescript
-// Em zyon-chat, apos processar resposta normal:
-
-// 1. Verificar se deve sugerir conexao
-const shouldSuggest = await checkShouldSuggestConnection(
-  userId, 
-  sessionId, 
-  sessionContext // do observer
-);
-
-if (shouldSuggest) {
-  // 2. Chamar matchmaking
-  const matchResult = await supabase.functions.invoke("matchmaking-soldado", {
-    body: { user_id: userId, session_id: sessionId }
-  });
+  const uid = `${Date.now()}@zion.app`;
   
-  // 3. Anexar sugestao a resposta
-  if (matchResult.data?.matches?.length > 0) {
-    response.next_actions = {
-      matchmaking_suggestion: {
-        soldado: matchResult.data.matches[0],
-        suggestion_text: matchResult.data.suggestion_text
-      }
-    };
-  }
+  return `BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//ZION//Connection Session//PT
+BEGIN:VEVENT
+UID:${uid}
+DTSTAMP:${formatDate(new Date())}
+DTSTART:${formatDate(event.start)}
+DTEND:${formatDate(event.end)}
+SUMMARY:${event.title}
+DESCRIPTION:${event.description.replace(/\n/g, '\\n')}
+${event.location ? `LOCATION:${event.location}` : ''}
+BEGIN:VALARM
+TRIGGER:-PT15M
+ACTION:DISPLAY
+DESCRIPTION:Lembrete: Sua conversa no ZION comeca em 15 minutos
+END:VALARM
+END:VEVENT
+END:VCALENDAR`;
+}
+
+export function downloadICalFile(content: string, filename: string) {
+  const blob = new Blob([content], { type: 'text/calendar;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
 }
 ```
 
-### UI de Sugestao no Chat
-
-Apos a resposta do Zyon, exibir card com:
-- Nome e foto do Soldado
-- Especialidades/tags
-- Trecho do testemunho
-- Horarios disponiveis
-- Botoes: [Quero conhecer] [Agora nao] [Ver outros]
-
 ---
 
-## PARTE 5: Componente de Sugestao no Chat
+## PARTE 8: Revisao de Integracao das Etapas Anteriores
 
-### Novo componente: SoldadoSuggestionCard.tsx
+### Checklist de Verificacao
 
-```typescript
-interface SoldadoSuggestionCardProps {
-  soldado: SoldadoMatch;
-  onAccept: (soldadoId: string) => void;
-  onReject: (soldadoId: string, reason: RejectionReason) => void;
-  onViewOthers: () => void;
-}
+| Etapa | Componente | Status | Acao Necessaria |
+|-------|------------|--------|-----------------|
+| 5 | Formulario de Candidatura | Implementado | - |
+| 5 | Aprovacao Multi-Role | Implementado | - |
+| 5 | Trigger de criacao de perfil | Implementado | - |
+| 6 | ProfileEditor | Implementado | - |
+| 6 | AvailabilityCalendar | Implementado | - |
+| 6 | SoldadoDashboard | Implementado | Adicionar tab Sessoes |
+| 7 | matchmaking-soldado | Implementado | - |
+| 7 | SoldadoSuggestionCard | Implementado | Adicionar TimeSlotPicker |
+| 7 | handleAcceptSoldado | TODO | Implementar fluxo completo |
+| 7 | handleRejectSoldado | Implementado | - |
+| 8 | connection_sessions | Novo | Criar tabela |
+| 8 | schedule-connection | Novo | Criar edge function |
+| 8 | ScheduleConfirmation | Novo | Criar componente |
+| 8 | Push para Soldado | Novo | Implementar notificacao |
 
-type RejectionReason = 
-  | 'schedule_mismatch'  // Horarios nao batem
-  | 'not_good_match'     // Nao parece bom match
-  | 'not_ready'          // Nao estou pronto
-  | 'prefer_ai';         // Prefiro continuar com IA
-```
+### Correcoes Identificadas
 
----
+1. **handleAcceptSoldado em Chat.tsx** - Atualmente apenas exibe mensagem TODO, precisa implementar fluxo real
 
-## PARTE 6: Arquivos a Criar/Modificar
+2. **handleListenTestimony** - Marcado como TODO, implementar player de audio
 
-| Arquivo | Acao | Descricao |
-|---------|------|-----------|
-| `supabase/functions/matchmaking-soldado/index.ts` | CRIAR | Edge function principal |
-| `supabase/config.toml` | MODIFICAR | Adicionar funcao |
-| Migracao SQL | CRIAR | Adicionar colunas + funcao RPC |
-| `src/components/chat/SoldadoSuggestionCard.tsx` | CRIAR | Card de sugestao |
-| `src/pages/Chat.tsx` | MODIFICAR | Renderizar sugestao |
-| `supabase/functions/zyon-chat/index.ts` | MODIFICAR | Integrar matchmaking trigger |
-
----
-
-## PARTE 7: Consideracoes de Performance
-
-### Indices Necessarios
-
-```sql
--- Indice para busca por embedding (HNSW)
-CREATE INDEX IF NOT EXISTS testimonies_embedding_idx 
-ON public.testimonies 
-USING hnsw (embedding vector_cosine_ops)
-WHERE status = 'published' AND embedding IS NOT NULL;
-
--- Indice para busca de soldados disponiveis
-CREATE INDEX IF NOT EXISTS soldado_profiles_available_idx 
-ON public.soldado_profiles (is_available)
-WHERE is_available = true;
-
--- Indice para busca de temas ativos
-CREATE INDEX IF NOT EXISTS user_themes_active_idx 
-ON public.user_themes (user_id, status)
-WHERE status IN ('active', 'in_progress');
-```
-
-### Cache de Embeddings
-
-Para evitar recalcular embeddings a cada request:
-1. Armazenar embedding do contexto do buscador em `chat_sessions.matchmaking_state`
-2. Invalidar quando `user_themes` for atualizado
-
----
-
-## PARTE 8: Fluxo de Rejeicao
-
-### Opcao A: Horarios nao batem
-1. Usuario clica "Horarios nao batem"
-2. Sistema pede dias/horarios preferidos
-3. Refaz busca com filtro de disponibilidade ajustado
-4. Atualiza `matchmaking_state.excluded_soldados` com soldado anterior
-
-### Opcao B: Nao parece bom match
-1. Usuario clica "Nao parece bom match"
-2. Sistema adiciona soldado a `excluded_soldados`
-3. Busca proximo candidato
-4. Incrementa `matchmaking_state.attempts`
-
-### Opcao C: Nao estou pronto
-1. Usuario clica "Nao estou pronto"
-2. Sistema oferece conteudo passivo (ouvir testemunho)
-3. Atualiza `matchmaking_state.mode = 'passive'`
-
-### Opcao D: Prefiro continuar com IA
-1. Usuario clica "Prefiro continuar com IA"
-2. Atualiza `matchmaking_state.mode = 'ai_only'`
-3. Sistema para de sugerir por 10 turnos ou ate reset
+3. **SoldadoSuggestionCard** - Adicionar seletor de horarios inline
 
 ---
 
 ## PARTE 9: Ordem de Implementacao
 
-1. **Migracao SQL** - Colunas + funcao RPC + indices
-2. **matchmaking-soldado Edge Function** - Logica principal
-3. **config.toml** - Registrar funcao
-4. **SoldadoSuggestionCard.tsx** - Componente UI
-5. **Chat.tsx** - Renderizar sugestao
-6. **zyon-chat** - Integrar trigger de sugestao
-7. **Testes end-to-end** - Validar fluxo completo
+1. **Migracao SQL** - connection_sessions + soldado_session_feedback + RLS
+2. **Edge Function schedule-connection** - Logica de agendamento
+3. **config.toml** - Registrar nova funcao
+4. **TimeSlotPicker.tsx** - Seletor de horarios
+5. **ScheduleConfirmation.tsx** - Card de confirmacao
+6. **lib/icalendar.ts** - Geracao de arquivos .ics
+7. **Chat.tsx** - Integrar novo fluxo de agendamento
+8. **SoldadoDashboard.tsx** - Adicionar tab de sessoes
+9. **UpcomingSessions.tsx** - Lista de sessoes agendadas
+10. **Push notifications** - Notificar soldado
+11. **Testes end-to-end** - Validar fluxo completo
 
 ---
 
-## PARTE 10: Secao Tecnica - Calculo de Similaridade
+## PARTE 10: Secao Tecnica - Meeting URL
 
-### Hash-Based vs Semantic Embedding
+### Opcao 1: Jitsi (Recomendado para MVP)
 
-O sistema atual usa embeddings hash-based (1536 dims) que:
-- NAO sao semanticos reais
-- Funcionam como fallback ate ter embeddings de verdade
-- Threshold de 0.03 (muito baixo porque hashes sao pseudo-aleatorios)
+```typescript
+function generateJitsiUrl(sessionId: string): string {
+  const roomName = `zion-${sessionId.substring(0, 8)}`;
+  return `https://meet.jit.si/${roomName}`;
+}
+```
 
-### Migracao Futura
+Vantagens:
+- Gratuito e sem conta necessaria
+- Funciona em todos browsers
+- URL simples e direta
 
-Quando migrar para embeddings reais (OpenAI/Gemini):
-1. Criar coluna `embedding_model_id` em testimonies
-2. Reprocessar todos os testemunhos
-3. Ajustar threshold para 0.4-0.7
+### Opcao 2: Placeholder para Futuro
 
-### Matching Atual (MVP)
+```typescript
+function generateMeetingUrl(sessionId: string): string {
+  // Placeholder que pode ser substituido por integracao real
+  return `/connection/${sessionId}`;
+}
+```
 
-Para o MVP com hash-based, o matching sera majoritariamente baseado em:
-1. Match exato de `scenario` (40%)
-2. Match exato de `security_matrix` (30%)
-3. Disponibilidade (10%)
-4. Semantic score como desempate (20%)
+Para o MVP, usaremos Jitsi por ser gratuito e nao requerer integracao complexa.
 
-Isso garante matches uteis mesmo sem embeddings semanticos reais.
+---
+
+## PARTE 11: Estados do Chat
+
+### Novos Estados em Chat.tsx
+
+```typescript
+// Estados para agendamento
+const [showTimeSlotPicker, setShowTimeSlotPicker] = useState(false);
+const [selectedSoldadoForScheduling, setSelectedSoldadoForScheduling] = useState<SoldadoMatch | null>(null);
+const [selectedTimeSlot, setSelectedTimeSlot] = useState<AvailabilitySlot | null>(null);
+const [scheduleConfirmation, setScheduleConfirmation] = useState<{
+  id: string;
+  soldadoName: string;
+  scheduledAt: string;
+  durationMinutes: number;
+  meetingUrl: string;
+} | null>(null);
+```
+
+### Renderizacao Condicional
+
+```typescript
+{/* Time Slot Picker - aparece apos aceitar soldado */}
+{showTimeSlotPicker && selectedSoldadoForScheduling && (
+  <div className="mb-4 flex justify-start">
+    <div className="max-w-[90%]">
+      <TimeSlotPicker
+        slots={selectedSoldadoForScheduling.available_slots}
+        selectedSlot={selectedTimeSlot}
+        onSelect={setSelectedTimeSlot}
+        onConfirm={handleConfirmSchedule}
+        onCancel={() => {
+          setShowTimeSlotPicker(false);
+          setSelectedSoldadoForScheduling(null);
+        }}
+        isLoading={matchmakingLoading}
+      />
+    </div>
+  </div>
+)}
+
+{/* Schedule Confirmation - aparece apos agendar */}
+{scheduleConfirmation && (
+  <div className="mb-4 flex justify-start">
+    <div className="max-w-[90%]">
+      <ScheduleConfirmation
+        session={scheduleConfirmation}
+        onAddToCalendar={() => {
+          const ical = generateICalEvent({
+            title: `Conversa ZION com ${scheduleConfirmation.soldadoName}`,
+            description: `Sessao de acompanhamento espiritual`,
+            start: new Date(scheduleConfirmation.scheduledAt),
+            end: new Date(
+              new Date(scheduleConfirmation.scheduledAt).getTime() + 
+              scheduleConfirmation.durationMinutes * 60000
+            ),
+            location: scheduleConfirmation.meetingUrl,
+          });
+          downloadICalFile(ical, 'zion-conexao.ics');
+        }}
+        onDismiss={() => setScheduleConfirmation(null)}
+      />
+    </div>
+  </div>
+)}
+```
+
+---
+
+## Arquivos a Criar/Modificar
+
+| Arquivo | Acao | Descricao |
+|---------|------|-----------|
+| Migracao SQL | CRIAR | connection_sessions + feedback + RLS |
+| `supabase/functions/schedule-connection/index.ts` | CRIAR | Edge function de agendamento |
+| `supabase/config.toml` | MODIFICAR | Adicionar nova funcao |
+| `src/components/chat/TimeSlotPicker.tsx` | CRIAR | Seletor de horarios |
+| `src/components/chat/ScheduleConfirmation.tsx` | CRIAR | Card de confirmacao |
+| `src/lib/icalendar.ts` | CRIAR | Geracao de .ics |
+| `src/pages/Chat.tsx` | MODIFICAR | Integrar fluxo completo |
+| `src/pages/SoldadoDashboard.tsx` | MODIFICAR | Adicionar tab sessoes |
+| `src/components/soldado/UpcomingSessions.tsx` | CRIAR | Lista de sessoes |
+
