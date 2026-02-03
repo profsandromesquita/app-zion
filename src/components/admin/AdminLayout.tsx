@@ -9,7 +9,8 @@ import {
   Database,
   Search,
   MessageSquare,
-  Map
+  Map,
+  Shield
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import zionLogo from "@/assets/zion-logo.png";
@@ -23,6 +24,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
 
   const navItems = [
     { to: "/admin", icon: LayoutDashboard, label: "Dashboard", end: true },
+    { to: "/admin/soldado-applications", icon: Shield, label: "Candidatos Soldado" },
     { to: "/admin/documents", icon: Database, label: "Documentos RAG" },
     { to: "/admin/rag-test", icon: Search, label: "Teste RAG" },
     { to: "/admin/feedback-dataset", icon: MessageSquare, label: "Dataset Feedback" },

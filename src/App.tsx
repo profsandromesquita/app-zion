@@ -19,6 +19,7 @@ import RagTest from "./pages/admin/RagTest";
 import FeedbackDataset from "./pages/admin/FeedbackDataset";
 import JourneyMap from "./pages/admin/JourneyMap";
 import PendingCredentials from "./pages/admin/PendingCredentials";
+import SoldadoApplications from "./pages/admin/SoldadoApplications";
 
 const queryClient = new QueryClient();
 
@@ -44,6 +45,7 @@ const App = () => (
           <Route path="/admin/knowledge" element={<KnowledgeBase />} />
           <Route path="/admin/instructions" element={<SystemInstructions />} />
           <Route path="/admin/pending-credentials" element={<PendingCredentials />} />
+          <Route path="/admin/soldado-applications" element={<SoldadoApplications />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
