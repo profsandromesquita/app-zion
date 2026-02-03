@@ -1066,6 +1066,7 @@ export type Database = {
           created_at: string
           id: string
           rejection_reason: string | null
+          sponsor_notes: string | null
           sponsor_role: Database["public"]["Enums"]["app_role"]
           sponsored_by: string
           status: Database["public"]["Enums"]["soldado_application_status"]
@@ -1077,6 +1078,7 @@ export type Database = {
           created_at?: string
           id?: string
           rejection_reason?: string | null
+          sponsor_notes?: string | null
           sponsor_role: Database["public"]["Enums"]["app_role"]
           sponsored_by: string
           status?: Database["public"]["Enums"]["soldado_application_status"]
@@ -1088,6 +1090,7 @@ export type Database = {
           created_at?: string
           id?: string
           rejection_reason?: string | null
+          sponsor_notes?: string | null
           sponsor_role?: Database["public"]["Enums"]["app_role"]
           sponsored_by?: string
           status?: Database["public"]["Enums"]["soldado_application_status"]
