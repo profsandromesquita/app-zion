@@ -1183,6 +1183,104 @@ export type Database = {
           },
         ]
       }
+      soldado_availability: {
+        Row: {
+          created_at: string | null
+          day_of_week: number
+          end_time: string
+          id: string
+          is_recurring: boolean | null
+          soldado_id: string
+          specific_date: string | null
+          start_time: string
+          timezone: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          day_of_week: number
+          end_time: string
+          id?: string
+          is_recurring?: boolean | null
+          soldado_id: string
+          specific_date?: string | null
+          start_time: string
+          timezone?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          day_of_week?: number
+          end_time?: string
+          id?: string
+          is_recurring?: boolean | null
+          soldado_id?: string
+          specific_date?: string | null
+          start_time?: string
+          timezone?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "soldado_availability_soldado_id_fkey"
+            columns: ["soldado_id"]
+            isOneToOne: false
+            referencedRelation: "soldado_profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      soldado_profiles: {
+        Row: {
+          bio: string | null
+          created_at: string | null
+          display_name: string | null
+          id: string
+          is_available: boolean | null
+          max_weekly_sessions: number | null
+          specialties: string[] | null
+          testimony_id: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          bio?: string | null
+          created_at?: string | null
+          display_name?: string | null
+          id: string
+          is_available?: boolean | null
+          max_weekly_sessions?: number | null
+          specialties?: string[] | null
+          testimony_id?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          bio?: string | null
+          created_at?: string | null
+          display_name?: string | null
+          id?: string
+          is_available?: boolean | null
+          max_weekly_sessions?: number | null
+          specialties?: string[] | null
+          testimony_id?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "soldado_profiles_id_fkey"
+            columns: ["id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "soldado_profiles_testimony_id_fkey"
+            columns: ["testimony_id"]
+            isOneToOne: false
+            referencedRelation: "testimonies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       system_instructions: {
         Row: {
           content: string
@@ -1644,6 +1742,10 @@ export type Database = {
           profissional_status: string
           total_approved: number
         }[]
+      }
+      get_soldado_weekly_sessions: {
+        Args: { _soldado_id: string }
+        Returns: number
       }
       has_role: {
         Args: {
