@@ -13,7 +13,7 @@ import {
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { BookOpen, FileText, Users, Eye, UserCheck, Shield } from "lucide-react";
+import { BookOpen, FileText, Users, Eye, UserCheck, Shield, FileCheck } from "lucide-react";
 import { UserDetailsModal } from "@/components/admin/UserDetailsModal";
 import { useNavigate } from "react-router-dom";
 import type { AppRole } from "@/hooks/useUserRole";
@@ -62,6 +62,7 @@ const AdminDashboard = () => {
     usersCount: 0,
     pendingCredentials: 0,
     pendingSoldadoApplications: 0,
+    pendingTestimonies: 0,
   });
   const [users, setUsers] = useState<UserWithRoles[]>([]);
   const [loading, setLoading] = useState(true);
@@ -75,7 +76,7 @@ const AdminDashboard = () => {
   const fetchData = async () => {
     setLoading(true);
 
-    const [knowledgeRes, instructionsRes, profilesRes, rolesRes, journeysRes, credentialsRes, soldadoAppsRes] = await Promise.all([
+    const [knowledgeRes, instructionsRes, profilesRes, rolesRes, journeysRes, credentialsRes, soldadoAppsRes, testimoniesRes] = await Promise.all([
       supabase.from("knowledge_base").select("id", { count: "exact", head: true }),
       supabase.from("system_instructions").select("id", { count: "exact", head: true }),
       supabase.from("profiles").select("id, nome, email, phone, created_at, avatar_url").order("created_at", { ascending: false }),
@@ -83,6 +84,7 @@ const AdminDashboard = () => {
       supabase.from("user_profiles").select("id, fase_jornada, active_themes_count, global_avg_score, spiritual_maturity"),
       supabase.from("professional_credentials").select("id", { count: "exact", head: true }).eq("verified", false),
       supabase.from("soldado_applications").select("id", { count: "exact", head: true }).in("status", ["pending", "testimony_required", "under_review"]),
+      supabase.from("testimonies").select("id", { count: "exact", head: true }).in("status", ["processing", "analyzed"]),
     ]);
 
     // Build users with roles
@@ -112,6 +114,7 @@ const AdminDashboard = () => {
       usersCount: profiles.length,
       pendingCredentials: credentialsRes.count || 0,
       pendingSoldadoApplications: soldadoAppsRes.count || 0,
+      pendingTestimonies: testimoniesRes.count || 0,
     });
 
     setUsers(usersWithRoles);
@@ -214,6 +217,24 @@ const AdminDashboard = () => {
                 <div className="text-2xl font-bold">{stats.pendingSoldadoApplications}</div>
                 <p className="text-xs text-muted-foreground">
                   aguardando aprovação
+                </p>
+              </CardContent>
+            </Card>
+            
+            <Card 
+              className="cursor-pointer hover:border-primary/50 transition-colors"
+              onClick={() => navigate("/admin/testimony-curation")}
+            >
+              <CardHeader className="flex flex-row items-center justify-between pb-2">
+                <CardTitle className="text-sm font-medium">
+                  Testemunhos Pendentes
+                </CardTitle>
+                <FileCheck className="h-4 w-4 text-muted-foreground" />
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{stats.pendingTestimonies}</div>
+                <p className="text-xs text-muted-foreground">
+                  aguardando curadoria
                 </p>
               </CardContent>
             </Card>

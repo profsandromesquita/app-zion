@@ -170,6 +170,7 @@ const NewApplicationForm = ({
         sponsored_by: user.id,
         sponsor_role: sponsorRole,
         status: "testimony_required",
+        sponsor_notes: values.justification,
       });
 
       if (error) throw error;
