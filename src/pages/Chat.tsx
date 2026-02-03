@@ -9,6 +9,7 @@ import { CrisisBanner } from "@/components/chat/CrisisBanner";
 import { DebugPanel } from "@/components/chat/DebugPanel";
 import { ConversationStarters } from "@/components/chat/ConversationStarters";
 import { WelcomeBackBanner } from "@/components/chat/WelcomeBackBanner";
+import { SoldadoSuggestionCard, SoldadoMatch, RejectionReason } from "@/components/chat/SoldadoSuggestionCard";
 import { PushNotificationPrompt } from "@/components/PushNotificationPrompt";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -23,6 +24,7 @@ import SafetyExit from "@/components/SafetyExit";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { OnboardingFlow, OnboardingData } from "@/components/onboarding/OnboardingFlow";
 import zionLogo from "@/assets/zion-logo.png";
+
 interface Message {
   id: string;
   sender: "user" | "ai";
@@ -38,6 +40,11 @@ interface Message {
     debug?: object;
     scores?: Record<string, number>;
     guardrails?: string[];
+    matchmaking_suggestion?: {
+      soldado: SoldadoMatch;
+      suggestion_text: string;
+      fallback_type?: "generalist" | "passive" | "ai_only" | null;
+    };
   };
 }
 
@@ -75,6 +82,12 @@ const Chat = () => {
   const [isFirstTimeUser, setIsFirstTimeUser] = useState(false);
   const [isReturningUser, setIsReturningUser] = useState(false);
   const [welcomeMessageSent, setWelcomeMessageSent] = useState(false);
+  const [matchmakingSuggestion, setMatchmakingSuggestion] = useState<{
+    soldado: SoldadoMatch;
+    suggestionText: string;
+    fallbackType?: "generalist" | "passive" | "ai_only" | null;
+  } | null>(null);
+  const [matchmakingLoading, setMatchmakingLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const refreshSidebarRef = useRef<(() => void) | null>(null);
 
@@ -576,6 +589,127 @@ const Chat = () => {
     }, 100);
   };
 
+  // ========================================
+  // MATCHMAKING HANDLERS
+  // ========================================
+
+  const handleAcceptSoldado = useCallback(async (soldadoId: string) => {
+    if (!chatSessionId || !user) return;
+    
+    console.log("[Matchmaking] Accepted soldado:", soldadoId);
+    setMatchmakingSuggestion(null);
+    
+    // TODO: Create assignment and redirect to connection flow
+    // For now, just acknowledge
+    const acceptMsg: Message = {
+      id: `system-${Date.now()}`,
+      sender: "ai",
+      content: "Ótimo! Vou preparar a conexão. Em breve você receberá mais informações sobre como conversar com esse voluntário.",
+      created_at: new Date().toISOString(),
+    };
+    setMessages((prev) => [...prev, acceptMsg]);
+  }, [chatSessionId, user]);
+
+  const handleRejectSoldado = useCallback(async (soldadoId: string, reason: RejectionReason) => {
+    if (!chatSessionId || !user) return;
+    
+    console.log("[Matchmaking] Rejected soldado:", soldadoId, "reason:", reason);
+    setMatchmakingLoading(true);
+    
+    try {
+      const response = await supabase.functions.invoke("matchmaking-soldado", {
+        body: {
+          user_id: user.id,
+          session_id: chatSessionId,
+          action: "reject",
+          rejection_reason: reason,
+          excluded_soldados: [soldadoId],
+        },
+      });
+
+      if (response.error) throw new Error(response.error.message);
+      
+      const data = response.data;
+      
+      // Add response message
+      const responseMsg: Message = {
+        id: `system-${Date.now()}`,
+        sender: "ai",
+        content: data.suggestion_text || "Entendi. Vamos continuar nossa conversa.",
+        created_at: new Date().toISOString(),
+      };
+      setMessages((prev) => [...prev, responseMsg]);
+      
+      // Clear current suggestion
+      setMatchmakingSuggestion(null);
+      
+      // If there are new matches from rejection handler, show them
+      if (data.matches && data.matches.length > 0 && data.fallback_type !== "ai_only") {
+        setTimeout(() => {
+          setMatchmakingSuggestion({
+            soldado: data.matches[0],
+            suggestionText: data.suggestion_text,
+            fallbackType: data.fallback_type,
+          });
+        }, 1000);
+      }
+    } catch (error) {
+      console.error("[Matchmaking] Rejection error:", error);
+    } finally {
+      setMatchmakingLoading(false);
+    }
+  }, [chatSessionId, user]);
+
+  const handleViewOtherSoldados = useCallback(async () => {
+    if (!chatSessionId || !user) return;
+    
+    console.log("[Matchmaking] Requesting other soldados");
+    setMatchmakingLoading(true);
+    
+    try {
+      const currentSoldadoId = matchmakingSuggestion?.soldado?.soldado_id;
+      
+      const response = await supabase.functions.invoke("matchmaking-soldado", {
+        body: {
+          user_id: user.id,
+          session_id: chatSessionId,
+          excluded_soldados: currentSoldadoId ? [currentSoldadoId] : [],
+        },
+      });
+
+      if (response.error) throw new Error(response.error.message);
+      
+      const data = response.data;
+      
+      if (data.matches && data.matches.length > 0) {
+        setMatchmakingSuggestion({
+          soldado: data.matches[0],
+          suggestionText: data.suggestion_text,
+          fallbackType: data.fallback_type,
+        });
+      } else {
+        // No more matches
+        setMatchmakingSuggestion(null);
+        const noMoreMsg: Message = {
+          id: `system-${Date.now()}`,
+          sender: "ai",
+          content: data.suggestion_text || "Não encontrei mais voluntários disponíveis no momento. Podemos continuar nossa conversa aqui.",
+          created_at: new Date().toISOString(),
+        };
+        setMessages((prev) => [...prev, noMoreMsg]);
+      }
+    } catch (error) {
+      console.error("[Matchmaking] View others error:", error);
+    } finally {
+      setMatchmakingLoading(false);
+    }
+  }, [chatSessionId, user, matchmakingSuggestion]);
+
+  const handleListenTestimony = useCallback((testimonyId: string) => {
+    console.log("[Matchmaking] Listen to testimony:", testimonyId);
+    // TODO: Open testimony player modal or navigate to testimony page
+  }, []);
+
   // Determine if we should show conversation starters
   const shouldShowStarters = messages.length === 1 && 
     messages[0].sender === "ai" && 
@@ -836,6 +970,24 @@ const Chat = () => {
                   disabled={isLoading}
                   starters={isReturningUser ? personalizedStarters ?? undefined : undefined}
                 />
+              )}
+
+              {/* Matchmaking suggestion card */}
+              {matchmakingSuggestion && (
+                <div className="mb-4 flex justify-start">
+                  <div className="max-w-[90%]">
+                    <SoldadoSuggestionCard
+                      soldado={matchmakingSuggestion.soldado}
+                      suggestionText={matchmakingSuggestion.suggestionText}
+                      fallbackType={matchmakingSuggestion.fallbackType}
+                      onAccept={handleAcceptSoldado}
+                      onReject={handleRejectSoldado}
+                      onViewOthers={handleViewOtherSoldados}
+                      onListenTestimony={handleListenTestimony}
+                      isLoading={matchmakingLoading}
+                    />
+                  </div>
+                </div>
               )}
 
               {isLoading && (
