@@ -1016,6 +1016,102 @@ export type Database = {
           },
         ]
       }
+      soldado_application_approvals: {
+        Row: {
+          application_id: string
+          approved: boolean
+          approver_id: string
+          approver_role: Database["public"]["Enums"]["app_role"]
+          created_at: string
+          id: string
+          notes: string | null
+        }
+        Insert: {
+          application_id: string
+          approved: boolean
+          approver_id: string
+          approver_role: Database["public"]["Enums"]["app_role"]
+          created_at?: string
+          id?: string
+          notes?: string | null
+        }
+        Update: {
+          application_id?: string
+          approved?: boolean
+          approver_id?: string
+          approver_role?: Database["public"]["Enums"]["app_role"]
+          created_at?: string
+          id?: string
+          notes?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "soldado_application_approvals_application_id_fkey"
+            columns: ["application_id"]
+            isOneToOne: false
+            referencedRelation: "soldado_applications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "soldado_application_approvals_approver_id_fkey"
+            columns: ["approver_id"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      soldado_applications: {
+        Row: {
+          created_at: string
+          id: string
+          rejection_reason: string | null
+          sponsor_role: Database["public"]["Enums"]["app_role"]
+          sponsored_by: string
+          status: Database["public"]["Enums"]["soldado_application_status"]
+          testimony_id: string | null
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          rejection_reason?: string | null
+          sponsor_role: Database["public"]["Enums"]["app_role"]
+          sponsored_by: string
+          status?: Database["public"]["Enums"]["soldado_application_status"]
+          testimony_id?: string | null
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          rejection_reason?: string | null
+          sponsor_role?: Database["public"]["Enums"]["app_role"]
+          sponsored_by?: string
+          status?: Database["public"]["Enums"]["soldado_application_status"]
+          testimony_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "soldado_applications_sponsored_by_fkey"
+            columns: ["sponsored_by"]
+            isOneToOne: false
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "soldado_applications_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: true
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       soldado_assignments: {
         Row: {
           assigned_at: string | null
@@ -1448,6 +1544,7 @@ export type Database = {
         Args: { _church_id: string; _user_id: string }
         Returns: boolean
       }
+      can_sponsor_soldado: { Args: { _sponsor_id: string }; Returns: boolean }
       can_view_journey: {
         Args: { _target_id: string; _viewer_id: string }
         Returns: boolean
@@ -1455,6 +1552,16 @@ export type Database = {
       count_active_assignments: {
         Args: { _soldado_id: string }
         Returns: number
+      }
+      get_application_approval_status: {
+        Args: { _application_id: string }
+        Returns: {
+          admin_status: string
+          is_complete: boolean
+          pastor_status: string
+          profissional_status: string
+          total_approved: number
+        }[]
       }
       has_role: {
         Args: {
@@ -1526,6 +1633,12 @@ export type Database = {
         | "TRUTH"
         | "PRACTICE"
       risk_level: "none" | "low" | "medium" | "high"
+      soldado_application_status:
+        | "pending"
+        | "testimony_required"
+        | "under_review"
+        | "approved"
+        | "rejected"
       theme_status: "active" | "in_progress" | "resolved" | "dormant"
     }
     CompositeTypes: {
@@ -1686,6 +1799,13 @@ export const Constants = {
         "PRACTICE",
       ],
       risk_level: ["none", "low", "medium", "high"],
+      soldado_application_status: [
+        "pending",
+        "testimony_required",
+        "under_review",
+        "approved",
+        "rejected",
+      ],
       theme_status: ["active", "in_progress", "resolved", "dormant"],
     },
   },
