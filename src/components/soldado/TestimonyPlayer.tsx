@@ -6,8 +6,11 @@ import {
   Pause, 
   RotateCcw,
   Volume2,
-  VolumeX 
+  VolumeX,
+  Download,
+  Loader2
 } from "lucide-react";
+import { toast } from "@/components/ui/use-toast";
 import {
   Select,
   SelectContent,
@@ -37,6 +40,7 @@ const TestimonyPlayer = ({ audioUrl, className = "" }: TestimonyPlayerProps) => 
   const [isMuted, setIsMuted] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [downloading, setDownloading] = useState(false);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -162,6 +166,47 @@ const TestimonyPlayer = ({ audioUrl, className = "" }: TestimonyPlayerProps) => 
     setIsMuted(!isMuted);
   };
 
+  const handleDownload = async () => {
+    if (!audioUrl || downloading) return;
+    setDownloading(true);
+    
+    try {
+      const response = await fetch(audioUrl);
+      if (!response.ok) throw new Error("Falha ao buscar áudio");
+      
+      const blob = await response.blob();
+      
+      // Gerar nome do arquivo baseado na data
+      const timestamp = new Date().toISOString().split('T')[0];
+      const extension = audioUrl.includes('.mp4') ? 'mp4' : 'webm';
+      const filename = `testemunho-${timestamp}.${extension}`;
+      
+      // Criar link de download
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      toast({
+        title: "Download iniciado",
+        description: `Arquivo: ${filename}`,
+      });
+    } catch (error) {
+      console.error('Download failed:', error);
+      toast({
+        title: "Erro no download",
+        description: "Não foi possível baixar o áudio. Tente novamente.",
+        variant: "destructive",
+      });
+    } finally {
+      setDownloading(false);
+    }
+  };
+
   if (error) {
     return (
       <div className={`p-4 rounded-lg bg-destructive/10 text-destructive text-sm ${className}`}>
@@ -249,6 +294,21 @@ const TestimonyPlayer = ({ audioUrl, className = "" }: TestimonyPlayerProps) => 
         <div className="text-sm font-mono text-muted-foreground">
           {formatTime(currentTime)} / {formatTime(duration)}
         </div>
+
+        {/* Download button */}
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={handleDownload}
+          disabled={isLoading || downloading}
+          title="Baixar áudio"
+        >
+          {downloading ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Download className="h-4 w-4" />
+          )}
+        </Button>
 
         {/* Playback speed */}
         <Select value={playbackRate} onValueChange={handlePlaybackRateChange}>
