@@ -156,14 +156,22 @@ REGRAS IMPORTANTES:
 6. Para tags, use formato #PascalCase sem acentos (ex: #Alcool, #Familia, #Reconciliacao)
 7. Identifique padrões de transformação genuínos (oração, comunidade, terapia, jejum, confissão, etc)`;
 
-const TRANSCRIPTION_SYSTEM_PROMPT = `Você é um transcritor de áudio especializado em português brasileiro.
-Transcreva o áudio fielmente, seguindo estas regras:
-- Mantenha pausas longas como "..."
-- Indique expressões emocionais entre colchetes: [choro], [riso], [pausa longa], [suspiro]
-- Preserve gírias e expressões regionais
-- Não adicione comentários próprios
-- Não corrija gramática ou pronúncia
-- Mantenha repetições e hesitações naturais da fala`;
+const TRANSCRIPTION_SYSTEM_PROMPT = `Você é um transcritor profissional especializado em português brasileiro.
+
+TAREFA: Transcreva o áudio com TOTAL FIDELIDADE ao que foi dito. NÃO invente, NÃO adicione, NÃO interprete.
+
+REGRAS ESTRITAS:
+1. Transcreva EXATAMENTE o que a pessoa disse no áudio
+2. Mantenha pausas longas como "..."
+3. Indique expressões emocionais entre colchetes: [choro], [riso], [pausa longa], [suspiro]
+4. Preserve gírias, sotaques e expressões regionais
+5. NÃO adicione comentários ou interpretações
+6. NÃO corrija gramática ou pronúncia
+7. Mantenha repetições e hesitações naturais da fala
+8. Se o áudio estiver inaudível, indique [inaudível]
+9. Se não conseguir ouvir o áudio, responda APENAS: "[ERRO: ÁUDIO NÃO DETECTADO]"
+
+IMPORTANTE: Se você não consegue acessar ou processar o conteúdo de áudio, NÃO invente uma transcrição. Responda indicando o erro.`;
 
 // Testimony type definition
 interface Testimony {
@@ -378,12 +386,12 @@ async function processTestimony(
               {
                 role: "user",
                 content: [
-                  { type: "text", text: "Transcreva este áudio de testemunho:" },
+                  { type: "text", text: "Transcreva fielmente este áudio de testemunho em português brasileiro:" },
                   {
-                    type: "input_audio",
-                    input_audio: {
+                    type: "inline_data",
+                    inline_data: {
+                      mime_type: testimony.mime_type || "audio/webm",
                       data: audioBase64,
-                      format: testimony.mime_type?.includes("webm") ? "webm" : "mp3",
                     },
                   },
                 ],
@@ -394,21 +402,105 @@ async function processTestimony(
         }
       );
 
+      let needsRetry = false;
+
       if (!transcriptionResponse.ok) {
         const errorText = await transcriptionResponse.text();
-        console.error("Transcription API error:", transcriptionResponse.status, errorText);
-        
-        // If audio transcription not supported, set a placeholder
-        if (transcriptionResponse.status === 400 || transcriptionResponse.status === 422) {
-          console.log("Audio transcription not supported, setting placeholder for manual entry");
-          transcript = "[TRANSCRIÇÃO PENDENTE - Áudio requer transcrição manual]";
-        } else {
-          return { success: false, error: `Transcription failed: ${transcriptionResponse.status}` };
-        }
+        console.error("Transcription API error (Flash):", transcriptionResponse.status, errorText);
+        needsRetry = true;
       } else {
         const transcriptionData = await transcriptionResponse.json();
         transcript = transcriptionData.choices?.[0]?.message?.content || "";
-        console.log(`Transcription complete: ${(transcript || "").length} chars`);
+        console.log(`Transcription complete (Flash): ${(transcript || "").length} chars`);
+        
+        // Check for hallucination indicators
+        const hallucinationIndicators = [
+          "[ERRO: ÁUDIO NÃO DETECTADO]",
+          "não consegui acessar",
+          "não foi possível processar",
+          "i cannot access",
+          "i'm unable to",
+          "cannot transcribe",
+          "no audio detected",
+        ];
+        
+        const isHallucination = hallucinationIndicators.some(ind => 
+          (transcript || "").toLowerCase().includes(ind.toLowerCase())
+        );
+        
+        if (isHallucination || (transcript || "").length < 50) {
+          console.log("Transcription appears invalid or too short, will retry with Pro model");
+          needsRetry = true;
+        }
+      }
+
+      // Fallback to Gemini Pro if Flash failed
+      if (needsRetry) {
+        console.log("Retrying transcription with Gemini Pro model...");
+        
+        const retryResponse = await fetch(
+          "https://ai.gateway.lovable.dev/v1/chat/completions",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${LOVABLE_API_KEY}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              model: "google/gemini-2.5-pro",
+              messages: [
+                { role: "system", content: TRANSCRIPTION_SYSTEM_PROMPT },
+                {
+                  role: "user",
+                  content: [
+                    { type: "text", text: "Transcreva fielmente este áudio de testemunho em português brasileiro:" },
+                    {
+                      type: "inline_data",
+                      inline_data: {
+                        mime_type: testimony.mime_type || "audio/webm",
+                        data: audioBase64,
+                      },
+                    },
+                  ],
+                },
+              ],
+              max_tokens: 16000,
+            }),
+          }
+        );
+
+        if (!retryResponse.ok) {
+          const errorText = await retryResponse.text();
+          console.error("Transcription API error (Pro):", retryResponse.status, errorText);
+          
+          // Set placeholder for manual entry
+          if (retryResponse.status === 400 || retryResponse.status === 422) {
+            console.log("Audio transcription not supported, setting placeholder for manual entry");
+            transcript = "[TRANSCRIÇÃO PENDENTE - Áudio requer transcrição manual]";
+          } else {
+            return { success: false, error: `Transcription failed: ${retryResponse.status}` };
+          }
+        } else {
+          const retryData = await retryResponse.json();
+          transcript = retryData.choices?.[0]?.message?.content || "";
+          console.log(`Transcription complete (Pro): ${(transcript || "").length} chars`);
+          
+          // Final hallucination check
+          const hallucinationIndicators = [
+            "[ERRO: ÁUDIO NÃO DETECTADO]",
+            "não consegui acessar",
+            "não foi possível processar",
+          ];
+          
+          const isHallucination = hallucinationIndicators.some(ind => 
+            (transcript || "").toLowerCase().includes(ind.toLowerCase())
+          );
+          
+          if (isHallucination) {
+            console.log("Transcription still invalid after retry, marking for manual processing");
+            transcript = "[TRANSCRIÇÃO FALHOU - Requer transcrição manual]";
+          }
+        }
       }
     } catch (err) {
       console.error("Transcription error:", err);
