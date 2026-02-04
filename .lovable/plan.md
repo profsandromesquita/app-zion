@@ -1,255 +1,125 @@
 
-# Plano de Correção: Transcrição de Áudio do Testemunho
+# Plano: Adicionar Download de Áudio do Testemunho
 
-## Diagnóstico da Causa Raiz
+## Objetivo
 
-### Problema Identificado
-A transcrição gerada está completamente incorreta porque o modelo de IA não está recebendo o áudio corretamente. A investigação revelou:
-
-1. **Formato de Payload Incorreto**: O código atual usa `input_audio` (formato OpenAI), mas o Lovable AI Gateway espera `inline_data` (formato Gemini nativo)
-2. **Áudio Não Processado**: O modelo recebeu apenas o texto do prompt e "inventou" uma transcrição plausível baseada no contexto (abandono, drogas, etc)
-3. **Evidência**: A transcrição mostra um testemunho feminino genérico sobre abandono e drogas, o que indica "alucinação" - o modelo não ouviu o áudio real
-
-### Código Problemático (Atual)
-```typescript
-// supabase/functions/process-testimony/index.ts:382-388
-{
-  type: "input_audio",  // ❌ Formato incorreto
-  input_audio: {
-    data: audioBase64,
-    format: "webm",     // ❌ Deveria ser mime_type completo
-  },
-}
-```
-
-### Formato Correto (Gemini)
-```typescript
-{
-  type: "inline_data",  // ✅ Formato Gemini
-  inline_data: {
-    mime_type: "audio/webm",  // ✅ MIME type completo
-    data: audioBase64,
-  },
-}
-```
+Permitir que curadores/admins baixem o áudio do testemunho mesmo quando o candidato foi rejeitado. Isso é útil para:
+- Arquivamento de evidências
+- Revisão posterior
+- Treinamento de curadores
 
 ---
 
-## Plano de Correção
+## Análise Atual
 
-### Opção A: Corrigir Formato do Payload (Recomendado)
-Modificar a chamada de API para usar o formato `inline_data` suportado pelo Gemini.
+### Estado Atual
+- O áudio é carregado via signed URL do Supabase Storage (bucket `testimonies`, privado)
+- O `TestimonyPlayer` apenas reproduz o áudio, sem opção de download
+- O `TestimonyCurationCard` exibe o player para todos os status, incluindo rejeitados
+- Não há restrição de visualização por status - o áudio já está acessível
 
-**Vantagens:**
-- Correção rápida e simples
-- Sem custos adicionais
-- Usa infraestrutura existente
-
-**Riscos:**
-- Qualidade de transcrição depende do Gemini (não especializado em STT)
-
-### Opção B: Integrar ElevenLabs STT (Alternativa Premium)
-Usar ElevenLabs Speech-to-Text que é especializado em transcrição de alta qualidade.
-
-**Vantagens:**
-- Transcrição de altíssima qualidade
-- Suporte nativo a português brasileiro
-- Diarização e detecção de eventos
-
-**Riscos:**
-- Requer configurar conector ElevenLabs (custo adicional)
-- Mais complexidade na implementação
+### O que Falta
+- Botão de download no player ou no card
+- Função para baixar o arquivo usando a signed URL
 
 ---
 
-## Implementação Escolhida: Opção A (Corrigir Formato)
+## Solução Proposta
 
-### PARTE 1: Modificar Edge Function process-testimony
+### PARTE 1: Adicionar Botão de Download ao TestimonyPlayer
 
-**Arquivo:** `supabase/functions/process-testimony/index.ts`
+Adicionar um botão de download na barra de controles do player que:
+1. Usa a mesma `audioUrl` (signed URL) já disponível
+2. Faz fetch do blob e cria um download link
+3. Gera nome de arquivo baseado na data/hora
 
-#### 1.1 Corrigir Payload de Transcrição (linhas 375-393)
-
-```typescript
-// ANTES (incorreto):
-content: [
-  { type: "text", text: "Transcreva este áudio de testemunho:" },
-  {
-    type: "input_audio",
-    input_audio: {
-      data: audioBase64,
-      format: testimony.mime_type?.includes("webm") ? "webm" : "mp3",
-    },
-  },
-],
-
-// DEPOIS (correto):
-content: [
-  { type: "text", text: "Transcreva fielmente este áudio de testemunho em português brasileiro:" },
-  {
-    type: "inline_data",
-    inline_data: {
-      mime_type: testimony.mime_type || "audio/webm",
-      data: audioBase64,
-    },
-  },
-],
+```text
+┌─────────────────────────────────────────────────────────────┐
+│  [Waveform visualization]                                    │
+│  [====================━━━━━━━━━━━━━━━━━]                     │
+│                                                             │
+│  [⟲] [▶] [🔊]                    1:30 / 5:00      [⬇] [1x]  │
+│                                                   ↑          │
+│                                            Novo botão        │
+└─────────────────────────────────────────────────────────────┘
 ```
 
-#### 1.2 Melhorar System Prompt de Transcrição (linhas 159-166)
+### PARTE 2: Função de Download
 
 ```typescript
-const TRANSCRIPTION_SYSTEM_PROMPT = `Você é um transcritor profissional especializado em português brasileiro.
-
-TAREFA: Transcreva o áudio com TOTAL FIDELIDADE ao que foi dito. NÃO invente, NÃO adicione, NÃO interprete.
-
-REGRAS ESTRITAS:
-1. Transcreva EXATAMENTE o que a pessoa disse no áudio
-2. Mantenha pausas longas como "..."
-3. Indique expressões emocionais entre colchetes: [choro], [riso], [pausa longa], [suspiro]
-4. Preserve gírias, sotaques e expressões regionais
-5. NÃO adicione comentários ou interpretações
-6. NÃO corrija gramática ou pronúncia
-7. Mantenha repetições e hesitações naturais da fala
-8. Se o áudio estiver inaudível, indique [inaudível]
-9. Se não conseguir ouvir o áudio, responda APENAS: "[ERRO: ÁUDIO NÃO DETECTADO]"
-
-IMPORTANTE: Se você não consegue acessar ou processar o conteúdo de áudio, NÃO invente uma transcrição. Responda indicando o erro.`;
-```
-
-#### 1.3 Adicionar Validação de Resposta (após linha 410)
-
-```typescript
-// Verificar se a transcrição parece válida (não é alucinação)
-if (transcript && transcript.length > 0) {
-  // Detectar padrões de alucinação comum
-  const hallucination_indicators = [
-    "[ERRO: ÁUDIO NÃO DETECTADO]",
-    "não consegui acessar",
-    "não foi possível processar",
-  ];
+const handleDownload = async () => {
+  if (!audioUrl) return;
+  setDownloading(true);
   
-  const isHallucination = hallucination_indicators.some(ind => 
-    transcript.toLowerCase().includes(ind.toLowerCase())
-  );
-  
-  if (isHallucination) {
-    console.log("Transcription appears to be a hallucination or error");
-    transcript = "[TRANSCRIÇÃO FALHOU - Requer transcrição manual]";
+  try {
+    const response = await fetch(audioUrl);
+    const blob = await response.blob();
+    
+    // Gerar nome do arquivo
+    const timestamp = new Date().toISOString().split('T')[0];
+    const extension = audioUrl.includes('.mp4') ? 'mp4' : 'webm';
+    const filename = `testemunho-${timestamp}.${extension}`;
+    
+    // Criar link de download
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    console.error('Download failed:', error);
+    // Mostrar toast de erro
+  } finally {
+    setDownloading(false);
   }
-}
+};
 ```
-
-### PARTE 2: Adicionar Fallback para Modelo Alternativo
-
-Se o Gemini Flash falhar, tentar com modelo mais robusto:
-
-```typescript
-// Primeira tentativa: Gemini Flash
-let transcriptionResponse = await fetch(url, {
-  body: JSON.stringify({
-    model: "google/gemini-2.5-flash",
-    // ...
-  }),
-});
-
-// Fallback: Gemini Pro se Flash falhar
-if (!transcriptionResponse.ok || needsRetry) {
-  console.log("Retrying with Gemini Pro...");
-  transcriptionResponse = await fetch(url, {
-    body: JSON.stringify({
-      model: "google/gemini-2.5-pro",
-      // ...
-    }),
-  });
-}
-```
-
-### PARTE 3: Reprocessar Testemunho Existente
-
-Após a correção, o testemunho de Marcos precisará ser reprocessado:
-
-1. Atualizar status para "processing"
-2. Chamar edge function com `skip_transcription: false`
-3. Validar nova transcrição
 
 ---
 
-## Arquivos a Modificar
+## Arquivo a Modificar
 
 | Arquivo | Ação | Descrição |
 |---------|------|-----------|
-| `supabase/functions/process-testimony/index.ts` | MODIFICAR | Corrigir formato de payload e melhorar prompts |
+| `src/components/soldado/TestimonyPlayer.tsx` | MODIFICAR | Adicionar botão de download e função de download |
 
 ---
 
-## Seção Técnica: Detalhes da Implementação
+## Detalhamento Técnico
 
-### Formato Correto do Payload Multimodal
+### Modificações no TestimonyPlayer.tsx
 
-O Lovable AI Gateway traduz requisições para o formato nativo do Gemini. O formato correto para conteúdo multimodal com áudio:
-
-```json
-{
-  "model": "google/gemini-2.5-flash",
-  "messages": [
-    {
-      "role": "system",
-      "content": "Prompt de transcrição..."
-    },
-    {
-      "role": "user", 
-      "content": [
-        {
-          "type": "text",
-          "text": "Transcreva este áudio:"
-        },
-        {
-          "type": "inline_data",
-          "inline_data": {
-            "mime_type": "audio/webm",
-            "data": "BASE64_AUDIO_DATA"
-          }
-        }
-      ]
-    }
-  ],
-  "max_tokens": 16000
-}
+1. **Adicionar import do ícone Download**
+```typescript
+import { Play, Pause, RotateCcw, Volume2, VolumeX, Download } from "lucide-react";
 ```
 
-### Mapeamento de MIME Types
+2. **Adicionar estado de loading do download**
+```typescript
+const [downloading, setDownloading] = useState(false);
+```
 
-| Extensão | MIME Type Correto |
-|----------|-------------------|
-| .webm | audio/webm |
-| .mp3 | audio/mp3 |
-| .wav | audio/wav |
-| .ogg | audio/ogg |
-| .m4a | audio/m4a |
+3. **Adicionar função handleDownload**
+Função que faz fetch do áudio via signed URL e dispara o download
 
-### Limitações do Gemini para Áudio
+4. **Adicionar botão na barra de controles**
+Posicionado entre o tempo e o seletor de velocidade
 
-- Tamanho máximo inline: 20MB
-- Para áudios maiores, seria necessário usar Files API (não disponível via gateway)
-- Duração máxima recomendada: ~5 minutos para melhor precisão
+### Comportamento Esperado
 
----
-
-## Testes de Validação
-
-Após implementação:
-
-1. Reprocessar testemunho de Marcos
-2. Comparar transcrição gerada com áudio original
-3. Verificar se a análise teológica faz sentido com o novo texto
-4. Testar com áudios de diferentes durações e qualidades
+- Botão visível em TODOS os status de testemunho (incluindo rejected)
+- Ícone de loading durante o download
+- Nome do arquivo: `testemunho-YYYY-MM-DD.webm` (ou .mp4)
+- Funciona mesmo com a signed URL temporária
 
 ---
 
 ## Resultado Esperado
 
-1. Transcrição fiel ao conteúdo real do áudio
-2. Análise teológica baseada no testemunho verdadeiro
-3. Sistema de fallback para erros de processamento
-4. Detecção de falhas para evitar "alucinações" silenciosas
+1. Botão de download visível no player de áudio
+2. Curador pode baixar áudio de qualquer testemunho
+3. Download funciona para testemunhos rejeitados, curados, pendentes, etc.
+4. Arquivo baixado com nome identificável
