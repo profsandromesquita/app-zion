@@ -1,185 +1,255 @@
 
-# Plano: Completar Fluxo de Visibilidade do Soldado
+# Plano de Correção: Transcrição de Áudio do Testemunho
 
-## Problemas Identificados
+## Diagnóstico da Causa Raiz
 
-Apos investigacao detalhada, identifiquei as seguintes lacunas no fluxo atual:
+### Problema Identificado
+A transcrição gerada está completamente incorreta porque o modelo de IA não está recebendo o áudio corretamente. A investigação revelou:
 
-### 1. Usuario indicado nao recebe notificacao
-- A candidatura de Marcos foi criada com sucesso (status: `testimony_required`)
-- Porem, **nao ha push notification** enviada ao usuario quando ele e indicado
-- Marcos so saberia da indicacao se acessar a pagina de Perfil e notar o card
+1. **Formato de Payload Incorreto**: O código atual usa `input_audio` (formato OpenAI), mas o Lovable AI Gateway espera `inline_data` (formato Gemini nativo)
+2. **Áudio Não Processado**: O modelo recebeu apenas o texto do prompt e "inventou" uma transcrição plausível baseada no contexto (abandono, drogas, etc)
+3. **Evidência**: A transcrição mostra um testemunho feminino genérico sobre abandono e drogas, o que indica "alucinação" - o modelo não ouviu o áudio real
 
-### 2. Onde gravar audio - Falta de descobribilidade
-- A rota `/testimony/:applicationId` existe e funciona
-- Porem o usuario precisa acessar `/profile` para ver o card com botao "Gravar Testemunho"
-- Nao ha nenhum indicador visual no Chat ou home que sinalize a pendencia
+### Código Problemático (Atual)
+```typescript
+// supabase/functions/process-testimony/index.ts:382-388
+{
+  type: "input_audio",  // ❌ Formato incorreto
+  input_audio: {
+    data: audioBase64,
+    format: "webm",     // ❌ Deveria ser mime_type completo
+  },
+}
+```
 
-### 3. Recurso de conexao com Soldado invisivel para Buscadores
-- A opcao de solicitar um Soldado so aparece **reativamente** durante o chat quando:
-  - Usuario atinge fase PADROES
-  - lie_active e identificado com confidence >= 0.6
-- Buscadores nao sabem que essa funcionalidade existe
-- Deveria haver um preview/teaser visivel (mesmo desabilitado) para awareness
+### Formato Correto (Gemini)
+```typescript
+{
+  type: "inline_data",  // ✅ Formato Gemini
+  inline_data: {
+    mime_type: "audio/webm",  // ✅ MIME type completo
+    data: audioBase64,
+  },
+}
+```
 
 ---
 
-## Solucao Proposta
+## Plano de Correção
 
-### PARTE 1: Notificacao Push ao ser Indicado
+### Opção A: Corrigir Formato do Payload (Recomendado)
+Modificar a chamada de API para usar o formato `inline_data` suportado pelo Gemini.
 
-Modificar `NewApplicationForm.tsx` para enviar push notification apos criar candidatura.
+**Vantagens:**
+- Correção rápida e simples
+- Sem custos adicionais
+- Usa infraestrutura existente
 
-```text
-Novo fluxo:
-1. Admin cria candidatura via form
-2. Sistema insere em soldado_applications (ja existe)
-3. [NOVO] Sistema chama edge function para notificar usuario
-4. Usuario recebe push: "Voce foi indicado para Soldado! 🎖️"
-```
+**Riscos:**
+- Qualidade de transcrição depende do Gemini (não especializado em STT)
 
-Opcoes de implementacao:
-- **A) Trigger de banco de dados**: Apos INSERT em soldado_applications, disparar pg_net para edge function
-- **B) Chamada direta do frontend**: Apos sucesso do insert, chamar supabase.functions.invoke
+### Opção B: Integrar ElevenLabs STT (Alternativa Premium)
+Usar ElevenLabs Speech-to-Text que é especializado em transcrição de alta qualidade.
 
-Recomendacao: Opcao B (mais simples, ja temos o padrao)
+**Vantagens:**
+- Transcrição de altíssima qualidade
+- Suporte nativo a português brasileiro
+- Diarização e detecção de eventos
 
-### PARTE 2: Indicador Visual de Pendencia
+**Riscos:**
+- Requer configurar conector ElevenLabs (custo adicional)
+- Mais complexidade na implementação
 
-Adicionar um "badge" ou banner no header do Chat e/ou na Home quando o usuario tiver candidatura pendente.
+---
+
+## Implementação Escolhida: Opção A (Corrigir Formato)
+
+### PARTE 1: Modificar Edge Function process-testimony
+
+**Arquivo:** `supabase/functions/process-testimony/index.ts`
+
+#### 1.1 Corrigir Payload de Transcrição (linhas 375-393)
 
 ```typescript
-// Em Chat.tsx ou num componente global
-{hasPendingApplication && applicationStatus === "testimony_required" && (
-  <Banner 
-    onClick={() => navigate(`/testimony/${applicationId}`)}
-    icon={<Mic />}
-    text="Voce foi indicado para Soldado! Clique para gravar seu testemunho."
-  />
-)}
+// ANTES (incorreto):
+content: [
+  { type: "text", text: "Transcreva este áudio de testemunho:" },
+  {
+    type: "input_audio",
+    input_audio: {
+      data: audioBase64,
+      format: testimony.mime_type?.includes("webm") ? "webm" : "mp3",
+    },
+  },
+],
+
+// DEPOIS (correto):
+content: [
+  { type: "text", text: "Transcreva fielmente este áudio de testemunho em português brasileiro:" },
+  {
+    type: "inline_data",
+    inline_data: {
+      mime_type: testimony.mime_type || "audio/webm",
+      data: audioBase64,
+    },
+  },
+],
 ```
 
-### PARTE 3: Preview do Recurso "Conversar com Soldado"
+#### 1.2 Melhorar System Prompt de Transcrição (linhas 159-166)
 
-Adicionar card/teaser visivel no perfil do Buscador que:
-- Mostra que a conexao com Soldados existe
-- Explica que sera sugerido durante a jornada
-- Pode ter um CTA "Saiba mais" ou estar desabilitado
+```typescript
+const TRANSCRIPTION_SYSTEM_PROMPT = `Você é um transcritor profissional especializado em português brasileiro.
 
-```text
-┌─────────────────────────────────────────────┐
-│  🎖️ Conexao com Soldados                    │
-│                                             │
-│  Em algum momento da sua jornada, podemos   │
-│  sugerir conversar com alguem que passou    │
-│  por algo parecido. Isso acontece quando    │
-│  identificamos que voce pode se beneficiar. │
-│                                             │
-│  [Indisponivel - Continue sua jornada]      │
-└─────────────────────────────────────────────┘
+TAREFA: Transcreva o áudio com TOTAL FIDELIDADE ao que foi dito. NÃO invente, NÃO adicione, NÃO interprete.
+
+REGRAS ESTRITAS:
+1. Transcreva EXATAMENTE o que a pessoa disse no áudio
+2. Mantenha pausas longas como "..."
+3. Indique expressões emocionais entre colchetes: [choro], [riso], [pausa longa], [suspiro]
+4. Preserve gírias, sotaques e expressões regionais
+5. NÃO adicione comentários ou interpretações
+6. NÃO corrija gramática ou pronúncia
+7. Mantenha repetições e hesitações naturais da fala
+8. Se o áudio estiver inaudível, indique [inaudível]
+9. Se não conseguir ouvir o áudio, responda APENAS: "[ERRO: ÁUDIO NÃO DETECTADO]"
+
+IMPORTANTE: Se você não consegue acessar ou processar o conteúdo de áudio, NÃO invente uma transcrição. Responda indicando o erro.`;
 ```
+
+#### 1.3 Adicionar Validação de Resposta (após linha 410)
+
+```typescript
+// Verificar se a transcrição parece válida (não é alucinação)
+if (transcript && transcript.length > 0) {
+  // Detectar padrões de alucinação comum
+  const hallucination_indicators = [
+    "[ERRO: ÁUDIO NÃO DETECTADO]",
+    "não consegui acessar",
+    "não foi possível processar",
+  ];
+  
+  const isHallucination = hallucination_indicators.some(ind => 
+    transcript.toLowerCase().includes(ind.toLowerCase())
+  );
+  
+  if (isHallucination) {
+    console.log("Transcription appears to be a hallucination or error");
+    transcript = "[TRANSCRIÇÃO FALHOU - Requer transcrição manual]";
+  }
+}
+```
+
+### PARTE 2: Adicionar Fallback para Modelo Alternativo
+
+Se o Gemini Flash falhar, tentar com modelo mais robusto:
+
+```typescript
+// Primeira tentativa: Gemini Flash
+let transcriptionResponse = await fetch(url, {
+  body: JSON.stringify({
+    model: "google/gemini-2.5-flash",
+    // ...
+  }),
+});
+
+// Fallback: Gemini Pro se Flash falhar
+if (!transcriptionResponse.ok || needsRetry) {
+  console.log("Retrying with Gemini Pro...");
+  transcriptionResponse = await fetch(url, {
+    body: JSON.stringify({
+      model: "google/gemini-2.5-pro",
+      // ...
+    }),
+  });
+}
+```
+
+### PARTE 3: Reprocessar Testemunho Existente
+
+Após a correção, o testemunho de Marcos precisará ser reprocessado:
+
+1. Atualizar status para "processing"
+2. Chamar edge function com `skip_transcription: false`
+3. Validar nova transcrição
 
 ---
 
-## Arquivos a Criar/Modificar
+## Arquivos a Modificar
 
-| Arquivo | Acao | Descricao |
+| Arquivo | Ação | Descrição |
 |---------|------|-----------|
-| `supabase/functions/notify-application-created/index.ts` | CRIAR | Edge function para notificar usuario indicado |
-| `supabase/config.toml` | MODIFICAR | Adicionar nova funcao |
-| `src/components/soldado/NewApplicationForm.tsx` | MODIFICAR | Chamar edge function apos criar candidatura |
-| `src/components/soldado/PendingApplicationBanner.tsx` | CRIAR | Banner de pendencia para Chat/Header |
-| `src/pages/Chat.tsx` | MODIFICAR | Adicionar verificacao de candidatura pendente e banner |
-| `src/pages/Profile.tsx` | MODIFICAR | Adicionar card "Conexao com Soldados" para Buscadores |
-| `src/components/profile/SoldadoConnectionTeaser.tsx` | CRIAR | Card teaser explicando o recurso |
+| `supabase/functions/process-testimony/index.ts` | MODIFICAR | Corrigir formato de payload e melhorar prompts |
 
 ---
 
-## Detalhamento Tecnico
+## Seção Técnica: Detalhes da Implementação
 
-### 1. Edge Function notify-application-created
+### Formato Correto do Payload Multimodal
 
-```typescript
-// Entrada
-interface NotifyApplicationRequest {
-  user_id: string;
-  application_id: string;
-  sponsor_name?: string;
+O Lovable AI Gateway traduz requisições para o formato nativo do Gemini. O formato correto para conteúdo multimodal com áudio:
+
+```json
+{
+  "model": "google/gemini-2.5-flash",
+  "messages": [
+    {
+      "role": "system",
+      "content": "Prompt de transcrição..."
+    },
+    {
+      "role": "user", 
+      "content": [
+        {
+          "type": "text",
+          "text": "Transcreva este áudio:"
+        },
+        {
+          "type": "inline_data",
+          "inline_data": {
+            "mime_type": "audio/webm",
+            "data": "BASE64_AUDIO_DATA"
+          }
+        }
+      ]
+    }
+  ],
+  "max_tokens": 16000
 }
-
-// Logica
-1. Buscar push_subscriptions do user_id
-2. Enviar push notification:
-   - Titulo: "Voce foi indicado para Soldado! 🎖️"
-   - Body: "Alguem reconhece sua jornada e acredita em voce. Acesse seu perfil para gravar seu testemunho."
-   - Data: { url: "/profile" }
 ```
 
-### 2. PendingApplicationBanner.tsx
+### Mapeamento de MIME Types
 
-```typescript
-interface PendingApplicationBannerProps {
-  applicationId: string;
-  status: "testimony_required" | "pending" | "under_review";
-  onNavigate: () => void;
-}
+| Extensão | MIME Type Correto |
+|----------|-------------------|
+| .webm | audio/webm |
+| .mp3 | audio/mp3 |
+| .wav | audio/wav |
+| .ogg | audio/ogg |
+| .m4a | audio/m4a |
 
-// Renderizacao contextual:
-- testimony_required: "Grave seu testemunho para continuar"
-- under_review: "Seu testemunho esta sendo analisado"
-- pending: "Aguardando proximos passos"
-```
+### Limitações do Gemini para Áudio
 
-### 3. Modificacao em Chat.tsx
-
-```typescript
-// Adicionar state
-const [pendingApplication, setPendingApplication] = useState<{
-  id: string;
-  status: string;
-} | null>(null);
-
-// Carregar na inicializacao (apos checkOnboardingAndInit)
-const loadPendingApplication = async () => {
-  if (!user) return;
-  const { data } = await supabase
-    .from("soldado_applications")
-    .select("id, status")
-    .eq("user_id", user.id)
-    .in("status", ["pending", "testimony_required", "under_review"])
-    .maybeSingle();
-  setPendingApplication(data);
-};
-
-// Renderizar banner no topo do chat se houver pendencia
-```
-
-### 4. SoldadoConnectionTeaser.tsx (Profile)
-
-Card informativo que aparece para todo Buscador:
-- Explica que o recurso existe
-- Indica que sera sugerido organicamente
-- Nao e um botao de acao (nao dispara matchmaking)
-- Visual diferente (mais sutil, informativo)
+- Tamanho máximo inline: 20MB
+- Para áudios maiores, seria necessário usar Files API (não disponível via gateway)
+- Duração máxima recomendada: ~5 minutos para melhor precisão
 
 ---
 
-## Ordem de Implementacao
+## Testes de Validação
 
-1. **notify-application-created** - Edge function de notificacao
-2. **config.toml** - Registrar funcao
-3. **NewApplicationForm.tsx** - Integrar chamada da edge function
-4. **PendingApplicationBanner.tsx** - Componente de banner
-5. **Chat.tsx** - Adicionar banner de candidatura pendente
-6. **SoldadoConnectionTeaser.tsx** - Card teaser
-7. **Profile.tsx** - Adicionar teaser para Buscadores
-8. **Testes** - Validar fluxo completo
+Após implementação:
+
+1. Reprocessar testemunho de Marcos
+2. Comparar transcrição gerada com áudio original
+3. Verificar se a análise teológica faz sentido com o novo texto
+4. Testar com áudios de diferentes durações e qualidades
 
 ---
 
 ## Resultado Esperado
 
-1. **Marcos recebe push**: "Voce foi indicado para Soldado!"
-2. **Ao abrir o app**: Ve banner no chat indicando acao necessaria
-3. **No perfil**: Ve card de candidatura com botao "Gravar Testemunho"
-4. **Todo Buscador**: Ve card explicando que pode conversar com Soldados no futuro
+1. Transcrição fiel ao conteúdo real do áudio
+2. Análise teológica baseada no testemunho verdadeiro
+3. Sistema de fallback para erros de processamento
+4. Detecção de falhas para evitar "alucinações" silenciosas
