@@ -197,7 +197,7 @@ const SoldadoTestimony = () => {
                   </p>
                   <div className="pt-4">
                     <Button
-                      onClick={() => navigate("/profile")}
+                      onClick={() => navigate("/profile", { replace: true })}
                       className="bg-gradient-to-r from-emerald-500 to-lime-500 text-white"
                     >
                       Voltar ao Perfil
@@ -222,7 +222,7 @@ const SoldadoTestimony = () => {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => navigate("/profile")}
+            onClick={() => navigate("/profile", { replace: true })}
           >
             <ArrowLeft className="h-5 w-5" />
           </Button>
