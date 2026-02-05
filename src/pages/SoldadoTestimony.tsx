@@ -155,11 +155,14 @@ const SoldadoTestimony = () => {
       
       const fileName = `${user.id}/${applicationId}.${fileExtension}`;
 
-      // 2. Upload to storage
+      // 2. Normalize MIME type (remove codecs like "audio/webm;codecs=opus" -> "audio/webm")
+      const normalizedMimeType = audioBlob.type.split(';')[0];
+
+      // 3. Upload to storage
       const { error: uploadError } = await supabase.storage
         .from("testimonies")
         .upload(fileName, audioBlob, {
-          contentType: audioBlob.type,
+          contentType: normalizedMimeType,
           upsert: true,
         });
 
