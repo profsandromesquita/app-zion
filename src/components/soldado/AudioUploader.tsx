@@ -21,6 +21,8 @@ const ACCEPTED_AUDIO_TYPES = [
   "audio/webm",      // .webm
   "audio/ogg",       // .ogg
   "audio/aac",       // .aac
+  "video/webm",      // .webm (some browsers report as video)
+  "video/mp4",       // .m4a (some browsers report as video)
 ];
 
 const ACCEPTED_EXTENSIONS = ".mp3,.wav,.m4a,.webm,.ogg,.aac";
