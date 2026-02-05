@@ -134,6 +134,8 @@ const SoldadoTestimony = () => {
   }, [audioBlob, submitted]);
 
   const handleSubmit = async () => {
+    // Hard guard against multiple submits (race condition prevention)
+    if (submitting) return;
     if (!audioBlob || !user || !applicationId) return;
 
     setSubmitting(true);
@@ -168,21 +170,34 @@ const SoldadoTestimony = () => {
 
       if (uploadError) throw uploadError;
 
-      // 3. Get signed URL for private bucket
+      // 4. Get signed URL for private bucket
       const { data: urlData, error: urlError } = await supabase.storage
         .from("testimonies")
         .createSignedUrl(fileName, 60 * 60 * 24 * 365); // 1 year
 
       if (urlError) throw urlError;
 
-      // 4. Delete any existing testimony for this application (allows re-submission)
-      await supabase
+      // 5. Delete any existing testimony for this application (allows re-submission)
+      // This is now permitted by RLS when application.status = 'testimony_required'
+      const { error: deleteError } = await supabase
         .from("testimonies")
         .delete()
         .eq("user_id", user.id)
         .eq("application_id", applicationId);
 
-      // 5. Create new testimony record
+      // Check and abort if delete failed (RLS blocked or other issue)
+      if (deleteError) {
+        console.error("Delete testimony failed:", {
+          deleteError,
+          userId: user.id,
+          applicationId,
+        });
+        throw new Error(
+          "Não foi possível limpar o testemunho anterior. Verifique se sua candidatura está aguardando reenvio."
+        );
+      }
+
+      // 6. Create new testimony record
       const { error: dbError } = await supabase
         .from("testimonies")
         .insert({
