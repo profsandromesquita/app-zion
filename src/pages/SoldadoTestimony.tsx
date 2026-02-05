@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Upload, Loader2, CheckCircle2, Mic, FileAudio } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -104,11 +104,34 @@ const SoldadoTestimony = () => {
   };
 
   const handleTabChange = (value: string) => {
-    // Clear audio when switching tabs
-    setAudioBlob(null);
-    setAudioDuration(0);
+    // Only change the mode, don't clear the audio
+    // This allows user to switch tabs without losing progress
     setInputMode(value as InputMode);
   };
+
+  // Navigation guard: warn user before leaving with unsaved audio
+  const handleBack = useCallback(() => {
+    if (audioBlob && !submitted) {
+      if (confirm("Você tem um áudio não enviado. Deseja sair mesmo assim?")) {
+        navigate("/profile", { replace: true });
+      }
+    } else {
+      navigate("/profile", { replace: true });
+    }
+  }, [audioBlob, submitted, navigate]);
+
+  // Browser beforeunload warning
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (audioBlob && !submitted) {
+        e.preventDefault();
+        e.returnValue = ""; // Required for Chrome
+      }
+    };
+    
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [audioBlob, submitted]);
 
   const handleSubmit = async () => {
     if (!audioBlob || !user || !applicationId) return;
@@ -251,7 +274,7 @@ const SoldadoTestimony = () => {
           <Button
             variant="ghost"
             size="icon"
-            onClick={() => navigate("/profile", { replace: true })}
+            onClick={handleBack}
           >
             <ArrowLeft className="h-5 w-5" />
           </Button>
