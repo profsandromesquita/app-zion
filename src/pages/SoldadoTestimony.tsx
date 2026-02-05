@@ -175,7 +175,14 @@ const SoldadoTestimony = () => {
 
       if (urlError) throw urlError;
 
-      // 4. Create testimony record
+      // 4. Delete any existing testimony for this application (allows re-submission)
+      await supabase
+        .from("testimonies")
+        .delete()
+        .eq("user_id", user.id)
+        .eq("application_id", applicationId);
+
+      // 5. Create new testimony record
       const { error: dbError } = await supabase
         .from("testimonies")
         .insert({
@@ -184,7 +191,7 @@ const SoldadoTestimony = () => {
           audio_url: urlData.signedUrl,
           duration_seconds: audioDuration,
           file_size_bytes: audioBlob.size,
-          mime_type: audioBlob.type,
+          mime_type: normalizedMimeType,
           status: "processing",
         });
 
