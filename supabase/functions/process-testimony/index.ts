@@ -386,9 +386,8 @@ async function processTestimony(
               {
                 role: "user",
                 content: [
-                  { type: "text", text: "Transcreva fielmente este áudio de testemunho em português brasileiro:" },
+                  { text: "Transcreva fielmente este áudio de testemunho em português brasileiro:" },
                   {
-                    type: "inline_data",
                     inline_data: {
                       mime_type: testimony.mime_type || "audio/webm",
                       data: audioBase64,
@@ -453,10 +452,9 @@ async function processTestimony(
                 {
                   role: "user",
                   content: [
-                    { type: "text", text: "Transcreva fielmente este áudio de testemunho em português brasileiro:" },
-                    {
-                      type: "inline_data",
-                      inline_data: {
+                  { text: "Transcreva fielmente este áudio de testemunho em português brasileiro:" },
+                  {
+                    inline_data: {
                         mime_type: testimony.mime_type || "audio/webm",
                         data: audioBase64,
                       },
