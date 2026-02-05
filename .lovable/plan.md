@@ -1,162 +1,220 @@
 
 
-# Plano de Correção: Formato do Payload Multimodal para Transcrição
+# Plano: Adicionar Upload de Arquivo de Áudio ao Testemunho
 
-## Diagnóstico Completo
+## Visão Geral
 
-### Áudio Real vs. Transcrição Gerada
-
-| Aspecto | Áudio Real (Bita) | IA Gerou (Errado) |
-|---------|-------------------|-------------------|
-| **Nome** | "Eu sou o Bita, 43 anos" | Pessoa anônima feminina |
-| **História** | Overdose, cocaína, golpes na internet | Problemas de trabalho/família |
-| **Detalhes** | Filho de 7 anos encontrou, parada cardíaca | Chorar no quarto |
-| **Resultado** | "Deus me resgatou, fui totalmente curado" | "Decidi levantar" |
-
-### Causa Raiz Identificada
-
-O modelo **não está ouvindo o áudio**. A transcrição é completamente inventada porque o formato do payload multimodal está incorreto.
-
-**Código Atual (ERRADO):**
-```typescript
-content: [
-  { type: "text", text: "Transcreva..." },        // ❌ type não necessário
-  { 
-    type: "inline_data",                           // ❌ campo type inválido
-    inline_data: { mime_type, data } 
-  },
-]
-```
-
-**Formato Correto do Gemini:**
-```typescript
-content: [
-  { text: "Transcreva..." },                       // ✅ texto direto
-  { inline_data: { mime_type, data } },            // ✅ sem campo type
-]
-```
-
-O Lovable AI Gateway espera o formato nativo do Gemini, onde cada parte é identificada pela presença da chave (`text` ou `inline_data`), não por um campo `type` separado.
+Permitir que candidatos a Soldado possam **anexar um arquivo de áudio pré-gravado** como alternativa à gravação direta no navegador. Isso é útil para:
+- Dispositivos sem microfone disponível
+- Áudios já gravados em outro aplicativo (ex: gravador do celular)
+- Melhor qualidade de áudio (equipamento profissional)
 
 ---
 
-## Plano de Correção
+## Arquitetura da Solução
 
-### PARTE 1: Remover campos "type" desnecessários
+### Abordagem Escolhida: Componente Híbrido com Tabs
 
-**Arquivo:** `supabase/functions/process-testimony/index.ts`
+Criar um componente com duas abas:
+1. **Gravar** - Usar o microfone (componente atual)
+2. **Anexar** - Upload de arquivo de áudio
 
-#### 1.1 Corrigir payload do Gemini Flash (linhas 388-397)
-
-```typescript
-// ANTES:
-content: [
-  { type: "text", text: "Transcreva fielmente este áudio..." },
-  {
-    type: "inline_data",
-    inline_data: {
-      mime_type: testimony.mime_type || "audio/webm",
-      data: audioBase64,
-    },
-  },
-],
-
-// DEPOIS:
-content: [
-  { text: "Transcreva fielmente este áudio de testemunho em português brasileiro:" },
-  {
-    inline_data: {
-      mime_type: testimony.mime_type || "audio/webm",
-      data: audioBase64,
-    },
-  },
-],
+```text
+┌─────────────────────────────────────────────┐
+│  [🎙️ Gravar]    [📎 Anexar Arquivo]        │
+├─────────────────────────────────────────────┤
+│                                             │
+│   (Conteúdo da aba selecionada)            │
+│                                             │
+└─────────────────────────────────────────────┘
 ```
-
-#### 1.2 Corrigir payload do Gemini Pro fallback (linhas 455-464)
-
-Aplicar a mesma correção no bloco de retry com o modelo Pro.
-
-### PARTE 2: Adicionar log para debug do formato
-
-Adicionar log antes da chamada de API para verificar se o payload está correto:
-
-```typescript
-console.log(`Audio payload format: mime_type=${testimony.mime_type}, data_length=${audioBase64.length}`);
-```
-
-### PARTE 3: Reprocessar o testemunho existente
-
-Após deploy da correção:
-1. Atualizar status do testemunho para "processing"
-2. Triggar o reprocessamento
-3. Validar que a nova transcrição menciona "Bita", "overdose", "13 anos limpo"
 
 ---
 
-## Arquivos a Modificar
+## Componentes a Criar/Modificar
+
+### PARTE 1: Novo Componente `AudioUploader.tsx`
+
+**Arquivo:** `src/components/soldado/AudioUploader.tsx`
+
+Componente para upload de arquivo de áudio com:
+- Drag & Drop area
+- Seleção via botão de arquivo
+- Validação de formatos: `.mp3`, `.wav`, `.m4a`, `.webm`, `.ogg`, `.aac`
+- Validação de tamanho máximo: 50MB
+- Extração da duração do áudio via Web Audio API
+- Preview com player de áudio
+- Validação de duração mínima (60 segundos)
+
+```typescript
+interface AudioUploaderProps {
+  maxFileSizeMB?: number;
+  minDurationSeconds?: number;
+  maxDurationSeconds?: number;
+  onFileSelected: (blob: Blob, durationSeconds: number) => void;
+  disabled?: boolean;
+}
+```
+
+### PARTE 2: Modificar `SoldadoTestimony.tsx`
+
+Adicionar sistema de tabs para alternar entre gravação e upload:
+
+```typescript
+// Adicionar estado para controlar modo
+const [inputMode, setInputMode] = useState<"record" | "upload">("record");
+
+// Usar Tabs do Radix
+<Tabs value={inputMode} onValueChange={setInputMode}>
+  <TabsList>
+    <TabsTrigger value="record"><Mic /> Gravar</TabsTrigger>
+    <TabsTrigger value="upload"><Upload /> Anexar Arquivo</TabsTrigger>
+  </TabsList>
+  <TabsContent value="record">
+    <AudioRecorder ... />
+  </TabsContent>
+  <TabsContent value="upload">
+    <AudioUploader ... />
+  </TabsContent>
+</Tabs>
+```
+
+### PARTE 3: Atualizar `TestimonyInstructions.tsx`
+
+Adicionar orientações sobre formatos de arquivo aceitos:
+- Formatos suportados
+- Tamanho máximo
+- Dicas para gravações externas
+
+---
+
+## Detalhes Técnicos
+
+### Validações do Upload
+
+| Validação | Valor | Mensagem de Erro |
+|-----------|-------|------------------|
+| Formato | mp3, wav, m4a, webm, ogg, aac | "Formato não suportado. Use MP3, WAV, M4A ou WebM." |
+| Tamanho | ≤ 50MB | "Arquivo muito grande. Máximo 50MB." |
+| Duração mínima | ≥ 60 segundos | "Áudio muito curto. Mínimo 1 minuto." |
+| Duração máxima | ≤ 900 segundos | "Áudio muito longo. Máximo 15 minutos." |
+
+### Extração de Duração do Áudio
+
+```typescript
+const getAudioDuration = async (file: File): Promise<number> => {
+  return new Promise((resolve, reject) => {
+    const audio = new Audio();
+    audio.src = URL.createObjectURL(file);
+    audio.addEventListener("loadedmetadata", () => {
+      const duration = Math.floor(audio.duration);
+      URL.revokeObjectURL(audio.src);
+      resolve(duration);
+    });
+    audio.addEventListener("error", reject);
+  });
+};
+```
+
+### Formatos MIME Aceitos
+
+```typescript
+const ACCEPTED_AUDIO_TYPES = [
+  "audio/mpeg",        // .mp3
+  "audio/wav",         // .wav
+  "audio/x-wav",       // .wav (alternativo)
+  "audio/mp4",         // .m4a
+  "audio/x-m4a",       // .m4a (alternativo)
+  "audio/webm",        // .webm
+  "audio/ogg",         // .ogg
+  "audio/aac",         // .aac
+];
+```
+
+---
+
+## Fluxo do Usuário
+
+```text
+1. Candidato acessa /testimony/:id
+2. Vê duas opções: "Gravar" ou "Anexar Arquivo"
+3a. Se escolher Gravar → Fluxo atual (inalterado)
+3b. Se escolher Anexar:
+    → Arrasta arquivo ou clica para selecionar
+    → Sistema valida formato, tamanho e duração
+    → Mostra preview com player
+    → Candidato clica "Usar este arquivo"
+4. Botão "Enviar Testemunho" aparece
+5. Submissão funciona igual para ambos os modos
+```
+
+---
+
+## Arquivos a Criar/Modificar
 
 | Arquivo | Ação | Descrição |
 |---------|------|-----------|
-| `supabase/functions/process-testimony/index.ts` | MODIFICAR | Remover campos `type` do array de content multimodal |
+| `src/components/soldado/AudioUploader.tsx` | CRIAR | Novo componente de upload de áudio |
+| `src/pages/SoldadoTestimony.tsx` | MODIFICAR | Adicionar tabs para alternar entre modos |
+| `src/components/soldado/TestimonyInstructions.tsx` | MODIFICAR | Adicionar informações sobre upload |
 
 ---
 
-## Seção Técnica
+## Interface do AudioUploader
 
-### Por que o modelo "alucina"?
+```text
+┌─────────────────────────────────────────────────────┐
+│                                                     │
+│      ┌─────────────────────────────────────┐       │
+│      │                                     │       │
+│      │   📁 Arraste um arquivo de áudio   │       │
+│      │         ou clique para             │       │
+│      │          selecionar                │       │
+│      │                                     │       │
+│      │   Formatos: MP3, WAV, M4A, WebM    │       │
+│      │   Tamanho máximo: 50MB             │       │
+│      └─────────────────────────────────────┘       │
+│                                                     │
+└─────────────────────────────────────────────────────┘
 
-1. O Gateway recebe `{ type: "inline_data", inline_data: {...} }`
-2. O Gemini não reconhece o campo `type` neste contexto
-3. O modelo ignora o objeto com `type` desconhecido
-4. Sobra apenas o prompt de texto: "Transcreva este áudio..."
-5. Sem áudio para transcrever, o modelo inventa um testemunho plausível
+(Após selecionar arquivo)
 
-### Formato das partes multimodais (Gemini API)
-
-| Tipo de Parte | Formato Correto |
-|---------------|-----------------|
-| Texto | `{ text: "string" }` |
-| Imagem/Áudio inline | `{ inline_data: { mime_type: "...", data: "base64" } }` |
-| Arquivo URL | `{ file_data: { file_uri: "...", mime_type: "..." } }` |
-
-O campo `type` é usado em outras APIs (como OpenAI) mas **não faz parte** do schema nativo do Gemini.
-
-### Logs de evidência
-
+┌─────────────────────────────────────────────────────┐
+│                                                     │
+│   📄 meu-testemunho.mp3                            │
+│   Duração: 08:45 | Tamanho: 12.3 MB                │
+│                                                     │
+│   ┌─────────────────────────────────────────┐      │
+│   │  ▶️ [======●================] 08:45    │      │
+│   └─────────────────────────────────────────┘      │
+│                                                     │
+│   [ Trocar arquivo ]     [ Usar este arquivo ]     │
+│                                                     │
+└─────────────────────────────────────────────────────┘
 ```
-Audio downloaded: 3455389 bytes, type: audio/webm
-Audio converted to base64: 4607188 chars
-Transcription complete (Flash): 27 chars          ← Modelo não ouviu nada
-Retrying with Gemini Pro model...
-Transcription complete (Pro): 1184 chars          ← Modelo inventou texto
-```
 
 ---
 
-## Testes de Validação
+## Comportamento Esperado
 
-Após implementação:
-
-1. **Deploy da edge function**
-2. **Reprocessar testemunho** de `contato@profsandromesquita.com`
-3. **Verificar transcrição** deve conter:
-   - "Bita" (nome do narrador)
-   - "43 anos"
-   - "13 anos limpo"
-   - "overdose"
-   - "cocaína"
-   - "parada cardíaca"
-   - "Deus me resgatou"
-
-4. **Comparar com áudio real**:
-> "Oi, eu sou o Bita, eu tenho 43 anos, estou há 13 anos limpo, vim de uma overdose há 13 anos atrás, me perdi de químico, de cocaína..."
+1. **Acesso à página**: Usuário vê tabs "Gravar" e "Anexar Arquivo"
+2. **Tab Gravar**: Funciona exatamente como hoje
+3. **Tab Anexar**: 
+   - Área de drag & drop visualmente clara
+   - Validação imediata ao selecionar arquivo
+   - Preview com player de áudio
+   - Botão para confirmar uso do arquivo
+4. **Após selecionar áudio** (qualquer modo): Botão "Enviar Testemunho" aparece
+5. **Submissão**: Mesma lógica para ambos os modos
 
 ---
 
-## Resultado Esperado
+## Considerações de UX
 
-1. Transcrição fiel ao conteúdo real do áudio
-2. Análise teológica baseada no testemunho verdadeiro do Bita
-3. Sistema funcionando para todos os futuros testemunhos
+- **Tabs claramente identificadas** com ícones (Mic e Upload)
+- **Estados visuais** para drag & drop (hover, error)
+- **Feedback imediato** de validação
+- **Mensagens de erro claras** e acionáveis
+- **Preview de áudio** antes de confirmar
+- **Consistência visual** com o componente de gravação
 
