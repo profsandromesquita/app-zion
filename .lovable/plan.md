@@ -1,106 +1,96 @@
 
-# Plano de Correção: Usuário Preso na Página de Perfil
 
-## Diagnóstico
+# Plano de Correção: Formato do Payload Multimodal para Transcrição
+
+## Diagnóstico Completo
+
+### Áudio Real vs. Transcrição Gerada
+
+| Aspecto | Áudio Real (Bita) | IA Gerou (Errado) |
+|---------|-------------------|-------------------|
+| **Nome** | "Eu sou o Bita, 43 anos" | Pessoa anônima feminina |
+| **História** | Overdose, cocaína, golpes na internet | Problemas de trabalho/família |
+| **Detalhes** | Filho de 7 anos encontrou, parada cardíaca | Chorar no quarto |
+| **Resultado** | "Deus me resgatou, fui totalmente curado" | "Decidi levantar" |
 
 ### Causa Raiz Identificada
 
-O problema é um **loop de navegação infinito** causado pela combinação de dois fatores:
+O modelo **não está ouvindo o áudio**. A transcrição é completamente inventada porque o formato do payload multimodal está incorreto.
 
-1. **Profile.tsx linha 239**: Usa `navigate(-1)` para voltar no histórico
-2. **SoldadoTestimony.tsx linha 78-84**: Verifica se status é `testimony_required` e redireciona para `/profile` se não for
-
-### Fluxo do Bug
-
-```text
-Sequência que causa o loop:
-
-1. Usuário em /testimony/abc123 (status: testimony_required)
-2. Usuário envia testemunho → status muda para "processing" ou "under_review"
-3. Tela de sucesso → clica "Voltar ao Perfil" → navigate("/profile")
-4. Usuário está em /profile
-5. Clica botão "Voltar" → navigate(-1) → volta para /testimony/abc123
-6. SoldadoTestimony carrega, verifica status...
-7. Status NÃO é mais "testimony_required" (é "processing")
-8. Código redireciona: navigate("/profile") (linha 83-84)
-9. Usuário volta para /profile → clica voltar → ciclo infinito
+**Código Atual (ERRADO):**
+```typescript
+content: [
+  { type: "text", text: "Transcreva..." },        // ❌ type não necessário
+  { 
+    type: "inline_data",                           // ❌ campo type inválido
+    inline_data: { mime_type, data } 
+  },
+]
 ```
 
-O `navigate(-1)` está tentando voltar para a página de testemunho, mas essa página rejeita o usuário e manda de volta para o perfil.
+**Formato Correto do Gemini:**
+```typescript
+content: [
+  { text: "Transcreva..." },                       // ✅ texto direto
+  { inline_data: { mime_type, data } },            // ✅ sem campo type
+]
+```
+
+O Lovable AI Gateway espera o formato nativo do Gemini, onde cada parte é identificada pela presença da chave (`text` ou `inline_data`), não por um campo `type` separado.
 
 ---
 
-## Solução
+## Plano de Correção
 
-### Opção A: Substituir `navigate(-1)` por rota fixa (Recomendado)
+### PARTE 1: Remover campos "type" desnecessários
 
-Em vez de usar `navigate(-1)` que depende do histórico, usar uma rota fixa segura como `/chat`.
+**Arquivo:** `supabase/functions/process-testimony/index.ts`
 
-**Vantagens:**
-- Simples e previsível
-- Sempre funciona independente do histórico
-- Comportamento consistente
-
-**Desvantagens:**
-- Perde a flexibilidade de "voltar para onde estava"
-
-### Opção B: Limpar histórico após submissão do testemunho
-
-Usar `navigate("/profile", { replace: true })` após submissão para substituir a entrada no histórico.
-
-**Vantagens:**
-- Mantém a navegação com `navigate(-1)` em outros casos
-- Resolve o problema específico
-
-**Desvantagens:**
-- Precisa modificar dois arquivos
-
-### Opção C: Combinação inteligente
-
-Usar `navigate(-1)` com fallback para `/chat` se não houver histórico anterior válido.
-
----
-
-## Implementação Escolhida: Combinação de A e B
-
-### PARTE 1: Corrigir SoldadoTestimony.tsx
-
-Após submissão bem-sucedida, usar `replace: true` para não deixar a página de testemunho no histórico:
+#### 1.1 Corrigir payload do Gemini Flash (linhas 388-397)
 
 ```typescript
-// Linha 200 - No botão "Voltar ao Perfil" após submissão
-onClick={() => navigate("/profile", { replace: true })}
+// ANTES:
+content: [
+  { type: "text", text: "Transcreva fielmente este áudio..." },
+  {
+    type: "inline_data",
+    inline_data: {
+      mime_type: testimony.mime_type || "audio/webm",
+      data: audioBase64,
+    },
+  },
+],
+
+// DEPOIS:
+content: [
+  { text: "Transcreva fielmente este áudio de testemunho em português brasileiro:" },
+  {
+    inline_data: {
+      mime_type: testimony.mime_type || "audio/webm",
+      data: audioBase64,
+    },
+  },
+],
 ```
 
-Também corrigir o botão de voltar no header (linha 225) para usar rota fixa:
+#### 1.2 Corrigir payload do Gemini Pro fallback (linhas 455-464)
+
+Aplicar a mesma correção no bloco de retry com o modelo Pro.
+
+### PARTE 2: Adicionar log para debug do formato
+
+Adicionar log antes da chamada de API para verificar se o payload está correto:
 
 ```typescript
-// Linha 225 - Botão voltar no header
-onClick={() => navigate("/profile", { replace: true })}
+console.log(`Audio payload format: mime_type=${testimony.mime_type}, data_length=${audioBase64.length}`);
 ```
 
-### PARTE 2: Corrigir Profile.tsx
+### PARTE 3: Reprocessar o testemunho existente
 
-Substituir `navigate(-1)` por uma rota fixa segura:
-
-```typescript
-// Linha 239
-onClick={() => navigate("/chat")}
-```
-
-Ou, se quiser manter flexibilidade, verificar se há histórico válido:
-
-```typescript
-onClick={() => {
-  // Se vier de rota que causa loop, ir para chat
-  const canGoBack = window.history.length > 2;
-  if (canGoBack) {
-    navigate(-1);
-  } else {
-    navigate("/chat");
-  }
-}}
-```
+Após deploy da correção:
+1. Atualizar status do testemunho para "processing"
+2. Triggar o reprocessamento
+3. Validar que a nova transcrição menciona "Bita", "overdose", "13 anos limpo"
 
 ---
 
@@ -108,61 +98,65 @@ onClick={() => {
 
 | Arquivo | Ação | Descrição |
 |---------|------|-----------|
-| `src/pages/SoldadoTestimony.tsx` | MODIFICAR | Usar `replace: true` na navegação pós-submissão |
-| `src/pages/Profile.tsx` | MODIFICAR | Substituir `navigate(-1)` por `/chat` |
+| `supabase/functions/process-testimony/index.ts` | MODIFICAR | Remover campos `type` do array de content multimodal |
 
 ---
 
-## Detalhes Técnicos
+## Seção Técnica
 
-### Modificações em SoldadoTestimony.tsx
+### Por que o modelo "alucina"?
 
-**Linha 200** - Botão "Voltar ao Perfil" na tela de sucesso:
-```typescript
-// ANTES:
-onClick={() => navigate("/profile")}
+1. O Gateway recebe `{ type: "inline_data", inline_data: {...} }`
+2. O Gemini não reconhece o campo `type` neste contexto
+3. O modelo ignora o objeto com `type` desconhecido
+4. Sobra apenas o prompt de texto: "Transcreva este áudio..."
+5. Sem áudio para transcrever, o modelo inventa um testemunho plausível
 
-// DEPOIS:
-onClick={() => navigate("/profile", { replace: true })}
+### Formato das partes multimodais (Gemini API)
+
+| Tipo de Parte | Formato Correto |
+|---------------|-----------------|
+| Texto | `{ text: "string" }` |
+| Imagem/Áudio inline | `{ inline_data: { mime_type: "...", data: "base64" } }` |
+| Arquivo URL | `{ file_data: { file_uri: "...", mime_type: "..." } }` |
+
+O campo `type` é usado em outras APIs (como OpenAI) mas **não faz parte** do schema nativo do Gemini.
+
+### Logs de evidência
+
 ```
-
-**Linha 225** - Botão de voltar no header:
-```typescript
-// ANTES:
-onClick={() => navigate("/profile")}
-
-// DEPOIS:
-onClick={() => navigate("/profile", { replace: true })}
+Audio downloaded: 3455389 bytes, type: audio/webm
+Audio converted to base64: 4607188 chars
+Transcription complete (Flash): 27 chars          ← Modelo não ouviu nada
+Retrying with Gemini Pro model...
+Transcription complete (Pro): 1184 chars          ← Modelo inventou texto
 ```
-
-### Modificações em Profile.tsx
-
-**Linha 239** - Botão de voltar no header:
-```typescript
-// ANTES:
-onClick={() => navigate(-1)}
-
-// DEPOIS:
-onClick={() => navigate("/chat")}
-```
-
----
-
-## Comportamento Esperado
-
-Após a correção:
-
-1. Usuário grava testemunho e clica "Voltar ao Perfil"
-2. Navegação usa `replace: true`, substituindo `/testimony/...` por `/profile` no histórico
-3. Usuário está em `/profile`
-4. Clica botão "Voltar" → vai para `/chat` (destino seguro)
-5. Sem loops, navegação funciona normalmente
 
 ---
 
 ## Testes de Validação
 
-1. Gravar testemunho e submeter
-2. Clicar "Voltar ao Perfil" na tela de sucesso
-3. Na página de perfil, clicar no botão de voltar (seta)
-4. Verificar que vai para `/chat` sem ficar preso
+Após implementação:
+
+1. **Deploy da edge function**
+2. **Reprocessar testemunho** de `contato@profsandromesquita.com`
+3. **Verificar transcrição** deve conter:
+   - "Bita" (nome do narrador)
+   - "43 anos"
+   - "13 anos limpo"
+   - "overdose"
+   - "cocaína"
+   - "parada cardíaca"
+   - "Deus me resgatou"
+
+4. **Comparar com áudio real**:
+> "Oi, eu sou o Bita, eu tenho 43 anos, estou há 13 anos limpo, vim de uma overdose há 13 anos atrás, me perdi de químico, de cocaína..."
+
+---
+
+## Resultado Esperado
+
+1. Transcrição fiel ao conteúdo real do áudio
+2. Análise teológica baseada no testemunho verdadeiro do Bita
+3. Sistema funcionando para todos os futuros testemunhos
+
