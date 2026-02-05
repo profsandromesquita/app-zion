@@ -1,4 +1,4 @@
-import { BookOpen, Clock, AlertTriangle, Heart, Sparkles } from "lucide-react";
+import { BookOpen, Clock, AlertTriangle, Heart, Sparkles, FileAudio } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 
@@ -40,9 +40,15 @@ const TestimonyInstructions = () => {
           </div>
         </div>
 
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Clock className="h-4 w-4" />
-          <span>Tempo recomendado: <strong>5 a 15 minutos</strong></span>
+        <div className="flex flex-col gap-2 text-sm text-muted-foreground">
+          <div className="flex items-center gap-2">
+            <Clock className="h-4 w-4" />
+            <span>Tempo recomendado: <strong>5 a 15 minutos</strong></span>
+          </div>
+          <div className="flex items-center gap-2">
+            <FileAudio className="h-4 w-4" />
+            <span>Formatos aceitos: <strong>MP3, WAV, M4A, WebM, OGG, AAC</strong> (máx. 50MB)</span>
+          </div>
         </div>
 
         <Alert variant="default" className="border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950/50">
@@ -62,6 +68,14 @@ const TestimonyInstructions = () => {
             <li>O que mudou após o arrependimento genuíno</li>
             <li>Uma palavra de encorajamento para quem está lutando</li>
           </ul>
+        </div>
+
+        <div className="rounded-lg border border-muted bg-muted/30 p-3">
+          <p className="text-xs text-muted-foreground">
+            <strong>Dica:</strong> Você pode gravar diretamente pelo navegador ou anexar 
+            um arquivo de áudio já gravado (ex: gravador do celular). Escolha a opção 
+            que for mais confortável para você.
+          </p>
         </div>
       </CardContent>
     </Card>

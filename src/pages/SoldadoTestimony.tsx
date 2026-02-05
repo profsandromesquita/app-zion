@@ -1,13 +1,15 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Upload, Loader2, CheckCircle2, Mic } from "lucide-react";
+import { ArrowLeft, Upload, Loader2, CheckCircle2, Mic, FileAudio } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
 import SafetyExit from "@/components/SafetyExit";
 import AudioRecorder from "@/components/soldado/AudioRecorder";
+import AudioUploader from "@/components/soldado/AudioUploader";
 import TestimonyInstructions from "@/components/soldado/TestimonyInstructions";
 import zionLogo from "@/assets/zion-logo.png";
 
@@ -16,6 +18,8 @@ interface ApplicationData {
   status: string;
   user_id: string;
 }
+
+type InputMode = "record" | "upload";
 
 const SoldadoTestimony = () => {
   const navigate = useNavigate();
@@ -29,6 +33,7 @@ const SoldadoTestimony = () => {
   const [submitted, setSubmitted] = useState(false);
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [audioDuration, setAudioDuration] = useState(0);
+  const [inputMode, setInputMode] = useState<InputMode>("record");
 
   useEffect(() => {
     if (!authLoading && !user) {
@@ -93,14 +98,38 @@ const SoldadoTestimony = () => {
     setAudioDuration(durationSeconds);
   };
 
+  const handleFileSelected = (blob: Blob, durationSeconds: number) => {
+    setAudioBlob(blob);
+    setAudioDuration(durationSeconds);
+  };
+
+  const handleTabChange = (value: string) => {
+    // Clear audio when switching tabs
+    setAudioBlob(null);
+    setAudioDuration(0);
+    setInputMode(value as InputMode);
+  };
+
   const handleSubmit = async () => {
     if (!audioBlob || !user || !applicationId) return;
 
     setSubmitting(true);
 
     try {
-      // 1. Generate file name
-      const fileExtension = audioBlob.type.includes("mp4") ? "mp4" : "webm";
+      // 1. Generate file name based on MIME type
+      let fileExtension = "webm";
+      if (audioBlob.type.includes("mp4") || audioBlob.type.includes("m4a")) {
+        fileExtension = "m4a";
+      } else if (audioBlob.type.includes("mp3") || audioBlob.type.includes("mpeg")) {
+        fileExtension = "mp3";
+      } else if (audioBlob.type.includes("wav")) {
+        fileExtension = "wav";
+      } else if (audioBlob.type.includes("ogg")) {
+        fileExtension = "ogg";
+      } else if (audioBlob.type.includes("aac")) {
+        fileExtension = "aac";
+      }
+      
       const fileName = `${user.id}/${applicationId}.${fileExtension}`;
 
       // 2. Upload to storage
@@ -229,7 +258,7 @@ const SoldadoTestimony = () => {
           <div className="flex items-center gap-2">
             <Mic className="h-5 w-5 text-emerald-600" />
             <h1 className="text-xl font-semibold text-foreground">
-              Gravar Testemunho
+              Enviar Testemunho
             </h1>
           </div>
         </div>
@@ -240,18 +269,43 @@ const SoldadoTestimony = () => {
           {/* Instructions */}
           <TestimonyInstructions />
 
-          {/* Audio Recorder */}
+          {/* Audio Input Card with Tabs */}
           <Card>
             <CardHeader>
-              <CardTitle className="text-lg">Gravação de Áudio</CardTitle>
+              <CardTitle className="text-lg">Seu Testemunho</CardTitle>
             </CardHeader>
             <CardContent>
-              <AudioRecorder
-                maxDurationSeconds={900}
-                minDurationSeconds={60}
-                onRecordingComplete={handleRecordingComplete}
-                disabled={submitting}
-              />
+              <Tabs value={inputMode} onValueChange={handleTabChange}>
+                <TabsList className="grid w-full grid-cols-2 mb-6">
+                  <TabsTrigger value="record" className="flex items-center gap-2">
+                    <Mic className="h-4 w-4" />
+                    Gravar
+                  </TabsTrigger>
+                  <TabsTrigger value="upload" className="flex items-center gap-2">
+                    <FileAudio className="h-4 w-4" />
+                    Anexar Arquivo
+                  </TabsTrigger>
+                </TabsList>
+                
+                <TabsContent value="record">
+                  <AudioRecorder
+                    maxDurationSeconds={900}
+                    minDurationSeconds={60}
+                    onRecordingComplete={handleRecordingComplete}
+                    disabled={submitting}
+                  />
+                </TabsContent>
+                
+                <TabsContent value="upload">
+                  <AudioUploader
+                    maxFileSizeMB={50}
+                    minDurationSeconds={60}
+                    maxDurationSeconds={900}
+                    onFileSelected={handleFileSelected}
+                    disabled={submitting}
+                  />
+                </TabsContent>
+              </Tabs>
             </CardContent>
           </Card>
 
@@ -261,8 +315,10 @@ const SoldadoTestimony = () => {
               <CardContent className="pt-6">
                 <div className="flex flex-col items-center gap-4">
                   <p className="text-sm text-muted-foreground text-center">
-                    Gravação pronta! Revise o áudio acima e clique em enviar quando estiver
-                    satisfeito com sua gravação.
+                    {inputMode === "record" 
+                      ? "Gravação pronta! Revise o áudio acima e clique em enviar quando estiver satisfeito."
+                      : "Arquivo selecionado! Clique em enviar para continuar."
+                    }
                   </p>
                   <Button
                     onClick={handleSubmit}
