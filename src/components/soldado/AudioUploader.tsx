@@ -26,8 +26,11 @@ const ACCEPTED_AUDIO_TYPES = [
 const ACCEPTED_EXTENSIONS = ".mp3,.wav,.m4a,.webm,.ogg,.aac";
 
 const formatTime = (seconds: number): string => {
+  if (!isFinite(seconds) || isNaN(seconds) || seconds < 0) {
+    return "00:00";
+  }
   const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
+  const secs = Math.floor(seconds % 60);
   return `${mins.toString().padStart(2, "0")}:${secs.toString().padStart(2, "0")}`;
 };
 
@@ -42,19 +45,51 @@ const getAudioDuration = async (file: File): Promise<number> => {
   return new Promise((resolve, reject) => {
     const audio = new Audio();
     const objectUrl = URL.createObjectURL(file);
-    
-    audio.addEventListener("loadedmetadata", () => {
-      const duration = Math.floor(audio.duration);
+    let resolved = false;
+
+    const cleanup = () => {
       URL.revokeObjectURL(objectUrl);
-      resolve(duration);
-    });
+    };
+
+    const tryGetDuration = () => {
+      const duration = audio.duration;
+      if (isFinite(duration) && !isNaN(duration) && duration > 0) {
+        if (!resolved) {
+          resolved = true;
+          cleanup();
+          resolve(Math.floor(duration));
+        }
+      }
+    };
+
+    // Try on loadedmetadata
+    audio.addEventListener("loadedmetadata", tryGetDuration);
     
-    audio.addEventListener("error", (e) => {
-      URL.revokeObjectURL(objectUrl);
-      reject(new Error("Não foi possível processar o arquivo de áudio."));
-    });
+    // Try on durationchange (more reliable for WebM)
+    audio.addEventListener("durationchange", tryGetDuration);
     
+    // Try when ready to play
+    audio.addEventListener("canplaythrough", tryGetDuration);
+
+    audio.addEventListener("error", () => {
+      if (!resolved) {
+        resolved = true;
+        cleanup();
+        reject(new Error("Não foi possível processar o arquivo de áudio."));
+      }
+    });
+
     audio.src = objectUrl;
+    audio.load();
+
+    // Timeout: If after 5 seconds no duration, fail
+    setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        cleanup();
+        reject(new Error("Não foi possível determinar a duração do áudio."));
+      }
+    }, 5000);
   });
 };
 
@@ -329,7 +364,7 @@ const AudioUploader = ({
           </Button>
           <Button
             onClick={handleConfirm}
-            disabled={disabled || duration < minDurationSeconds}
+            disabled={disabled || !isFinite(duration) || isNaN(duration) || duration < minDurationSeconds}
             size="lg"
             className="bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40"
           >
