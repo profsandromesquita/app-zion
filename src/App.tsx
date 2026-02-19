@@ -21,6 +21,7 @@ import JourneyMap from "./pages/admin/JourneyMap";
 import PendingCredentials from "./pages/admin/PendingCredentials";
 import SoldadoApplications from "./pages/admin/SoldadoApplications";
 import TestimonyCuration from "./pages/admin/TestimonyCuration";
+import AIIntelligence from "./pages/admin/AIIntelligence";
 import SoldadoTestimony from "./pages/SoldadoTestimony";
 import SoldadoDashboard from "./pages/SoldadoDashboard";
 
@@ -49,6 +50,7 @@ const App = () => (
           <Route path="/admin/journey-map" element={<JourneyMap />} />
           <Route path="/admin/knowledge" element={<KnowledgeBase />} />
           <Route path="/admin/instructions" element={<SystemInstructions />} />
+          <Route path="/admin/ai-intelligence" element={<AIIntelligence />} />
           <Route path="/admin/pending-credentials" element={<PendingCredentials />} />
           <Route path="/admin/soldado-applications" element={<SoldadoApplications />} />
           <Route path="/admin/testimony-curation" element={<TestimonyCuration />} />

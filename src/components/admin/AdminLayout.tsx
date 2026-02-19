@@ -11,7 +11,8 @@ import {
   MessageSquare,
   Map,
   Shield,
-  FileCheck
+  FileCheck,
+  Sparkles
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import zionLogo from "@/assets/zion-logo.png";
@@ -25,6 +26,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
 
   const navItems = [
     { to: "/admin", icon: LayoutDashboard, label: "Dashboard", end: true },
+    { to: "/admin/ai-intelligence", icon: Sparkles, label: "Inteligência" },
     { to: "/admin/soldado-applications", icon: Shield, label: "Candidatos Soldado" },
     { to: "/admin/testimony-curation", icon: FileCheck, label: "Curadoria Testemunhos" },
     { to: "/admin/documents", icon: Database, label: "Documentos RAG" },
@@ -60,7 +62,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
                   cn(
                     "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                     isActive
-                      ? "bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-md"
+                      ? "bg-primary text-primary-foreground shadow-md"
                       : "text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                   )
                 }
