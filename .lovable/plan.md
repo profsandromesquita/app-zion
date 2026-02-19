@@ -1,114 +1,184 @@
 
-## O que eu investiguei (exaurindo as possibilidades relevantes)
+# Auditoria Completa da Inteligencia da Zion e Plano de Edição
 
-### Fato 1 — O erro vem do banco (não do storage)
-O erro `duplicate key value violates unique constraint "unique_active_testimony"` é disparado **na tabela `public.testimonies`** (não no bucket de arquivos).
+## PARTE 1: Mapa Completo dos Agentes de IA
 
-Confirmação no backend:
-- Constraint/índice: **`UNIQUE (user_id, application_id)`**
-  - Consulta ao banco retornou: `unique_active_testimony UNIQUE (user_id, application_id)`
-  - Também existe o índice `CREATE UNIQUE INDEX unique_active_testimony ... (user_id, application_id)`
+| # | Agente | Função | Modelo | Arquivo |
+|---|--------|--------|--------|---------|
+| 1 | Crisis Detector | Detecta risco de suicídio/autolesão | Gemini 2.5 Flash Lite | `crisis-detector/index.ts` |
+| 2 | Intent Router | Classifica intenção da mensagem | Gemini 2.5 Flash Lite | `intent-router/index.ts` |
+| 3 | Zyon Chat Core | Agente principal de conversa | Gemini 2.5 Flash | `zyon-chat/index.ts` |
+| 4 | Output Validator/Rewriter | Valida e reescreve respostas | Gemini 2.5 Flash Lite | `zyon-chat/index.ts` (inline) |
+| 5 | Turn Insight Observer | Analisa qualidade e progresso | GPT-5-mini / GPT-5 / Gemini Flash (fallback) | `turn-insight-observer/index.ts` |
+| 6 | Testimony Transcriber | Transcreve áudio | Gemini 2.5 Flash / Pro (fallback) | `process-testimony/index.ts` |
+| 7 | Testimony Analyzer | Análise teológica do testemunho | Gemini 3 Flash Preview | `process-testimony/index.ts` |
 
-Isso significa: **para um mesmo usuário + mesma candidatura, só pode existir 1 linha em `testimonies`**, independentemente de `status`.
+---
 
-### Fato 2 — Já existe um registro “bloqueando” a nova inserção
-Na amostra real do banco, existe pelo menos 1 caso com:
-- `user_id = 5273...`
-- `application_id = 83ee...`
-- `status = rejected`
+## PARTE 2: Inventário de Textos de Inteligência (System Prompts e Regras)
 
-Então, quando o candidato tenta reenviar, o `INSERT` falha porque o registro anterior continua existindo.
+### A. Textos HARDCODED (nao editáveis pelo admin)
 
-### Fato 3 — O seu frontend tenta apagar antes de inserir, mas esse DELETE não está autorizado
-No `src/pages/SoldadoTestimony.tsx`, o fluxo atual é:
+| ID | Texto | Localização | Linhas | Tamanho aprox. |
+|----|-------|-------------|--------|----------------|
+| H1 | **BASE_IDENTITY** - Identidade completa do Zyon (12 seções: Acolhimento, Lógica do Medo, Estrutura de Respostas, Referências Bíblicas, Honestidade Epistêmica, Limite Profissional, Privacidade, Modo Espelho, Anti-Teorização, Fio de Ouro, Protocolo de Bloqueios, Detecção de Mentiras) | `zyon-chat/index.ts` L250-334 | 85 linhas | ~4KB |
+| H2 | **OBSERVER_SYSTEM_PROMPT** - Prompt do Observer (Fases da Jornada, Regras de Transição, Ciclo ZION, Rubricas, Issues, Taxonomia, Extração de Fatos) | `turn-insight-observer/index.ts` L13-155 | 143 linhas | ~7KB |
+| H3 | **CRISIS_KEYWORDS** (high/medium) - Palavras-chave de crise | `zyon-chat/index.ts` L340-349 | 10 linhas | ~500B |
+| H4 | **CRISIS_KEYWORDS** (high/medium/low) - Palavras-chave de crise (versão completa) | `crisis-detector/index.ts` L8-48 | 40 linhas | ~2KB |
+| H5 | **CRISIS_CONTACTS** - Contatos de emergência | `crisis-detector/index.ts` L51-56 | 5 linhas | ~200B |
+| H6 | **CRISIS_RESPONSE (high)** - Resposta de crise alta | `zyon-chat/index.ts` L373-381 | 8 linhas | ~500B |
+| H7 | **CRISIS_RESPONSE (high/medium)** - Respostas de crise (versão completa) | `crisis-detector/index.ts` L68-93 | 25 linhas | ~1.5KB |
+| H8 | **INTENT_PATTERNS** - Regex de classificação de intenção | `zyon-chat/index.ts` L396-422 | 26 linhas | ~1KB |
+| H9 | **INTENT_PATTERNS** (versão completa com MATCHMAKING) | `intent-router/index.ts` L51-101 | 50 linhas | ~2KB |
+| H10 | **Intent Router AI System Prompt** - Prompt de classificação por IA | `intent-router/index.ts` L258-271 | 13 linhas | ~800B |
+| H11 | **RAG_PLANS** - Configuração de plano de busca por intenção | `zyon-chat/index.ts` L436-467 + `intent-router/index.ts` L131-204 | ~70 linhas | ~2KB |
+| H12 | **OUTPUT_VALIDATOR** - Regras completas de validação (formato, presunção, causalidade, diagnóstico, explicação psicológica, especulação, conflito como fato, bíblia/maturidade, luto) | `zyon-chat/index.ts` L557-763 | 206 linhas | ~10KB |
+| H13 | **REWRITE_PROMPT_BUILDER** - Template de reescrita | `zyon-chat/index.ts` L769-800 | 31 linhas | ~1.5KB |
+| H14 | **MINIMAL_SAFE_RESPONSE** - Resposta de fallback segura | `zyon-chat/index.ts` L806-810 | 4 linhas | ~150B |
+| H15 | **AVATAR_EMOTIONAL_CONTEXT** - 10 avatares simbólicos com dicas emocionais e sugestões para o modelo | `zyon-chat/index.ts` L180-234 | 54 linhas | ~3KB |
+| H16 | **INTENT_GUIDANCE** - Orientações por intenção no prompt | `zyon-chat/index.ts` L1941-1947 | 7 linhas | ~600B |
+| H17 | **QUESTION_TYPE_GUIDE** - Guias por tipo de pergunta recomendada | `zyon-chat/index.ts` L1960-1967 | 7 linhas | ~500B |
+| H18 | **SYNONYM_MAP** - Mapa de sinônimos para compensação semântica | `zyon-chat/index.ts` L839-912 | ~73 linhas | ~3KB |
+| H19 | **SPIRITUAL_MATURITY_GUIDE** - Guias por maturidade espiritual | `zyon-chat/index.ts` L1768-1774 | 6 linhas | ~500B |
+| H20 | **VIOLATION_DESCRIPTIONS** - Descrições completas das violações | `zyon-chat/index.ts` L1003-1019 | 16 linhas | ~1KB |
+| H21 | **TRANSCRIPTION_SYSTEM_PROMPT** - Prompt de transcrição de áudio | `process-testimony/index.ts` L159-174 | 15 linhas | ~800B |
+| H22 | **ANALYSIS_SYSTEM_PROMPT** - Prompt de análise teológica de testemunho | `process-testimony/index.ts` L135-157 | 22 linhas | ~1.5KB |
+| H23 | **BLOCKAGE_ALERT** - Instrução especial quando bloqueio detectado | `zyon-chat/index.ts` L2003-2013 | 10 linhas | ~600B |
 
-1) Upload do arquivo no storage (ok)  
-2) createSignedUrl (ok)  
-3) **DELETE em `public.testimonies`** (para limpar o anterior)  
-4) INSERT novo
+### B. Textos EDITÁVEIS pelo admin (via painel)
 
-O problema: olhando as políticas atuais de RLS da tabela `public.testimonies`, existe:
-- SELECT próprio ✅
-- INSERT próprio ✅
-- UPDATE próprio **só quando `status = 'uploading'`** ✅ (limitado)
-- **DELETE próprio: NÃO existe** ❌
+| ID | Texto | Mecanismo | Página Admin |
+|----|-------|-----------|--------------|
+| E1 | **System Instructions** (Constituição + Instruções adicionais) | Tabela `system_instructions` (CRUD completo: nome, conteúdo, prioridade, ativo/inativo, pinned como Constituição) | `/admin/instructions` |
+| E2 | **Curated Corrections / Few-Shot Examples** (Positivos, Negativos, Refinamentos) | Tabela `curated_corrections` (status, violations, diagnosis, corrected_response, notes) | `/admin/feedback-dataset` |
+| E3 | **Knowledge Base / RAG Documents** | Tabela `documents` + `chunks` (upload, versionamento, camadas, domínios) | `/admin/documents` |
 
-E o próprio schema confirma:
-- “Currently users can't DELETE records from the table testimonies”
+---
 
-Resultado prático:
-- o `.delete()` não remove nada (por RLS)
-- o código não checa `deleteError`
-- o `.insert()` bate na UNIQUE e explode com `unique_active_testimony`
+## PARTE 3: Gap Analysis - O que NAO e editável pelo admin
 
-### Outras hipóteses consideradas (e por que não são as mais prováveis)
-1) **Duplo clique / duas submissões simultâneas**
-   - Pode piorar, mas não explica o “sempre” acontecer mesmo com um único envio se já houver `rejected` no banco.
-2) **`applicationId` errado / null**
-   - Se fosse null, a UNIQUE não impediria múltiplos (Postgres permite múltiplos NULL em UNIQUE). Aqui o app usa `applicationId` e o erro acusa exatamente a constraint `(user_id, application_id)`.
-3) **Trigger criando linha duplicada**
-   - O trigger `on_testimony_created` só atualiza `soldado_applications`, não insere novo testimony.
-4) **DELETE executa mas não “a tempo” (race)**
-   - Mesmo se houvesse race, a causa primária continua sendo: hoje não existe permissão para o delete acontecer.
+| Prioridade | Texto Hardcoded | Impacto | Risco de edição |
+|------------|----------------|---------|-----------------|
+| ALTA | H1: BASE_IDENTITY (Identidade central do Zyon) | Define todo o comportamento conversacional | Baixo (texto) |
+| ALTA | H2: OBSERVER_SYSTEM_PROMPT (Observer) | Define como a jornada e avaliada | Baixo (texto) |
+| ALTA | H12: OUTPUT_VALIDATOR (Regras de validação) | Determina o que e reescrito/bloqueado | Medio (regras complexas) |
+| MEDIA | H3/H4: CRISIS_KEYWORDS | Afeta detecção de crise | Alto (segurança) |
+| MEDIA | H6/H7: CRISIS_RESPONSES | Texto mostrado em emergência | Alto (segurança) |
+| MEDIA | H15: AVATAR_EMOTIONAL_CONTEXT | Personalização por avatar | Baixo |
+| MEDIA | H8/H9: INTENT_PATTERNS (regex) | Afeta classificação de mensagens | Alto (técnico) |
+| MEDIA | H10: Intent Router AI Prompt | Classificação por IA | Baixo |
+| MEDIA | H16: INTENT_GUIDANCE | Orientação por intenção | Baixo |
+| MEDIA | H19: SPIRITUAL_MATURITY_GUIDE | Regras de Bíblia por perfil | Baixo |
+| MEDIA | H21/H22: Testimony Prompts | Transcrição e análise | Baixo |
+| BAIXA | H13: REWRITE_PROMPT_BUILDER | Template de reescrita | Baixo |
+| BAIXA | H14: MINIMAL_SAFE_RESPONSE | Fallback seguro | Baixo |
+| BAIXA | H17: QUESTION_TYPE_GUIDE | Micro-orientações | Baixo |
+| BAIXA | H18: SYNONYM_MAP | Busca semântica | Medio |
+| BAIXA | H20: VIOLATION_DESCRIPTIONS | Labels de violação | Baixo |
 
-## Causa raiz (mais provável e evidenciada)
-**O usuário não tem permissão (RLS) para deletar o próprio registro em `public.testimonies`.**  
-Por isso o registro antigo permanece e o `INSERT` viola `unique_active_testimony`.
+---
 
-## Plano de correção (definitivo, com o menor risco)
+## PARTE 4: Plano de Implantação - Painel de Edição da Inteligência
 
-### A) Backend (migração): permitir DELETE do próprio testimony no cenário correto
-Criar uma migração SQL adicionando policy de DELETE para o usuário deletar o próprio testemunho **quando a candidatura estiver em `testimony_required`** (ou seja, quando o sistema explicitamente está pedindo reenvio).
+### Estratégia
 
-Política sugerida (mais segura do que “pode deletar sempre”):
-- Permite DELETE somente se:
-  - `auth.uid() = testimonies.user_id`
-  - `testimonies.application_id` pertence ao usuário
-  - e `soldado_applications.status = 'testimony_required'`
+Criar uma nova tabela `ai_prompt_blocks` para armazenar todos os textos de inteligência atualmente hardcoded, e uma nova página admin "Inteligência Zion" para editá-los. As edge functions buscarão esses textos do banco em vez de usar constantes hardcoded.
 
-Isso impede o candidato de apagar testemunhos que já estão sob curadoria/fluxo final.
+### 4.1 Nova Tabela: `ai_prompt_blocks`
 
-### B) Frontend: tornar o erro impossível de “passar batido”
-No `src/pages/SoldadoTestimony.tsx`:
+```text
+ai_prompt_blocks
+  id           UUID (PK)
+  key          TEXT UNIQUE    -- Ex: "BASE_IDENTITY", "OBSERVER_SYSTEM_PROMPT"
+  category     TEXT           -- Ex: "core", "crisis", "observer", "validator", "testimony"
+  name         TEXT           -- Nome legível: "Identidade do Zyon"
+  content      TEXT           -- O texto/prompt em si
+  description  TEXT           -- Descrição do que faz (ajuda ao admin)
+  is_active    BOOLEAN        -- Permite desativar temporariamente
+  is_locked    BOOLEAN        -- Bloqueia edicao (para itens criticos de seguranca)
+  version      INTEGER        -- Controle de versao
+  updated_by   UUID           -- Quem editou por ultimo
+  updated_at   TIMESTAMPTZ
+  created_at   TIMESTAMPTZ
+```
 
-1) **Checar e abortar se o DELETE falhar**
-   - Capturar `{ error: deleteError }` do `.delete()`
-   - Se `deleteError`, lançar/mostrar erro claro e **não executar o insert**
+RLS: Somente `admin` e `desenvolvedor` podem ler/escrever.
 
-2) **Hard-guard contra múltiplos submits**
-   - no início do `handleSubmit`, se `submitting === true`, retornar
-   - isso reduz race por clique repetido
+### 4.2 Categorias e Blocos a Migrar
 
-3) (Opcional, mas recomendado) **Log de diagnóstico**
-   - `console.error` incluindo `deleteError` e `dbError` com contexto (`user.id`, `applicationId`)
-   - só para garantir rastreabilidade em caso de outro bloqueio
+| Categoria | Blocos (key) | Locked? |
+|-----------|-------------|---------|
+| `core` | BASE_IDENTITY, MINIMAL_SAFE_RESPONSE, BLOCKAGE_ALERT | Nao |
+| `crisis` | CRISIS_KEYWORDS_HIGH, CRISIS_KEYWORDS_MEDIUM, CRISIS_KEYWORDS_LOW, CRISIS_RESPONSE_HIGH, CRISIS_RESPONSE_MEDIUM, CRISIS_CONTACTS | Sim (seguranca) |
+| `observer` | OBSERVER_SYSTEM_PROMPT, QUESTION_TYPE_GUIDE | Nao |
+| `validator` | VALIDATION_RULES (JSON estruturado), REWRITE_TEMPLATE, VIOLATION_DESCRIPTIONS, SPIRITUAL_MATURITY_GUIDE | Nao |
+| `testimony` | TRANSCRIPTION_SYSTEM_PROMPT, ANALYSIS_SYSTEM_PROMPT | Nao |
+| `router` | INTENT_ROUTER_AI_PROMPT, INTENT_GUIDANCE | Nao |
+| `personalization` | AVATAR_EMOTIONAL_CONTEXT (JSON) | Nao |
 
-### C) Teste de ponta a ponta (cenários que precisam passar)
-1) **Primeiro envio** (sem registro existente): deve inserir normalmente.
-2) **Regravação solicitada**:
-   - existir linha antiga `rejected`
-   - aplicação em `testimony_required`
-   - novo envio deve:
-     - deletar a linha antiga
-     - inserir a nova sem violar UNIQUE
-3) **Tentativa de deletar quando não deve**:
-   - aplicação não está `testimony_required`
-   - delete deve ser negado pelo backend (segurança ok)
-4) **Clique duplo**:
-   - não deve gerar duas tentativas concorrentes
+### 4.3 Nova Pagina Admin: `/admin/ai-intelligence`
 
-## Arquivos/itens que serão alterados quando eu implementar
-- `supabase/migrations/<nova_migracao>.sql`
-  - adicionar a policy de DELETE na tabela `public.testimonies` (com condição pelo status da aplicação)
-- `src/pages/SoldadoTestimony.tsx`
-  - checar `deleteError`
-  - guard `if (submitting) return;`
+Interface organizada por abas (categorias):
 
-## Observação importante (para não cair em armadilha)
-Uma alternativa seria trocar “DELETE+INSERT” por “UPSERT”.
-Mas aqui isso é perigoso sem mudanças adicionais, porque:
-- UPSERT em conflito vira UPDATE
-- usuários hoje só podem UPDATE quando `status='uploading'`
-- e além disso o trigger que linka a candidatura roda apenas em INSERT (não em UPDATE)
-Então a solução mais simples e robusta para este desenho atual é:
-**corrigir RLS de DELETE + validar erro no frontend.**
+- **Core** - Identidade, fallback, bloqueio
+- **Crise** - Keywords, respostas, contatos (com aviso de seguranca)
+- **Observer** - Prompt do Observer, guias de perguntas
+- **Validador** - Regras de validação, template de reescrita, violações
+- **Testemunho** - Prompts de transcrição e análise
+- **Router** - Prompt de classificação, orientações por intenção
+- **Personalização** - Avatares e contexto emocional
+
+Cada bloco terá:
+- Editor de texto (textarea grande com preview markdown)
+- Indicador de versão e quem editou por último
+- Botao "Restaurar Original" (salva a versão hardcoded original como fallback)
+- Badge de "Bloqueado" para itens criticos de seguranca (editável apenas com confirmação dupla)
+- Diff view entre versão atual e original
+
+### 4.4 Alterações nas Edge Functions
+
+Cada edge function será modificada para:
+
+1. Buscar o bloco do banco via `supabase.from("ai_prompt_blocks").select("content").eq("key", "BLOCO_KEY").eq("is_active", true).single()`
+2. Usar fallback hardcoded se a busca falhar (resiliência)
+3. Cache em memória por request (os blocos são lidos 1x por chamada)
+
+Funções afetadas:
+- `zyon-chat/index.ts` - Buscar BASE_IDENTITY, CRISIS_KEYWORDS, CRISIS_RESPONSE, INTENT_GUIDANCE, AVATAR_EMOTIONAL_CONTEXT, QUESTION_TYPE_GUIDE, SPIRITUAL_MATURITY_GUIDE, MINIMAL_SAFE_RESPONSE, VIOLATION_DESCRIPTIONS, REWRITE_TEMPLATE
+- `turn-insight-observer/index.ts` - Buscar OBSERVER_SYSTEM_PROMPT
+- `crisis-detector/index.ts` - Buscar CRISIS_KEYWORDS, CRISIS_RESPONSE, CRISIS_CONTACTS
+- `intent-router/index.ts` - Buscar INTENT_ROUTER_AI_PROMPT
+- `process-testimony/index.ts` - Buscar TRANSCRIPTION_SYSTEM_PROMPT, ANALYSIS_SYSTEM_PROMPT
+
+### 4.5 Seed dos Dados Iniciais
+
+A migração incluirá INSERT dos textos atuais hardcoded como valores iniciais, preservando tudo que funciona hoje.
+
+### 4.6 Sequência de Implementação
+
+1. Criar tabela `ai_prompt_blocks` com RLS e seed dos dados atuais
+2. Criar a rota `/admin/ai-intelligence` no App.tsx
+3. Criar a página `src/pages/admin/AIIntelligence.tsx` com CRUD por abas
+4. Modificar `zyon-chat/index.ts` para buscar blocos do banco (com fallback)
+5. Modificar `turn-insight-observer/index.ts` idem
+6. Modificar `crisis-detector/index.ts` idem
+7. Modificar `intent-router/index.ts` idem
+8. Modificar `process-testimony/index.ts` idem
+9. Testar ponta a ponta
+
+### Nota sobre OUTPUT_VALIDATOR (H12)
+
+As regras de validação (regex patterns, thresholds) são as mais complexas de externalizar porque envolvem lógica programática, não apenas texto. A abordagem recomendada é:
+
+- Externalizar os **textos** de instrução de reescrita (rewriteInstructions) como editáveis
+- Manter os **regex patterns** e **lógica** hardcoded (pois editar regex via UI seria perigoso)
+- Permitir ajustar **thresholds numéricos** (max chars, max linhas, max perguntas) via um bloco JSON editável
+
+---
+
+## Resumo do Escopo
+
+- **1 nova tabela** com ~25 blocos de texto iniciais
+- **1 nova página admin** com 7 abas por categoria
+- **5 edge functions** modificadas para buscar prompts do banco
+- **Zero** quebra de funcionalidade (fallback para valores hardcoded)
