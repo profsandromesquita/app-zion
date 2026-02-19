@@ -41,6 +41,51 @@ export type Database = {
         }
         Relationships: []
       }
+      ai_prompt_blocks: {
+        Row: {
+          category: string
+          content: string
+          created_at: string
+          description: string | null
+          id: string
+          is_active: boolean
+          is_locked: boolean
+          key: string
+          name: string
+          updated_at: string
+          updated_by: string | null
+          version: number
+        }
+        Insert: {
+          category: string
+          content: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          is_locked?: boolean
+          key: string
+          name: string
+          updated_at?: string
+          updated_by?: string | null
+          version?: number
+        }
+        Update: {
+          category?: string
+          content?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          is_active?: boolean
+          is_locked?: boolean
+          key?: string
+          name?: string
+          updated_at?: string
+          updated_by?: string | null
+          version?: number
+        }
+        Relationships: []
+      }
       chat_messages: {
         Row: {
           content: string
