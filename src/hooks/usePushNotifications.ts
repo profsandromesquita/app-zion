@@ -102,7 +102,7 @@ export function usePushNotifications(userId: string | null) {
         try {
           const registration = await navigator.serviceWorker.ready;
           console.log("[Push] Service Worker ready:", registration);
-          const subscription = await registration.pushManager.getSubscription();
+          const subscription = await (registration as any).pushManager.getSubscription();
           isSubscribed = !!subscription;
           console.log("[Push] Existing subscription:", isSubscribed);
         } catch (err) {
@@ -186,7 +186,7 @@ export function usePushNotifications(userId: string | null) {
 
       // Criar subscrição push
       console.log("[Push] Creating push subscription...");
-      const subscription = await registration.pushManager.subscribe({
+      const subscription = await (registration as any).pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: urlBase64ToUint8Array(vapidData.publicKey),
       });
@@ -253,7 +253,7 @@ export function usePushNotifications(userId: string | null) {
 
     try {
       const registration = await navigator.serviceWorker.ready;
-      const subscription = await registration.pushManager.getSubscription();
+      const subscription = await (registration as any).pushManager.getSubscription();
 
       if (subscription) {
         console.log("[Push] Unsubscribing from push...");
