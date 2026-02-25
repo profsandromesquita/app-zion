@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import AdminLayout from "@/components/admin/AdminLayout";
-import AdminRoute from "@/components/admin/AdminRoute";
+import RoleRoute from "@/components/admin/RoleRoute";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Loader2, RefreshCw, Wand2 } from "lucide-react";
@@ -188,7 +188,7 @@ const TestimonyCuration = () => {
   const analyzedCount = getTabCount("analyzed");
 
   return (
-    <AdminRoute>
+    <RoleRoute allowedRoles={["admin", "desenvolvedor", "profissional", "pastor"]}>
       <AdminLayout>
         <div className="space-y-6">
           <div className="flex items-center justify-between">
@@ -333,7 +333,7 @@ const TestimonyCuration = () => {
           </Tabs>
         </div>
       </AdminLayout>
-    </AdminRoute>
+    </RoleRoute>
   );
 };
 

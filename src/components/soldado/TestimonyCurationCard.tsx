@@ -330,7 +330,7 @@ const TestimonyCurationCard = ({
 
   const canTakeAction = 
     approverRole !== null && 
-    (testimony.status === "analyzed" || testimony.status === "processing");
+    testimony.status === "analyzed";
 
   return (
     <>

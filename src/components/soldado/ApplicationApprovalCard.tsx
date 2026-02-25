@@ -310,6 +310,24 @@ const ApplicationApprovalCard = ({
                   </div>
                 )}
 
+                {/* Feedback de aprovações pendentes */}
+                {!canApprove && approverRole && application.status === "under_review" && (
+                  <div className="mt-3 p-3 rounded-md bg-muted border border-border">
+                    <p className="text-sm text-muted-foreground">
+                      ✓ Sua aprovação foi registrada. Aguardando:{" "}
+                      <span className="font-medium text-foreground">
+                        {[
+                          application.approvals.admin === "pending" && "Admin",
+                          application.approvals.profissional === "pending" && "Profissional",
+                          application.approvals.pastor === "pending" && "Pastor",
+                        ]
+                          .filter(Boolean)
+                          .join(", ") || "processamento final"}
+                      </span>
+                    </p>
+                  </div>
+                )}
+
                 {canApprove && (
                   <div className="pt-3 space-y-3">
                     <Textarea
