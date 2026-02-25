@@ -198,7 +198,7 @@ const SoldadoTestimony = () => {
       }
 
       // 6. Create new testimony record
-      const { error: dbError } = await supabase
+      const { data: insertedTestimony, error: dbError } = await supabase
         .from("testimonies")
         .insert({
           user_id: user.id,
@@ -208,11 +208,20 @@ const SoldadoTestimony = () => {
           file_size_bytes: audioBlob.size,
           mime_type: normalizedMimeType,
           status: "processing",
-        });
+        })
+        .select("id")
+        .single();
 
       if (dbError) throw dbError;
 
-      // 5. Success
+      // 7. Auto-trigger process-testimony (fire-and-forget)
+      if (insertedTestimony?.id) {
+        supabase.functions.invoke("process-testimony", {
+          body: { testimony_id: insertedTestimony.id },
+        }).catch((err) => console.warn("Auto-process testimony failed (will retry via curation):", err));
+      }
+
+      // 8. Success
       setSubmitted(true);
       toast({
         title: "Testemunho enviado!",
