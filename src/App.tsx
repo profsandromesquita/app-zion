@@ -22,6 +22,7 @@ import PendingCredentials from "./pages/admin/PendingCredentials";
 import SoldadoApplications from "./pages/admin/SoldadoApplications";
 import TestimonyCuration from "./pages/admin/TestimonyCuration";
 import AIIntelligence from "./pages/admin/AIIntelligence";
+import FeatureFlags from "./pages/admin/FeatureFlags";
 import SoldadoTestimony from "./pages/SoldadoTestimony";
 import SoldadoDashboard from "./pages/SoldadoDashboard";
 
