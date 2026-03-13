@@ -880,6 +880,131 @@ export type Database = {
           },
         ]
       }
+      io_daily_sessions: {
+        Row: {
+          check_in_completed: boolean
+          check_in_mood: string | null
+          completed: boolean
+          created_at: string
+          duration_seconds: number | null
+          escala_agencia: number | null
+          escala_autonomia: number | null
+          escala_clareza: number | null
+          escala_constancia: number | null
+          escala_identidade: number | null
+          escala_regulacao: number | null
+          escala_vitalidade: number | null
+          feedback_generated: string | null
+          id: string
+          igi_at_session: number | null
+          mission_completed: boolean
+          mission_id: string | null
+          phase_at_session: number
+          reforco_identitario: string | null
+          registro_text: string | null
+          session_date: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          check_in_completed?: boolean
+          check_in_mood?: string | null
+          completed?: boolean
+          created_at?: string
+          duration_seconds?: number | null
+          escala_agencia?: number | null
+          escala_autonomia?: number | null
+          escala_clareza?: number | null
+          escala_constancia?: number | null
+          escala_identidade?: number | null
+          escala_regulacao?: number | null
+          escala_vitalidade?: number | null
+          feedback_generated?: string | null
+          id?: string
+          igi_at_session?: number | null
+          mission_completed?: boolean
+          mission_id?: string | null
+          phase_at_session: number
+          reforco_identitario?: string | null
+          registro_text?: string | null
+          session_date: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          check_in_completed?: boolean
+          check_in_mood?: string | null
+          completed?: boolean
+          created_at?: string
+          duration_seconds?: number | null
+          escala_agencia?: number | null
+          escala_autonomia?: number | null
+          escala_clareza?: number | null
+          escala_constancia?: number | null
+          escala_identidade?: number | null
+          escala_regulacao?: number | null
+          escala_vitalidade?: number | null
+          feedback_generated?: string | null
+          id?: string
+          igi_at_session?: number | null
+          mission_completed?: boolean
+          mission_id?: string | null
+          phase_at_session?: number
+          reforco_identitario?: string | null
+          registro_text?: string | null
+          session_date?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "io_daily_sessions_mission_id_fkey"
+            columns: ["mission_id"]
+            isOneToOne: false
+            referencedRelation: "io_missions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      io_missions: {
+        Row: {
+          created_at: string
+          description: string
+          difficulty: string
+          id: string
+          is_active: boolean
+          phase: number
+          title: string
+          type: string
+          updated_at: string
+          week_range: string
+        }
+        Insert: {
+          created_at?: string
+          description: string
+          difficulty?: string
+          id?: string
+          is_active?: boolean
+          phase: number
+          title: string
+          type: string
+          updated_at?: string
+          week_range: string
+        }
+        Update: {
+          created_at?: string
+          description?: string
+          difficulty?: string
+          id?: string
+          is_active?: boolean
+          phase?: number
+          title?: string
+          type?: string
+          updated_at?: string
+          week_range?: string
+        }
+        Relationships: []
+      }
       io_phase_transitions: {
         Row: {
           created_at: string
