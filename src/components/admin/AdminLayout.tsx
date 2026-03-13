@@ -12,7 +12,9 @@ import {
   Map,
   Shield,
   FileCheck,
-  Sparkles
+  Sparkles,
+  ToggleLeft,
+  FlaskConical
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import zionLogo from "@/assets/zion-logo.png";
