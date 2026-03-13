@@ -1,89 +1,119 @@
 
 
-## Plano: Tabela de Feature Flags
+# Plano de Correcao: Fluxo de Testemunho e Aprovacao de Soldados
 
-### Objetivo
-Criar uma tabela `feature_flags` que permita ativar/desativar funcionalidades V2 (Método IO) sem afetar o comportamento V1 em produção. Essa tabela sera consultada tanto pelo frontend quanto pelas Edge Functions.
+## Diagnostico Confirmado
 
-### Tabela: `feature_flags`
+Dados reais do banco confirmam os problemas:
+- **1 candidatura travada** em `under_review` com testemunho em `processing` (nunca processado, sem transcrição nem analise)
+- **0 usuarios com role `pastor`** no sistema -- aprovacao tripla e impossivel
+- A pagina de curadoria (`TestimonyCuration`) exige role `admin` via `AdminRoute`, bloqueando `profissional` e `pastor`
+- O envio de testemunho NAO dispara `process-testimony` automaticamente
+- O card de aprovacao (`ApplicationApprovalCard`) nao mostra feedback sobre quais aprovacoes faltam quando o usuario ja aprovou
 
-```sql
-CREATE TABLE public.feature_flags (
-  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  key text UNIQUE NOT NULL,          -- ex: 'io_daily_session', 'io_phase_manager'
-  description text,                   -- descrição legível
-  enabled boolean NOT NULL DEFAULT false,
-  environment text NOT NULL DEFAULT 'all',  -- 'all', 'staging', 'production'
-  created_at timestamptz DEFAULT now(),
-  updated_at timestamptz DEFAULT now()
-);
+---
 
-ALTER TABLE public.feature_flags ENABLE ROW LEVEL SECURITY;
+## Ordem de Deploy (5 etapas)
 
--- Qualquer autenticado pode ler (edge functions usam service_role)
-CREATE POLICY "Anyone can read flags" ON public.feature_flags
-  FOR SELECT TO authenticated USING (true);
+### Etapa 1: Migration -- Flexibilizar aprovacao tripla
 
--- Apenas admin/dev pode gerenciar
-CREATE POLICY "Admins can manage flags" ON public.feature_flags
-  FOR ALL TO authenticated
-  USING (has_role(auth.uid(), 'admin') OR has_role(auth.uid(), 'desenvolvedor'))
-  WITH CHECK (has_role(auth.uid(), 'admin') OR has_role(auth.uid(), 'desenvolvedor'));
+**Problema:** Sem pastor no sistema, nenhuma candidatura pode ser aprovada.
 
--- Trigger updated_at
-CREATE TRIGGER set_updated_at BEFORE UPDATE ON public.feature_flags
-  FOR EACH ROW EXECUTE FUNCTION trigger_set_updated_at();
+**Solucao:** Criar uma funcao que verifica aprovacao com logica flexivel: se nao existe usuario com role `pastor` no sistema, a aprovacao de pastor e dispensada. O trigger `check_soldado_approval_complete` sera atualizado.
+
+```text
+Logica da nova funcao check_soldado_approval_complete:
+  - admin_approved = obrigatorio
+  - profissional_approved = obrigatorio
+  - pastor_approved = obrigatorio SE existir pelo menos 1 usuario com role 'pastor'
+  - Se nao existir pastor, aprovacao completa com admin + profissional
 ```
 
-### Dados iniciais (seed)
+**SQL (migration):**
+- Recriar a funcao `check_soldado_approval_complete` com a logica condicional
+- Atualizar a funcao `get_application_approval_status` para refletir o campo `pastor_required`
 
-Inserir flags para cada funcionalidade V2 planejada, todas desabilitadas:
+---
 
-| key | description | enabled |
-|---|---|---|
-| `io_phase_manager` | Ativa o gerenciador de fases IO no zyon-chat | false |
-| `io_daily_session` | Ativa sessão diária estruturada na UI | false |
-| `io_igi_calculator` | Ativa cálculo do IGI | false |
-| `io_prompt_adapter` | Usa prompt adaptado por fase IO no zyon-chat | false |
-| `io_progress_ui` | Mostra progressão visual IO no perfil | false |
+### Etapa 2: Edge Function -- Auto-processar testemunho apos envio
 
-### Hook frontend: `useFeatureFlag`
+**Problema:** O testemunho e inserido com status `processing` mas a Edge Function `process-testimony` nunca e chamada automaticamente.
 
+**Solucao:** Adicionar chamada a `process-testimony` no frontend imediatamente apos o INSERT do testemunho em `SoldadoTestimony.tsx`.
+
+**Arquivo:** `src/pages/SoldadoTestimony.tsx`
+- Apos o INSERT bem-sucedido na tabela `testimonies` (linha ~213), invocar:
+  ```typescript
+  supabase.functions.invoke("process-testimony", {
+    body: { testimony_id: insertedId }
+  });
+  ```
+- Sera fire-and-forget (nao bloqueia a UX de sucesso)
+- Requer retornar o `id` do INSERT (usar `.select('id').single()`)
+
+---
+
+### Etapa 3: UI -- Abrir curadoria para profissional e pastor
+
+**Problema:** `TestimonyCuration.tsx` usa `AdminRoute` que bloqueia profissional e pastor.
+
+**Solucao:** Trocar `AdminRoute` por `RoleRoute` com roles permitidas.
+
+**Arquivo:** `src/pages/admin/TestimonyCuration.tsx`
+- Substituir `<AdminRoute>` por `<RoleRoute allowedRoles={["admin", "desenvolvedor", "profissional", "pastor"]}>`
+- Importar `RoleRoute` no lugar de `AdminRoute`
+
+---
+
+### Etapa 4: UI -- Feedback de aprovacoes pendentes no card
+
+**Problema:** Apos o admin aprovar, o card some os botoes sem explicar o que falta.
+
+**Solucao:** Adicionar mensagem contextual em `ApplicationApprovalCard.tsx`.
+
+**Arquivo:** `src/components/soldado/ApplicationApprovalCard.tsx`
+- Quando `canApprove === false` e `status === "under_review"`:
+  - Mostrar banner informativo: "Sua aprovacao foi registrada. Aguardando: [lista de roles pendentes]"
+  - Calcular roles pendentes a partir de `application.approvals`
+
+---
+
+### Etapa 5: UI -- Guardar curadoria antes de aprovacao
+
+**Problema:** O curador pode aprovar a candidatura ANTES do testemunho ser processado pela IA (status `processing`).
+
+**Solucao:** No `TestimonyCurationCard.tsx`, ja existe logica parcial (`canTakeAction` verifica `analyzed || processing`). Ajustar para:
+- Botoes de "Aprovar"/"Rejeitar" so aparecem quando `testimony.status === "analyzed"`
+- Quando `processing`, mostrar apenas botao "Processar" e mensagem de aguardo
+- Remover `processing` da condicao `canTakeAction` para acoes de curadoria
+
+**Arquivo:** `src/components/soldado/TestimonyCurationCard.tsx` (linha 331-333)
 ```typescript
-// src/hooks/useFeatureFlag.ts
-export const useFeatureFlag = (key: string): { enabled: boolean; loading: boolean } => {
-  // Query feature_flags where key = key
-  // Retorna enabled com cache via react-query (staleTime: 5min)
-}
+// ANTES:
+const canTakeAction = approverRole !== null && 
+  (testimony.status === "analyzed" || testimony.status === "processing");
+
+// DEPOIS:
+const canTakeAction = approverRole !== null && testimony.status === "analyzed";
 ```
 
-### Uso nas Edge Functions
+---
 
-Nas edge functions, consultar via service_role antes de executar lógica V2:
+## Resumo de Arquivos Impactados
 
-```typescript
-const { data } = await supabaseAdmin
-  .from('feature_flags')
-  .select('enabled')
-  .eq('key', 'io_phase_manager')
-  .single();
+| Arquivo | Tipo de Mudanca |
+|---|---|
+| Nova migration SQL | Recriar trigger de aprovacao flexivel |
+| `src/pages/SoldadoTestimony.tsx` | Chamar process-testimony apos envio |
+| `src/pages/admin/TestimonyCuration.tsx` | Trocar AdminRoute por RoleRoute |
+| `src/components/soldado/ApplicationApprovalCard.tsx` | Feedback de aprovacoes pendentes |
+| `src/components/soldado/TestimonyCurationCard.tsx` | Bloquear curadoria antes da analise |
 
-if (data?.enabled) {
-  // lógica V2
-} else {
-  // lógica V1 (atual, intocada)
-}
-```
+## Riscos e Mitigacoes
 
-### Painel admin
+- **Risco:** Flexibilizar pastor pode permitir aprovacao prematura.
+  **Mitigacao:** A logica so dispensa pastor se literalmente nao existe nenhum usuario com essa role no sistema. Quando um pastor for cadastrado, a exigencia volta automaticamente.
 
-Adicionar uma página `/admin/feature-flags` com toggle para cada flag, acessível apenas por admin/desenvolvedor.
-
-### Resumo das entregas
-
-1. Migration: criar tabela `feature_flags` com RLS e trigger
-2. Seed: inserir 5 flags IO desabilitadas
-3. Hook `useFeatureFlag` no frontend
-4. Página admin `/admin/feature-flags` com toggles
-5. Nenhuma alteração em edge functions neste passo
+- **Risco:** Chamada fire-and-forget do process-testimony pode falhar silenciosamente.
+  **Mitigacao:** O botao "Processar" na tela de curadoria ja existe como fallback manual.
 
