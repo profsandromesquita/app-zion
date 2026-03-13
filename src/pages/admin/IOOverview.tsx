@@ -8,13 +8,23 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import { Loader2, Activity, Users, TrendingUp, Flame, Play, Eye, Settings2, AlertTriangle } from "lucide-react";
+import { Loader2, Activity, Users, TrendingUp, Flame, Play, Eye, Settings2, AlertTriangle, GitCompareArrows } from "lucide-react";
+
+const OBSERVER_TO_IO_RANGE: Record<string, number[]> = {
+  ACOLHIMENTO: [1],
+  CLARIFICACAO: [1, 2],
+  PADROES: [3],
+  RAIZ: [3],
+  TROCA: [4, 5],
+  CONSOLIDACAO: [6, 7],
+};
 
 const PHASE_NAMES: Record<number, string> = {
   1: "Consciência",
@@ -31,6 +41,7 @@ const IOOverview = () => {
   const [pmResult, setPmResult] = useState<any>(null);
   const [pmLoading, setPmLoading] = useState(false);
   const [overridePhase, setOverridePhase] = useState(1);
+  const [showOnlyDivergent, setShowOnlyDivergent] = useState(false);
 
   // Main query: io_user_phase + profiles + cohorts
   const { data: users, isLoading } = useQuery({
@@ -84,6 +95,47 @@ const IOOverview = () => {
     const globalFlag = pmFlags.find((f: any) => f.scope === "global");
     return globalFlag?.flag_value ?? false;
   };
+
+  // Observer phases query for shadow mode comparison
+  const { data: observerPhases } = useQuery({
+    queryKey: ["observer-phases", users?.map((u: any) => u.user_id)],
+    enabled: !!users && users.length > 0,
+    queryFn: async () => {
+      const userIds = users!.map((u: any) => u.user_id);
+
+      // Get all chat_sessions for these users
+      const { data: chatSessions, error: csErr } = await supabase
+        .from("chat_sessions")
+        .select("id, user_id")
+        .in("user_id", userIds);
+      if (csErr) throw csErr;
+      if (!chatSessions || chatSessions.length === 0) return new Map<string, string>();
+
+      const sessionIds = chatSessions.map((cs: any) => cs.id);
+      const sessionToUser = new Map(chatSessions.map((cs: any) => [cs.id, cs.user_id]));
+
+      // Get turn_insights with completed extraction
+      const { data: insights, error: tiErr } = await supabase
+        .from("turn_insights")
+        .select("chat_session_id, phase, created_at")
+        .in("chat_session_id", sessionIds)
+        .eq("extraction_status", "completed")
+        .not("phase", "is", null)
+        .order("created_at", { ascending: false });
+      if (tiErr) throw tiErr;
+
+      // Map: user_id -> most recent observer phase
+      const result = new Map<string, string>();
+      for (const insight of insights || []) {
+        const userId = sessionToUser.get(insight.chat_session_id);
+        if (userId && !result.has(userId)) {
+          result.set(userId, insight.phase as string);
+        }
+      }
+      return result;
+    },
+    staleTime: 60 * 1000,
+  });
 
   // Detail queries
   const { data: transitions } = useQuery({
@@ -264,7 +316,117 @@ const IOOverview = () => {
                 </CardContent>
               </Card>
 
-              {/* User Table */}
+              {/* Shadow Mode — Comparação Observer × Phase Manager */}
+              {(() => {
+                const shadowData = (users || []).map((u: any) => {
+                  const observerPhase = observerPhases?.get(u.user_id) || null;
+                  const ioPhase = u.current_phase as number;
+                  let status: "convergent" | "divergent" | "no_data" = "no_data";
+                  if (observerPhase) {
+                    const range = OBSERVER_TO_IO_RANGE[observerPhase];
+                    status = range && range.includes(ioPhase) ? "convergent" : "divergent";
+                  }
+                  return { ...u, observerPhase, ioPhase, status };
+                });
+                const evaluated = shadowData.filter((d) => d.status !== "no_data");
+                const convergent = evaluated.filter((d) => d.status === "convergent");
+                const divergent = evaluated.filter((d) => d.status === "divergent");
+                const displayed = showOnlyDivergent
+                  ? shadowData.filter((d) => d.status === "divergent")
+                  : shadowData;
+
+                return (
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <GitCompareArrows className="h-4 w-4" />
+                          Shadow Mode — Observer × Phase Manager
+                        </CardTitle>
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="text-muted-foreground">Apenas divergentes</span>
+                          <Switch checked={showOnlyDivergent} onCheckedChange={setShowOnlyDivergent} />
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {/* Counters */}
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="rounded-lg border border-border p-3 text-center">
+                          <p className="text-2xl font-bold text-foreground">{evaluated.length}</p>
+                          <p className="text-xs text-muted-foreground">Avaliados</p>
+                        </div>
+                        <div className="rounded-lg border border-border p-3 text-center">
+                          <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{convergent.length}</p>
+                          <p className="text-xs text-muted-foreground">
+                            Convergentes {evaluated.length > 0 && `(${Math.round((convergent.length / evaluated.length) * 100)}%)`}
+                          </p>
+                        </div>
+                        <div className="rounded-lg border border-border p-3 text-center">
+                          <p className="text-2xl font-bold text-destructive">{divergent.length}</p>
+                          <p className="text-xs text-muted-foreground">
+                            Divergentes {evaluated.length > 0 && `(${Math.round((divergent.length / evaluated.length) * 100)}%)`}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Comparison Table */}
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Nome</TableHead>
+                            <TableHead>Observer</TableHead>
+                            <TableHead>IO Phase</TableHead>
+                            <TableHead>Status</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {displayed.map((d) => (
+                            <TableRow key={d.id}>
+                              <TableCell className="font-medium text-sm">
+                                {d.profile?.nome || d.user_id.slice(0, 8)}
+                              </TableCell>
+                              <TableCell className="text-sm">
+                                {d.observerPhase ? (
+                                  <Badge variant="outline">{d.observerPhase}</Badge>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground italic">Sem dados do observer</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-sm">
+                                <Badge variant="outline">
+                                  {d.ioPhase} — {PHASE_NAMES[d.ioPhase] || "?"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                {d.status === "convergent" && (
+                                  <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400 border-transparent">
+                                    Convergente
+                                  </Badge>
+                                )}
+                                {d.status === "divergent" && (
+                                  <Badge variant="destructive">Divergente</Badge>
+                                )}
+                                {d.status === "no_data" && (
+                                  <span className="text-xs text-muted-foreground">—</span>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                          {displayed.length === 0 && (
+                            <TableRow>
+                              <TableCell colSpan={4} className="text-center text-muted-foreground py-6">
+                                {showOnlyDivergent ? "Nenhum usuário divergente." : "Nenhum dado disponível."}
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </TableBody>
+                      </Table>
+                    </CardContent>
+                  </Card>
+                );
+              })()}
+
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base">Usuários ({totalUsers})</CardTitle>

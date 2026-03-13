@@ -1,57 +1,119 @@
 
 
-# Plano: Shadow Mode — Comparação Observer × Phase Manager
+# Plano de Correcao: Fluxo de Testemunho e Aprovacao de Soldados
 
-## Alteracoes em `src/pages/admin/IOOverview.tsx`
+## Diagnostico Confirmado
 
-### 1. Nova query: buscar fase do observer por usuario
+Dados reais do banco confirmam os problemas:
+- **1 candidatura travada** em `under_review` com testemunho em `processing` (nunca processado, sem transcrição nem analise)
+- **0 usuarios com role `pastor`** no sistema -- aprovacao tripla e impossivel
+- A pagina de curadoria (`TestimonyCuration`) exige role `admin` via `AdminRoute`, bloqueando `profissional` e `pastor`
+- O envio de testemunho NAO dispara `process-testimony` automaticamente
+- O card de aprovacao (`ApplicationApprovalCard`) nao mostra feedback sobre quais aprovacoes faltam quando o usuario ja aprovou
 
-Query `turn_insights` para cada usuario com registro IO — buscar o `phase` mais recente (com `extraction_status = 'completed'`). Usar uma query unica com distinct on user_id ordenado por created_at desc. O campo `message_user_id` serve como proxy do user_id (buscar via chat_sessions join ou usar diretamente se disponivel).
+---
 
-Alternativa mais simples: buscar todos os turn_insights recentes e mapear por `message_user_id` (que referencia o user que enviou a mensagem). Na verdade, turn_insights nao tem user_id direto — tem `message_user_id` que e o id da mensagem. Preciso verificar.
+## Ordem de Deploy (5 etapas)
 
-Revisando o schema: turn_insights tem `chat_session_id`. Para obter o user_id, preciso fazer join com chat_sessions. Mas como e admin com RLS permissivo, posso buscar turn_insights e chat_sessions separadamente.
+### Etapa 1: Migration -- Flexibilizar aprovacao tripla
 
-**Abordagem pratica**: Para cada user_id da lista io_user_phase, buscar o turn_insight mais recente via:
-- Buscar chat_sessions do usuario
-- Buscar turn_insight mais recente dessas sessions
+**Problema:** Sem pastor no sistema, nenhuma candidatura pode ser aprovada.
 
-Mas isso seria N+1 queries. Melhor: uma query RPC ou buscar todos turn_insights recentes e resolver no client.
-
-**Abordagem final**: Buscar todas chat_sessions com user_id in (userIds), depois buscar turn_insights com chat_session_id in (sessionIds) ordenado por created_at desc. No client, agrupar por user_id e pegar o mais recente.
-
-### 2. Mapeamento de comparacao
+**Solucao:** Criar uma funcao que verifica aprovacao com logica flexivel: se nao existe usuario com role `pastor` no sistema, a aprovacao de pastor e dispensada. O trigger `check_soldado_approval_complete` sera atualizado.
 
 ```text
-OBSERVER_TO_IO_RANGE:
-  ACOLHIMENTO    → [1]
-  CLARIFICACAO   → [1, 2]
-  PADROES        → [3]
-  RAIZ           → [3]
-  TROCA          → [4, 5]
-  CONSOLIDACAO   → [6, 7]
+Logica da nova funcao check_soldado_approval_complete:
+  - admin_approved = obrigatorio
+  - profissional_approved = obrigatorio
+  - pastor_approved = obrigatorio SE existir pelo menos 1 usuario com role 'pastor'
+  - Se nao existir pastor, aprovacao completa com admin + profissional
 ```
 
-Convergente = io_phase esta dentro do range mapeado do observer phase.
+**SQL (migration):**
+- Recriar a funcao `check_soldado_approval_complete` com a logica condicional
+- Atualizar a funcao `get_application_approval_status` para refletir o campo `pastor_required`
 
-### 3. Nova secao "Shadow Mode" na pagina
+---
 
-Posicionada entre "Distribuicao por Fase" e "Usuarios" (ou acima da tabela).
+### Etapa 2: Edge Function -- Auto-processar testemunho apos envio
 
-Conteudo:
-- Card com contadores: Total avaliados, Convergentes (X / Y%), Divergentes (X / Y%)
-- Checkbox/toggle "Mostrar apenas divergentes"
-- Tabela compacta: Nome | Observer Phase | IO Phase | Status (badge verde/vermelho)
-- Usuarios sem turn_insights mostram "Sem dados do observer"
+**Problema:** O testemunho e inserido com status `processing` mas a Edge Function `process-testimony` nunca e chamada automaticamente.
 
-### 4. Estado adicional
+**Solucao:** Adicionar chamada a `process-testimony` no frontend imediatamente apos o INSERT do testemunho em `SoldadoTestimony.tsx`.
 
-- `showOnlyDivergent`: boolean state
-- `observerPhases`: Map<user_id, observer_phase_string> (da query)
+**Arquivo:** `src/pages/SoldadoTestimony.tsx`
+- Apos o INSERT bem-sucedido na tabela `testimonies` (linha ~213), invocar:
+  ```typescript
+  supabase.functions.invoke("process-testimony", {
+    body: { testimony_id: insertedId }
+  });
+  ```
+- Sera fire-and-forget (nao bloqueia a UX de sucesso)
+- Requer retornar o `id` do INSERT (usar `.select('id').single()`)
 
-### 5. Nenhuma outra alteracao
+---
 
-- Zero edge functions
-- Zero tabelas
-- Apenas leitura de dados existentes
+### Etapa 3: UI -- Abrir curadoria para profissional e pastor
+
+**Problema:** `TestimonyCuration.tsx` usa `AdminRoute` que bloqueia profissional e pastor.
+
+**Solucao:** Trocar `AdminRoute` por `RoleRoute` com roles permitidas.
+
+**Arquivo:** `src/pages/admin/TestimonyCuration.tsx`
+- Substituir `<AdminRoute>` por `<RoleRoute allowedRoles={["admin", "desenvolvedor", "profissional", "pastor"]}>`
+- Importar `RoleRoute` no lugar de `AdminRoute`
+
+---
+
+### Etapa 4: UI -- Feedback de aprovacoes pendentes no card
+
+**Problema:** Apos o admin aprovar, o card some os botoes sem explicar o que falta.
+
+**Solucao:** Adicionar mensagem contextual em `ApplicationApprovalCard.tsx`.
+
+**Arquivo:** `src/components/soldado/ApplicationApprovalCard.tsx`
+- Quando `canApprove === false` e `status === "under_review"`:
+  - Mostrar banner informativo: "Sua aprovacao foi registrada. Aguardando: [lista de roles pendentes]"
+  - Calcular roles pendentes a partir de `application.approvals`
+
+---
+
+### Etapa 5: UI -- Guardar curadoria antes de aprovacao
+
+**Problema:** O curador pode aprovar a candidatura ANTES do testemunho ser processado pela IA (status `processing`).
+
+**Solucao:** No `TestimonyCurationCard.tsx`, ja existe logica parcial (`canTakeAction` verifica `analyzed || processing`). Ajustar para:
+- Botoes de "Aprovar"/"Rejeitar" so aparecem quando `testimony.status === "analyzed"`
+- Quando `processing`, mostrar apenas botao "Processar" e mensagem de aguardo
+- Remover `processing` da condicao `canTakeAction` para acoes de curadoria
+
+**Arquivo:** `src/components/soldado/TestimonyCurationCard.tsx` (linha 331-333)
+```typescript
+// ANTES:
+const canTakeAction = approverRole !== null && 
+  (testimony.status === "analyzed" || testimony.status === "processing");
+
+// DEPOIS:
+const canTakeAction = approverRole !== null && testimony.status === "analyzed";
+```
+
+---
+
+## Resumo de Arquivos Impactados
+
+| Arquivo | Tipo de Mudanca |
+|---|---|
+| Nova migration SQL | Recriar trigger de aprovacao flexivel |
+| `src/pages/SoldadoTestimony.tsx` | Chamar process-testimony apos envio |
+| `src/pages/admin/TestimonyCuration.tsx` | Trocar AdminRoute por RoleRoute |
+| `src/components/soldado/ApplicationApprovalCard.tsx` | Feedback de aprovacoes pendentes |
+| `src/components/soldado/TestimonyCurationCard.tsx` | Bloquear curadoria antes da analise |
+
+## Riscos e Mitigacoes
+
+- **Risco:** Flexibilizar pastor pode permitir aprovacao prematura.
+  **Mitigacao:** A logica so dispensa pastor se literalmente nao existe nenhum usuario com essa role no sistema. Quando um pastor for cadastrado, a exigencia volta automaticamente.
+
+- **Risco:** Chamada fire-and-forget do process-testimony pode falhar silenciosamente.
+  **Mitigacao:** O botao "Processar" na tela de curadoria ja existe como fallback manual.
 
