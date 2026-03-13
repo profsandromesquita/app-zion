@@ -316,7 +316,117 @@ const IOOverview = () => {
                 </CardContent>
               </Card>
 
-              {/* User Table */}
+              {/* Shadow Mode — Comparação Observer × Phase Manager */}
+              {(() => {
+                const shadowData = (users || []).map((u: any) => {
+                  const observerPhase = observerPhases?.get(u.user_id) || null;
+                  const ioPhase = u.current_phase as number;
+                  let status: "convergent" | "divergent" | "no_data" = "no_data";
+                  if (observerPhase) {
+                    const range = OBSERVER_TO_IO_RANGE[observerPhase];
+                    status = range && range.includes(ioPhase) ? "convergent" : "divergent";
+                  }
+                  return { ...u, observerPhase, ioPhase, status };
+                });
+                const evaluated = shadowData.filter((d) => d.status !== "no_data");
+                const convergent = evaluated.filter((d) => d.status === "convergent");
+                const divergent = evaluated.filter((d) => d.status === "divergent");
+                const displayed = showOnlyDivergent
+                  ? shadowData.filter((d) => d.status === "divergent")
+                  : shadowData;
+
+                return (
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-base flex items-center gap-2">
+                          <GitCompareArrows className="h-4 w-4" />
+                          Shadow Mode — Observer × Phase Manager
+                        </CardTitle>
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="text-muted-foreground">Apenas divergentes</span>
+                          <Switch checked={showOnlyDivergent} onCheckedChange={setShowOnlyDivergent} />
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      {/* Counters */}
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="rounded-lg border border-border p-3 text-center">
+                          <p className="text-2xl font-bold text-foreground">{evaluated.length}</p>
+                          <p className="text-xs text-muted-foreground">Avaliados</p>
+                        </div>
+                        <div className="rounded-lg border border-border p-3 text-center">
+                          <p className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{convergent.length}</p>
+                          <p className="text-xs text-muted-foreground">
+                            Convergentes {evaluated.length > 0 && `(${Math.round((convergent.length / evaluated.length) * 100)}%)`}
+                          </p>
+                        </div>
+                        <div className="rounded-lg border border-border p-3 text-center">
+                          <p className="text-2xl font-bold text-destructive">{divergent.length}</p>
+                          <p className="text-xs text-muted-foreground">
+                            Divergentes {evaluated.length > 0 && `(${Math.round((divergent.length / evaluated.length) * 100)}%)`}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Comparison Table */}
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Nome</TableHead>
+                            <TableHead>Observer</TableHead>
+                            <TableHead>IO Phase</TableHead>
+                            <TableHead>Status</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {displayed.map((d) => (
+                            <TableRow key={d.id}>
+                              <TableCell className="font-medium text-sm">
+                                {d.profile?.nome || d.user_id.slice(0, 8)}
+                              </TableCell>
+                              <TableCell className="text-sm">
+                                {d.observerPhase ? (
+                                  <Badge variant="outline">{d.observerPhase}</Badge>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground italic">Sem dados do observer</span>
+                                )}
+                              </TableCell>
+                              <TableCell className="text-sm">
+                                <Badge variant="outline">
+                                  {d.ioPhase} — {PHASE_NAMES[d.ioPhase] || "?"}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                {d.status === "convergent" && (
+                                  <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400 border-transparent">
+                                    Convergente
+                                  </Badge>
+                                )}
+                                {d.status === "divergent" && (
+                                  <Badge variant="destructive">Divergente</Badge>
+                                )}
+                                {d.status === "no_data" && (
+                                  <span className="text-xs text-muted-foreground">—</span>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                          {displayed.length === 0 && (
+                            <TableRow>
+                              <TableCell colSpan={4} className="text-center text-muted-foreground py-6">
+                                {showOnlyDivergent ? "Nenhum usuário divergente." : "Nenhum dado disponível."}
+                              </TableCell>
+                            </TableRow>
+                          )}
+                        </TableBody>
+                      </Table>
+                    </CardContent>
+                  </Card>
+                );
+              })()}
+
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base">Usuários ({totalUsers})</CardTitle>
