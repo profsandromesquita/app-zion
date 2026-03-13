@@ -96,6 +96,47 @@ const IOOverview = () => {
     return globalFlag?.flag_value ?? false;
   };
 
+  // Observer phases query for shadow mode comparison
+  const { data: observerPhases } = useQuery({
+    queryKey: ["observer-phases", users?.map((u: any) => u.user_id)],
+    enabled: !!users && users.length > 0,
+    queryFn: async () => {
+      const userIds = users!.map((u: any) => u.user_id);
+
+      // Get all chat_sessions for these users
+      const { data: chatSessions, error: csErr } = await supabase
+        .from("chat_sessions")
+        .select("id, user_id")
+        .in("user_id", userIds);
+      if (csErr) throw csErr;
+      if (!chatSessions || chatSessions.length === 0) return new Map<string, string>();
+
+      const sessionIds = chatSessions.map((cs: any) => cs.id);
+      const sessionToUser = new Map(chatSessions.map((cs: any) => [cs.id, cs.user_id]));
+
+      // Get turn_insights with completed extraction
+      const { data: insights, error: tiErr } = await supabase
+        .from("turn_insights")
+        .select("chat_session_id, phase, created_at")
+        .in("chat_session_id", sessionIds)
+        .eq("extraction_status", "completed")
+        .not("phase", "is", null)
+        .order("created_at", { ascending: false });
+      if (tiErr) throw tiErr;
+
+      // Map: user_id -> most recent observer phase
+      const result = new Map<string, string>();
+      for (const insight of insights || []) {
+        const userId = sessionToUser.get(insight.chat_session_id);
+        if (userId && !result.has(userId)) {
+          result.set(userId, insight.phase as string);
+        }
+      }
+      return result;
+    },
+    staleTime: 60 * 1000,
+  });
+
   // Detail queries
   const { data: transitions } = useQuery({
     queryKey: ["io-transitions", selectedUser?.user_id],
