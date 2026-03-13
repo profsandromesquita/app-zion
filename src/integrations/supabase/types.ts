@@ -967,6 +967,39 @@ export type Database = {
           },
         ]
       }
+      observability_logs: {
+        Row: {
+          created_at: string
+          event_data: Json
+          event_type: string
+          flags_active: Json | null
+          id: string
+          latency_ms: number | null
+          session_id: string | null
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          event_data?: Json
+          event_type: string
+          flags_active?: Json | null
+          id?: string
+          latency_ms?: number | null
+          session_id?: string | null
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          event_data?: Json
+          event_type?: string
+          flags_active?: Json | null
+          id?: string
+          latency_ms?: number | null
+          session_id?: string | null
+          user_id?: string | null
+        }
+        Relationships: []
+      }
       professional_credentials: {
         Row: {
           created_at: string | null
@@ -1731,6 +1764,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      user_cohorts: {
+        Row: {
+          assigned_at: string
+          assigned_by: string
+          cohort_name: string
+          id: string
+          notes: string | null
+          user_id: string
+        }
+        Insert: {
+          assigned_at?: string
+          assigned_by?: string
+          cohort_name?: string
+          id?: string
+          notes?: string | null
+          user_id: string
+        }
+        Update: {
+          assigned_at?: string
+          assigned_by?: string
+          cohort_name?: string
+          id?: string
+          notes?: string | null
+          user_id?: string
+        }
+        Relationships: []
       }
       user_profiles: {
         Row: {

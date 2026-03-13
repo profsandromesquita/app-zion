@@ -23,6 +23,7 @@ import SoldadoApplications from "./pages/admin/SoldadoApplications";
 import TestimonyCuration from "./pages/admin/TestimonyCuration";
 import AIIntelligence from "./pages/admin/AIIntelligence";
 import FeatureFlags from "./pages/admin/FeatureFlags";
+import Cohorts from "./pages/admin/Cohorts";
 import SoldadoTestimony from "./pages/SoldadoTestimony";
 import SoldadoDashboard from "./pages/SoldadoDashboard";
 
@@ -56,6 +57,7 @@ const App = () => (
           <Route path="/admin/soldado-applications" element={<SoldadoApplications />} />
           <Route path="/admin/testimony-curation" element={<TestimonyCuration />} />
           <Route path="/admin/feature-flags" element={<FeatureFlags />} />
+          <Route path="/admin/cohorts" element={<Cohorts />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

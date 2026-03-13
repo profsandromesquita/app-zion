@@ -12,7 +12,9 @@ import {
   Map,
   Shield,
   FileCheck,
-  Sparkles
+  Sparkles,
+  ToggleLeft,
+  FlaskConical
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import zionLogo from "@/assets/zion-logo.png";
@@ -35,6 +37,8 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
     { to: "/admin/journey-map", icon: Map, label: "Mapa de Jornada" },
     { to: "/admin/knowledge", icon: BookOpen, label: "Base Legada" },
     { to: "/admin/instructions", icon: Settings, label: "System Instructions" },
+    { to: "/admin/feature-flags", icon: ToggleLeft, label: "Feature Flags" },
+    { to: "/admin/cohorts", icon: FlaskConical, label: "Cohorts" },
   ];
 
   return (
