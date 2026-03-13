@@ -690,6 +690,36 @@ export type Database = {
           },
         ]
       }
+      feature_flags: {
+        Row: {
+          created_at: string | null
+          description: string | null
+          enabled: boolean
+          environment: string
+          id: string
+          key: string
+          updated_at: string | null
+        }
+        Insert: {
+          created_at?: string | null
+          description?: string | null
+          enabled?: boolean
+          environment?: string
+          id?: string
+          key: string
+          updated_at?: string | null
+        }
+        Update: {
+          created_at?: string | null
+          description?: string | null
+          enabled?: boolean
+          environment?: string
+          id?: string
+          key?: string
+          updated_at?: string | null
+        }
+        Relationships: []
+      }
       feedback_dataset_items: {
         Row: {
           assistant_answer_text: string
