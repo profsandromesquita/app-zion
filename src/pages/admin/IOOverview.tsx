@@ -8,13 +8,23 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import { Loader2, Activity, Users, TrendingUp, Flame, Play, Eye, Settings2, AlertTriangle } from "lucide-react";
+import { Loader2, Activity, Users, TrendingUp, Flame, Play, Eye, Settings2, AlertTriangle, GitCompareArrows } from "lucide-react";
+
+const OBSERVER_TO_IO_RANGE: Record<string, number[]> = {
+  ACOLHIMENTO: [1],
+  CLARIFICACAO: [1, 2],
+  PADROES: [3],
+  RAIZ: [3],
+  TROCA: [4, 5],
+  CONSOLIDACAO: [6, 7],
+};
 
 const PHASE_NAMES: Record<number, string> = {
   1: "Consciência",
