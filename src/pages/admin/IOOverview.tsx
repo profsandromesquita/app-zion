@@ -40,6 +40,7 @@ const IOOverview = () => {
   const [selectedUser, setSelectedUser] = useState<any>(null);
   const [pmResult, setPmResult] = useState<any>(null);
   const [pmLoading, setPmLoading] = useState(false);
+  const [overridePhase, setOverridePhase] = useState(1);
   const [showOnlyDivergent, setShowOnlyDivergent] = useState(false);
 
   // Main query: io_user_phase + profiles + cohorts
