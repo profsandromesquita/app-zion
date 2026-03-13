@@ -23,6 +23,7 @@ import SoldadoApplications from "./pages/admin/SoldadoApplications";
 import TestimonyCuration from "./pages/admin/TestimonyCuration";
 import AIIntelligence from "./pages/admin/AIIntelligence";
 import FeatureFlags from "./pages/admin/FeatureFlags";
+import Cohorts from "./pages/admin/Cohorts";
 import SoldadoTestimony from "./pages/SoldadoTestimony";
 import SoldadoDashboard from "./pages/SoldadoDashboard";
 
