@@ -694,28 +694,31 @@ export type Database = {
         Row: {
           created_at: string | null
           description: string | null
-          enabled: boolean
-          environment: string
+          flag_name: string
+          flag_value: boolean
           id: string
-          key: string
+          scope: string
+          scope_id: string | null
           updated_at: string | null
         }
         Insert: {
           created_at?: string | null
           description?: string | null
-          enabled?: boolean
-          environment?: string
+          flag_name: string
+          flag_value?: boolean
           id?: string
-          key: string
+          scope?: string
+          scope_id?: string | null
           updated_at?: string | null
         }
         Update: {
           created_at?: string | null
           description?: string | null
-          enabled?: boolean
-          environment?: string
+          flag_name?: string
+          flag_value?: boolean
           id?: string
-          key?: string
+          scope?: string
+          scope_id?: string | null
           updated_at?: string | null
         }
         Relationships: []
@@ -1935,6 +1938,10 @@ export type Database = {
           profissional_status: string
           total_approved: number
         }[]
+      }
+      get_feature_flag: {
+        Args: { p_cohort_id?: string; p_flag_name: string; p_user_id?: string }
+        Returns: boolean
       }
       get_soldado_weekly_sessions: {
         Args: { _soldado_id: string }
