@@ -5,13 +5,16 @@ import AdminLayout from "@/components/admin/AdminLayout";
 import RoleRoute from "@/components/admin/RoleRoute";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Separator } from "@/components/ui/separator";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import { Loader2, Activity, Users, TrendingUp, Flame } from "lucide-react";
+import { Loader2, Activity, Users, TrendingUp, Flame, Play, Eye, Settings2, AlertTriangle } from "lucide-react";
 
 const PHASE_NAMES: Record<number, string> = {
   1: "Consciência",
@@ -25,6 +28,9 @@ const PHASE_NAMES: Record<number, string> = {
 
 const IOOverview = () => {
   const [selectedUser, setSelectedUser] = useState<any>(null);
+  const [pmResult, setPmResult] = useState<any>(null);
+  const [pmLoading, setPmLoading] = useState(false);
+  const [overridePhase, setOverridePhase] = useState(1);
 
   // Main query: io_user_phase + profiles + cohorts
   const { data: users, isLoading } = useQuery({
@@ -55,6 +61,30 @@ const IOOverview = () => {
     },
   });
 
+  // PM flag status query
+  const { data: pmFlags } = useQuery({
+    queryKey: ["pm-flags"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("feature_flags")
+        .select("flag_value, scope, scope_id")
+        .eq("flag_name", "io_phase_manager_enabled");
+      if (error) throw error;
+      return data || [];
+    },
+    staleTime: 30 * 1000,
+  });
+
+  const getPmStatus = (userId: string): boolean => {
+    if (!pmFlags) return false;
+    // User scope takes priority
+    const userFlag = pmFlags.find((f: any) => f.scope === "user" && f.scope_id === userId);
+    if (userFlag) return userFlag.flag_value;
+    // Then global
+    const globalFlag = pmFlags.find((f: any) => f.scope === "global");
+    return globalFlag?.flag_value ?? false;
+  };
+
   // Detail queries
   const { data: transitions } = useQuery({
     queryKey: ["io-transitions", selectedUser?.user_id],
@@ -84,6 +114,44 @@ const IOOverview = () => {
       return data || [];
     },
   });
+
+  // PM handlers
+  const callPhaseManager = async (body: Record<string, any>) => {
+    setPmLoading(true);
+    setPmResult(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("io-phase-manager", { body });
+      if (error) {
+        setPmResult({ error: error.message });
+      } else {
+        setPmResult(data);
+      }
+    } catch (e: any) {
+      setPmResult({ error: e.message });
+    } finally {
+      setPmLoading(false);
+    }
+  };
+
+  const handleGetStatus = () => {
+    if (!selectedUser) return;
+    callPhaseManager({ user_id: selectedUser.user_id, action: "get_status" });
+  };
+
+  const handleEvaluate = () => {
+    if (!selectedUser) return;
+    callPhaseManager({ user_id: selectedUser.user_id, action: "evaluate" });
+  };
+
+  const handleManualOverride = () => {
+    if (!selectedUser) return;
+    callPhaseManager({
+      user_id: selectedUser.user_id,
+      action: "manual_override",
+      override_phase: overridePhase,
+      override_notes: "Manual override via IO Overview admin panel",
+    });
+  };
 
   // Computed stats
   const totalUsers = users?.length || 0;
@@ -213,6 +281,7 @@ const IOOverview = () => {
                         <TableHead>Sessões</TableHead>
                         <TableHead>Última Sessão</TableHead>
                         <TableHead>Cohort</TableHead>
+                        <TableHead>PM Status</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -220,7 +289,11 @@ const IOOverview = () => {
                         <TableRow
                           key={u.id}
                           className="cursor-pointer"
-                          onClick={() => setSelectedUser(u)}
+                          onClick={() => {
+                            setSelectedUser(u);
+                            setPmResult(null);
+                            setOverridePhase(u.current_phase || 1);
+                          }}
                         >
                           <TableCell className="font-medium">
                             {u.profile?.nome || "Sem nome"}
@@ -250,11 +323,18 @@ const IOOverview = () => {
                               <span className="text-muted-foreground text-xs">—</span>
                             )}
                           </TableCell>
+                          <TableCell>
+                            {getPmStatus(u.user_id) ? (
+                              <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400 border-transparent">ON</Badge>
+                            ) : (
+                              <Badge variant="secondary" className="text-muted-foreground">OFF</Badge>
+                            )}
+                          </TableCell>
                         </TableRow>
                       ))}
                       {(!users || users.length === 0) && (
                         <TableRow>
-                          <TableCell colSpan={8} className="text-center text-muted-foreground py-8">
+                          <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
                             Nenhum usuário com registro IO encontrado.
                           </TableCell>
                         </TableRow>
@@ -267,7 +347,7 @@ const IOOverview = () => {
           )}
 
           {/* User Detail Dialog */}
-          <Dialog open={!!selectedUser} onOpenChange={(open) => !open && setSelectedUser(null)}>
+          <Dialog open={!!selectedUser} onOpenChange={(open) => { if (!open) { setSelectedUser(null); setPmResult(null); } }}>
             <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>
@@ -366,6 +446,88 @@ const IOOverview = () => {
                   ) : (
                     <p className="text-sm text-muted-foreground">Nenhuma sessão registrada.</p>
                   )}
+                </div>
+
+                <Separator />
+
+                {/* Phase Manager Test Section */}
+                <div>
+                  <h3 className="text-sm font-medium text-foreground mb-3 flex items-center gap-2">
+                    <Settings2 className="h-4 w-4" />
+                    Phase Manager
+                    {selectedUser && (
+                      getPmStatus(selectedUser.user_id) ? (
+                        <Badge className="bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400 border-transparent text-[10px]">ON</Badge>
+                      ) : (
+                        <Badge variant="secondary" className="text-muted-foreground text-[10px]">OFF</Badge>
+                      )
+                    )}
+                  </h3>
+
+                  <div className="space-y-3">
+                    {/* Action Buttons */}
+                    <div className="flex gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleGetStatus}
+                        disabled={pmLoading}
+                      >
+                        {pmLoading ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Eye className="h-3 w-3 mr-1" />}
+                        Verificar Status
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={handleEvaluate}
+                        disabled={pmLoading}
+                      >
+                        {pmLoading ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Play className="h-3 w-3 mr-1" />}
+                        Avaliar Fase
+                      </Button>
+                    </div>
+
+                    {/* Manual Override */}
+                    <div className="flex items-center gap-2">
+                      <select
+                        value={overridePhase}
+                        onChange={(e) => setOverridePhase(Number(e.target.value))}
+                        className="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground"
+                      >
+                        {[1, 2, 3, 4, 5, 6, 7].map((p) => (
+                          <option key={p} value={p}>
+                            Fase {p} — {PHASE_NAMES[p]}
+                          </option>
+                        ))}
+                      </select>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={handleManualOverride}
+                        disabled={pmLoading}
+                      >
+                        {pmLoading ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : <Settings2 className="h-3 w-3 mr-1" />}
+                        Override Manual
+                      </Button>
+                    </div>
+
+                    {/* Result Area */}
+                    {pmResult && (
+                      <div className="space-y-2">
+                        {pmResult.skipped && (
+                          <Alert className="border-amber-300 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800">
+                            <AlertTriangle className="h-4 w-4 text-amber-600" />
+                            <AlertDescription className="text-amber-800 dark:text-amber-300">
+                              Phase Manager desabilitado para este usuário (flag off)
+                            </AlertDescription>
+                          </Alert>
+                        )}
+                        <pre className="rounded-lg border border-border bg-muted/30 p-3 text-xs font-mono overflow-x-auto max-h-64 overflow-y-auto text-foreground">
+                          {JSON.stringify(pmResult, null, 2)}
+                        </pre>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </DialogContent>
