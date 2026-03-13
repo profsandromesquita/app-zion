@@ -57,6 +57,7 @@ const App = () => (
           <Route path="/admin/soldado-applications" element={<SoldadoApplications />} />
           <Route path="/admin/testimony-curation" element={<TestimonyCuration />} />
           <Route path="/admin/feature-flags" element={<FeatureFlags />} />
+          <Route path="/admin/cohorts" element={<Cohorts />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
