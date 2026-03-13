@@ -880,6 +880,93 @@ export type Database = {
           },
         ]
       }
+      io_phase_transitions: {
+        Row: {
+          created_at: string
+          criteria_snapshot: Json
+          from_phase: number
+          id: string
+          notes: string | null
+          to_phase: number
+          transition_type: string
+          triggered_by: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          criteria_snapshot: Json
+          from_phase: number
+          id?: string
+          notes?: string | null
+          to_phase: number
+          transition_type: string
+          triggered_by: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          criteria_snapshot?: Json
+          from_phase?: number
+          id?: string
+          notes?: string | null
+          to_phase?: number
+          transition_type?: string
+          triggered_by?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      io_user_phase: {
+        Row: {
+          created_at: string
+          current_phase: number
+          id: string
+          igi_current: number
+          igi_history: Json
+          last_session_date: string | null
+          phase_criteria_met: Json
+          phase_entered_at: string
+          phase_name: string | null
+          streak_best: number
+          streak_current: number
+          total_sessions: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          current_phase?: number
+          id?: string
+          igi_current?: number
+          igi_history?: Json
+          last_session_date?: string | null
+          phase_criteria_met?: Json
+          phase_entered_at?: string
+          phase_name?: string | null
+          streak_best?: number
+          streak_current?: number
+          total_sessions?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          current_phase?: number
+          id?: string
+          igi_current?: number
+          igi_history?: Json
+          last_session_date?: string | null
+          phase_criteria_met?: Json
+          phase_entered_at?: string
+          phase_name?: string | null
+          streak_best?: number
+          streak_current?: number
+          total_sessions?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       knowledge_base: {
         Row: {
           category: string | null
@@ -2003,6 +2090,7 @@ export type Database = {
         Args: { p_cohort_id?: string; p_flag_name: string; p_user_id?: string }
         Returns: boolean
       }
+      get_io_phase_name: { Args: { p_phase: number }; Returns: string }
       get_soldado_weekly_sessions: {
         Args: { _soldado_id: string }
         Returns: number
