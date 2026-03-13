@@ -1041,6 +1041,41 @@ export type Database = {
         }
         Relationships: []
       }
+      io_scale_entries: {
+        Row: {
+          created_at: string
+          dimension: string
+          id: string
+          session_id: string
+          user_id: string
+          value: number
+        }
+        Insert: {
+          created_at?: string
+          dimension: string
+          id?: string
+          session_id: string
+          user_id: string
+          value: number
+        }
+        Update: {
+          created_at?: string
+          dimension?: string
+          id?: string
+          session_id?: string
+          user_id?: string
+          value?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "io_scale_entries_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "io_daily_sessions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       io_user_phase: {
         Row: {
           created_at: string
@@ -2187,6 +2222,19 @@ export type Database = {
         Returns: undefined
       }
       calculate_content_hash: { Args: { content: string }; Returns: string }
+      calculate_igi: {
+        Args: {
+          p_agencia?: number
+          p_autonomia?: number
+          p_clareza?: number
+          p_constancia?: number
+          p_identidade?: number
+          p_regulacao?: number
+          p_vitalidade?: number
+        }
+        Returns: number
+      }
+      calculate_session_igi: { Args: { p_session_id: string }; Returns: number }
       can_accept_assignment: { Args: { _soldado_id: string }; Returns: boolean }
       can_manage_church_members: {
         Args: { _church_id: string; _user_id: string }
