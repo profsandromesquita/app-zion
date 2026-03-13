@@ -14,7 +14,8 @@ import {
   FileCheck,
   Sparkles,
   ToggleLeft,
-  FlaskConical
+  FlaskConical,
+  Activity
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import zionLogo from "@/assets/zion-logo.png";
