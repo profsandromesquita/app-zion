@@ -1,119 +1,42 @@
 
 
-# Plano de Correcao: Fluxo de Testemunho e Aprovacao de Soldados
+# Plano: Tabelas de Observabilidade e Cohorts (Fase 0)
 
-## Diagnostico Confirmado
+## Tarefa 1 — Tabela `observability_logs`
 
-Dados reais do banco confirmam os problemas:
-- **1 candidatura travada** em `under_review` com testemunho em `processing` (nunca processado, sem transcrição nem analise)
-- **0 usuarios com role `pastor`** no sistema -- aprovacao tripla e impossivel
-- A pagina de curadoria (`TestimonyCuration`) exige role `admin` via `AdminRoute`, bloqueando `profissional` e `pastor`
-- O envio de testemunho NAO dispara `process-testimony` automaticamente
-- O card de aprovacao (`ApplicationApprovalCard`) nao mostra feedback sobre quais aprovacoes faltam quando o usuario ja aprovou
+Migration SQL:
+- CREATE TABLE com id, session_id (text), user_id (uuid), event_type (text), event_data (jsonb), flags_active (jsonb), latency_ms (integer), created_at
+- Validation trigger para event_type (aceita apenas os 9 valores especificados)
+- Indices em created_at, event_type, user_id, session_id
+- RLS: admin/desenvolvedor podem SELECT e INSERT; sem acesso para buscadores
+- COMMENT ON TABLE com nota sobre archival de 90 dias
 
----
+## Tarefa 2 — Tabela `user_cohorts`
 
-## Ordem de Deploy (5 etapas)
+Migration SQL:
+- CREATE TABLE com id, user_id (uuid, UNIQUE), cohort_name (text), assigned_at, assigned_by (text, default 'system'), notes
+- Validation trigger para cohort_name (aceita apenas 'control', 'io_shadow', 'io_active')
+- RLS: admin/desenvolvedor podem SELECT, INSERT, UPDATE; sem acesso para buscadores
+- INSERT de todos os usuarios existentes em auth.users no cohort 'control' (via INSERT ... SELECT dentro da migration, usando SECURITY DEFINER ou feito na migration que roda como superuser)
 
-### Etapa 1: Migration -- Flexibilizar aprovacao tripla
+## Tarefa 3 — Pagina Admin `/admin/cohorts`
 
-**Problema:** Sem pastor no sistema, nenhuma candidatura pode ser aprovada.
+- Nova pagina `src/pages/admin/Cohorts.tsx` seguindo padrao do FeatureFlags
+- Lista usuarios com nome/email (join com profiles), cohort atual, dropdown para mudar
+- Contadores por cohort no topo
+- Rota adicionada em App.tsx
+- Link adicionado no AdminLayout sidebar
 
-**Solucao:** Criar uma funcao que verifica aprovacao com logica flexivel: se nao existe usuario com role `pastor` no sistema, a aprovacao de pastor e dispensada. O trigger `check_soldado_approval_complete` sera atualizado.
+## Arquivos afetados
 
-```text
-Logica da nova funcao check_soldado_approval_complete:
-  - admin_approved = obrigatorio
-  - profissional_approved = obrigatorio
-  - pastor_approved = obrigatorio SE existir pelo menos 1 usuario com role 'pastor'
-  - Se nao existir pastor, aprovacao completa com admin + profissional
-```
+1. Nova migration SQL (tabelas + triggers + indices + RLS + seed cohorts)
+2. `src/pages/admin/Cohorts.tsx` (novo)
+3. `src/App.tsx` (nova rota)
+4. `src/components/admin/AdminLayout.tsx` (novo link no sidebar)
 
-**SQL (migration):**
-- Recriar a funcao `check_soldado_approval_complete` com a logica condicional
-- Atualizar a funcao `get_application_approval_status` para refletir o campo `pastor_required`
+## Nao sera alterado
 
----
-
-### Etapa 2: Edge Function -- Auto-processar testemunho apos envio
-
-**Problema:** O testemunho e inserido com status `processing` mas a Edge Function `process-testimony` nunca e chamada automaticamente.
-
-**Solucao:** Adicionar chamada a `process-testimony` no frontend imediatamente apos o INSERT do testemunho em `SoldadoTestimony.tsx`.
-
-**Arquivo:** `src/pages/SoldadoTestimony.tsx`
-- Apos o INSERT bem-sucedido na tabela `testimonies` (linha ~213), invocar:
-  ```typescript
-  supabase.functions.invoke("process-testimony", {
-    body: { testimony_id: insertedId }
-  });
-  ```
-- Sera fire-and-forget (nao bloqueia a UX de sucesso)
-- Requer retornar o `id` do INSERT (usar `.select('id').single()`)
-
----
-
-### Etapa 3: UI -- Abrir curadoria para profissional e pastor
-
-**Problema:** `TestimonyCuration.tsx` usa `AdminRoute` que bloqueia profissional e pastor.
-
-**Solucao:** Trocar `AdminRoute` por `RoleRoute` com roles permitidas.
-
-**Arquivo:** `src/pages/admin/TestimonyCuration.tsx`
-- Substituir `<AdminRoute>` por `<RoleRoute allowedRoles={["admin", "desenvolvedor", "profissional", "pastor"]}>`
-- Importar `RoleRoute` no lugar de `AdminRoute`
-
----
-
-### Etapa 4: UI -- Feedback de aprovacoes pendentes no card
-
-**Problema:** Apos o admin aprovar, o card some os botoes sem explicar o que falta.
-
-**Solucao:** Adicionar mensagem contextual em `ApplicationApprovalCard.tsx`.
-
-**Arquivo:** `src/components/soldado/ApplicationApprovalCard.tsx`
-- Quando `canApprove === false` e `status === "under_review"`:
-  - Mostrar banner informativo: "Sua aprovacao foi registrada. Aguardando: [lista de roles pendentes]"
-  - Calcular roles pendentes a partir de `application.approvals`
-
----
-
-### Etapa 5: UI -- Guardar curadoria antes de aprovacao
-
-**Problema:** O curador pode aprovar a candidatura ANTES do testemunho ser processado pela IA (status `processing`).
-
-**Solucao:** No `TestimonyCurationCard.tsx`, ja existe logica parcial (`canTakeAction` verifica `analyzed || processing`). Ajustar para:
-- Botoes de "Aprovar"/"Rejeitar" so aparecem quando `testimony.status === "analyzed"`
-- Quando `processing`, mostrar apenas botao "Processar" e mensagem de aguardo
-- Remover `processing` da condicao `canTakeAction` para acoes de curadoria
-
-**Arquivo:** `src/components/soldado/TestimonyCurationCard.tsx` (linha 331-333)
-```typescript
-// ANTES:
-const canTakeAction = approverRole !== null && 
-  (testimony.status === "analyzed" || testimony.status === "processing");
-
-// DEPOIS:
-const canTakeAction = approverRole !== null && testimony.status === "analyzed";
-```
-
----
-
-## Resumo de Arquivos Impactados
-
-| Arquivo | Tipo de Mudanca |
-|---|---|
-| Nova migration SQL | Recriar trigger de aprovacao flexivel |
-| `src/pages/SoldadoTestimony.tsx` | Chamar process-testimony apos envio |
-| `src/pages/admin/TestimonyCuration.tsx` | Trocar AdminRoute por RoleRoute |
-| `src/components/soldado/ApplicationApprovalCard.tsx` | Feedback de aprovacoes pendentes |
-| `src/components/soldado/TestimonyCurationCard.tsx` | Bloquear curadoria antes da analise |
-
-## Riscos e Mitigacoes
-
-- **Risco:** Flexibilizar pastor pode permitir aprovacao prematura.
-  **Mitigacao:** A logica so dispensa pastor se literalmente nao existe nenhum usuario com essa role no sistema. Quando um pastor for cadastrado, a exigencia volta automaticamente.
-
-- **Risco:** Chamada fire-and-forget do process-testimony pode falhar silenciosamente.
-  **Mitigacao:** O botao "Processar" na tela de curadoria ja existe como fallback manual.
+- Nenhum edge function
+- Nenhuma tabela existente
+- Nenhum comportamento do sistema
 
