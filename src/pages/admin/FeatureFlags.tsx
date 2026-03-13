@@ -14,10 +14,10 @@ const FeatureFlags = () => {
   const queryClient = useQueryClient();
 
   const toggleMutation = useMutation({
-    mutationFn: async ({ id, enabled }: { id: string; enabled: boolean }) => {
+    mutationFn: async ({ id, flag_value }: { id: string; flag_value: boolean }) => {
       const { error } = await supabase
-        .from("feature_flags" as any)
-        .update({ enabled } as any)
+        .from("feature_flags")
+        .update({ flag_value } as any)
         .eq("id", id);
       if (error) throw error;
     },
@@ -52,24 +52,24 @@ const FeatureFlags = () => {
           ) : (
             <div className="grid gap-4">
               {flags?.map((flag: any) => (
-                <Card key={flag.id} className={flag.enabled ? "border-primary/50 bg-primary/5" : ""}>
+                <Card key={flag.id} className={flag.flag_value ? "border-primary/50 bg-primary/5" : ""}>
                   <CardHeader className="pb-3">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
-                        <Flag className={`h-5 w-5 ${flag.enabled ? "text-primary" : "text-muted-foreground"}`} />
+                        <Flag className={`h-5 w-5 ${flag.flag_value ? "text-primary" : "text-muted-foreground"}`} />
                         <div>
-                          <CardTitle className="text-base font-mono">{flag.key}</CardTitle>
+                          <CardTitle className="text-base font-mono">{flag.flag_name}</CardTitle>
                           <CardDescription>{flag.description}</CardDescription>
                         </div>
                       </div>
                       <div className="flex items-center gap-3">
-                        <Badge variant={flag.environment === "all" ? "secondary" : "outline"}>
-                          {flag.environment}
+                        <Badge variant={flag.scope === "global" ? "secondary" : "outline"}>
+                          {flag.scope}
                         </Badge>
                         <Switch
-                          checked={flag.enabled}
+                          checked={flag.flag_value}
                           onCheckedChange={(checked) =>
-                            toggleMutation.mutate({ id: flag.id, enabled: checked })
+                            toggleMutation.mutate({ id: flag.id, flag_value: checked })
                           }
                           disabled={toggleMutation.isPending}
                         />

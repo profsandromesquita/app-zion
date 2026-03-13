@@ -1,20 +1,21 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 
-export const useFeatureFlag = (key: string): { enabled: boolean; loading: boolean } => {
+export const useFeatureFlag = (flagName: string): { enabled: boolean; loading: boolean } => {
   const { data, isLoading } = useQuery({
-    queryKey: ["feature-flag", key],
+    queryKey: ["feature-flag", flagName],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("feature_flags" as any)
-        .select("enabled")
-        .eq("key", key)
+        .from("feature_flags")
+        .select("flag_value")
+        .eq("flag_name", flagName)
+        .eq("scope", "global")
         .single();
 
       if (error) return false;
-      return (data as any)?.enabled ?? false;
+      return (data as any)?.flag_value ?? false;
     },
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 5 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
   });
 
@@ -26,9 +27,9 @@ export const useAllFeatureFlags = () => {
     queryKey: ["feature-flags"],
     queryFn: async () => {
       const { data, error } = await supabase
-        .from("feature_flags" as any)
+        .from("feature_flags")
         .select("*")
-        .order("key");
+        .order("flag_name");
 
       if (error) throw error;
       return data as any[];
