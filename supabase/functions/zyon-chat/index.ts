@@ -1733,7 +1733,7 @@ serve(async (req) => {
 
             if (!fallbackError && fallbackResults && fallbackResults.length > 0) {
               // Apply lexical reranking for hygiene
-              chunks = rerankByLexicalOverlap(fallbackResults, message);
+              chunks = rerankByLexicalOverlap(fallbackResults, message, SYNONYM_MAP);
               lowConfidence = true;
               console.log("Fallback retrieval (low confidence, reranked):", chunks.length);
             }
