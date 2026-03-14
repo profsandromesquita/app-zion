@@ -2674,6 +2674,25 @@ O objetivo é que O PRÓPRIO USUÁRIO chegue à conexão.`;
         latency_ms: Date.now() - startTime,
       });
       if (retrievalLogError) console.error("Failed to log retrieval:", retrievalLogError);
+
+      // Log prompt assembly path for observability
+      try {
+        await supabase.from("observability_logs").insert({
+          event_type: 'prompt_assembly',
+          user_id: userId || null,
+          session_id: sessionId || null,
+          event_data: {
+            prompt_path: isPromptAdapterEnabled ? 'io_adapter' : 'legacy',
+            io_phase: ioPhaseContext?.current_phase || null,
+            io_phase_name: ioPhaseContext?.phase_name || null,
+            prompt_length: systemPrompt.length,
+          },
+          flags_active: { io_prompt_adapter_enabled: isPromptAdapterEnabled },
+          latency_ms: Date.now() - startTime,
+        });
+      } catch (obsErr) {
+        console.error("Failed to log prompt_assembly:", obsErr);
+      }
     }
 
     const latencyMs = Date.now() - startTime;
