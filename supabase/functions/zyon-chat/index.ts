@@ -481,7 +481,7 @@ function buildRAGPlan(intent: string): RouterResult["rag_plan"] {
 
 const BIBLE_VERSE_PATTERN = /\b([1-3]?\s?[A-Za-zÀ-ú]+)\s+(\d+)[:\.](\d+)(-\d+)?\b/g;
 
-function applyGuardrails(response: string, chunks: ChunkResult[]): { 
+function applyGuardrails(response: string, chunks: ChunkResult[], baseIdentity: string): { 
   clean: boolean; 
   warnings: string[]; 
   suggestion?: string;
@@ -493,7 +493,7 @@ function applyGuardrails(response: string, chunks: ChunkResult[]): {
   const chunkText = chunks.map(c => c.text).join(" ");
   
   for (const verse of verses) {
-    if (!chunkText.includes(verse) && !BASE_IDENTITY.includes(verse)) {
+    if (!chunkText.includes(verse) && !baseIdentity.includes(verse)) {
       warnings.push(`Possível versículo não verificado: ${verse}`);
     }
   }
