@@ -337,7 +337,7 @@ Responda sempre em português brasileiro, com empatia genuína e profundidade te
 // CRISIS DETECTION (INLINE)
 // ============================================
 
-const CRISIS_KEYWORDS = {
+const FALLBACK_CRISIS_KEYWORDS = {
   high: [
     "quero morrer", "vou me matar", "não quero mais viver", "suicídio", "suicidar",
     "acabar com tudo", "acabar com minha vida", "tirar minha vida", "me matar",
@@ -347,6 +347,7 @@ const CRISIS_KEYWORDS = {
     "não aguento mais", "estou desesperado", "perdi as esperanças",
     "sem saída", "sem esperança", "desistir de tudo", "cansado de viver",
   ],
+  low: [] as string[],
 };
 
 function detectCrisis(text: string): CrisisResult {
