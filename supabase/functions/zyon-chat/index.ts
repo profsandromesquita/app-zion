@@ -350,12 +350,12 @@ const FALLBACK_CRISIS_KEYWORDS = {
   low: [] as string[],
 };
 
-function detectCrisis(text: string): CrisisResult {
+function detectCrisis(text: string, crisisKeywords: { high: string[]; medium: string[]; low: string[] }): CrisisResult {
   const normalized = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   const matched: string[] = [];
   let level: CrisisResult["risk_level"] = "none";
 
-  for (const keyword of CRISIS_KEYWORDS.high) {
+  for (const keyword of crisisKeywords.high) {
     if (normalized.includes(keyword.normalize("NFD").replace(/[\u0300-\u036f]/g, ""))) {
       matched.push(keyword);
       level = "high";
@@ -363,7 +363,7 @@ function detectCrisis(text: string): CrisisResult {
   }
 
   if (level === "none") {
-    for (const keyword of CRISIS_KEYWORDS.medium) {
+    for (const keyword of crisisKeywords.medium) {
       if (normalized.includes(keyword.normalize("NFD").replace(/[\u0300-\u036f]/g, ""))) {
         matched.push(keyword);
         level = "medium";
