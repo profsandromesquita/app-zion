@@ -1499,8 +1499,61 @@ serve(async (req) => {
       ? createClient(supabaseUrl, supabaseServiceKey) 
       : null;
 
-    // Get embedding config
-    const embeddingConfig = EMBEDDING_CONFIG[CURRENT_EMBEDDING_TYPE];
+    // ========================================
+    // PROMPT BLOCKS: Fetch from database with fallback
+    // ========================================
+    let promptBlocks: Array<{key: string; content: string; category: string}> | null = null;
+    if (supabase) {
+      try {
+        const { data } = await supabase
+          .from('ai_prompt_blocks')
+          .select('key, content, category')
+          .eq('is_active', true);
+        promptBlocks = data;
+        console.log("Prompt blocks loaded:", promptBlocks?.length || 0);
+      } catch (err) {
+        console.error("Failed to load prompt blocks, using fallbacks:", err);
+      }
+    }
+
+    const getBlock = (key: string): string => {
+      return promptBlocks?.find(b => b.key === key)?.content || '';
+    };
+
+    // Resolve dynamic variables with fallback
+    const BASE_IDENTITY = getBlock('BASE_IDENTITY') || FALLBACK_BASE_IDENTITY;
+
+    let AVATAR_EMOTIONAL_CONTEXT = FALLBACK_AVATAR_CONTEXT;
+    try {
+      const raw = getBlock('AVATAR_EMOTIONAL_CONTEXT');
+      if (raw) AVATAR_EMOTIONAL_CONTEXT = JSON.parse(raw);
+    } catch { /* fallback */ }
+
+    let SYNONYM_MAP = FALLBACK_SYNONYM_MAP;
+    try {
+      const raw = getBlock('SYNONYM_MAP');
+      if (raw) SYNONYM_MAP = JSON.parse(raw);
+    } catch { /* fallback */ }
+
+    let intentGuidance: Record<string, string> = FALLBACK_INTENT_GUIDANCE;
+    try {
+      const raw = getBlock('INTENT_GUIDANCE');
+      if (raw) intentGuidance = JSON.parse(raw);
+    } catch { /* fallback */ }
+
+    // CRISIS KEYWORDS — texto plano, uma keyword por linha (NÃO JSON)
+    const parseKeywordLines = (text: string): string[] =>
+      text.split('\n').map(l => l.trim()).filter(Boolean);
+
+    const crisisHighRaw = getBlock('CRISIS_KEYWORDS_HIGH');
+    const crisisMediumRaw = getBlock('CRISIS_KEYWORDS_MEDIUM');
+    const crisisLowRaw = getBlock('CRISIS_KEYWORDS_LOW');
+
+    const CRISIS_KEYWORDS = {
+      high: crisisHighRaw ? parseKeywordLines(crisisHighRaw) : FALLBACK_CRISIS_KEYWORDS.high,
+      medium: crisisMediumRaw ? parseKeywordLines(crisisMediumRaw) : FALLBACK_CRISIS_KEYWORDS.medium,
+      low: crisisLowRaw ? parseKeywordLines(crisisLowRaw) : FALLBACK_CRISIS_KEYWORDS.low,
+    };
 
     // ========================================
     // STEP 1: CRISIS DETECTION (Priority Zero)
