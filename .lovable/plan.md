@@ -1,108 +1,119 @@
 
 
-# Plano Corrigido: zyon-chat buscar prompts de ai_prompt_blocks
+# Plano de Correcao: Fluxo de Testemunho e Aprovacao de Soldados
 
-## Correção identificada
+## Diagnostico Confirmado
 
-Os campos `CRISIS_KEYWORDS_HIGH`, `CRISIS_KEYWORDS_MEDIUM` e `CRISIS_KEYWORDS_LOW` no banco são **texto plano** (uma keyword por linha), não JSON arrays. O plano original usava `JSON.parse()` para esses campos — incorreto.
+Dados reais do banco confirmam os problemas:
+- **1 candidatura travada** em `under_review` com testemunho em `processing` (nunca processado, sem transcrição nem analise)
+- **0 usuarios com role `pastor`** no sistema -- aprovacao tripla e impossivel
+- A pagina de curadoria (`TestimonyCuration`) exige role `admin` via `AdminRoute`, bloqueando `profissional` e `pastor`
+- O envio de testemunho NAO dispara `process-testimony` automaticamente
+- O card de aprovacao (`ApplicationApprovalCard`) nao mostra feedback sobre quais aprovacoes faltam quando o usuario ja aprovou
 
-## Alterações em `supabase/functions/zyon-chat/index.ts`
+---
 
-### 1. Renomear constantes hardcoded para FALLBACK_*
+## Ordem de Deploy (5 etapas)
 
-- `AVATAR_EMOTIONAL_CONTEXT` → `FALLBACK_AVATAR_CONTEXT`
-- `BASE_IDENTITY` → `FALLBACK_BASE_IDENTITY`
-- `CRISIS_KEYWORDS` → `FALLBACK_CRISIS_KEYWORDS`
-- `SYNONYM_MAP` → `FALLBACK_SYNONYM_MAP`
-- `intentGuidance` inline → `FALLBACK_INTENT_GUIDANCE` (extrair para constante top-level)
+### Etapa 1: Migration -- Flexibilizar aprovacao tripla
 
-Conteúdo mantido idêntico.
+**Problema:** Sem pastor no sistema, nenhuma candidatura pode ser aprovada.
 
-### 2. Fetch de prompt blocks (após criar supabase client, antes do Step 1)
+**Solucao:** Criar uma funcao que verifica aprovacao com logica flexivel: se nao existe usuario com role `pastor` no sistema, a aprovacao de pastor e dispensada. O trigger `check_soldado_approval_complete` sera atualizado.
 
-```typescript
-let promptBlocks: Array<{key: string; content: string; category: string}> | null = null;
-if (supabase) {
-  try {
-    const { data } = await supabase
-      .from('ai_prompt_blocks')
-      .select('key, content, category')
-      .eq('is_active', true);
-    promptBlocks = data;
-    console.log("Prompt blocks loaded:", promptBlocks?.length || 0);
-  } catch (err) {
-    console.error("Failed to load prompt blocks, using fallbacks:", err);
-  }
-}
-
-const getBlock = (key: string): string => {
-  return promptBlocks?.find(b => b.key === key)?.content || '';
-};
+```text
+Logica da nova funcao check_soldado_approval_complete:
+  - admin_approved = obrigatorio
+  - profissional_approved = obrigatorio
+  - pastor_approved = obrigatorio SE existir pelo menos 1 usuario com role 'pastor'
+  - Se nao existir pastor, aprovacao completa com admin + profissional
 ```
 
-### 3. Resolver variáveis dinâmicas
+**SQL (migration):**
+- Recriar a funcao `check_soldado_approval_complete` com a logica condicional
+- Atualizar a funcao `get_application_approval_status` para refletir o campo `pastor_required`
 
+---
+
+### Etapa 2: Edge Function -- Auto-processar testemunho apos envio
+
+**Problema:** O testemunho e inserido com status `processing` mas a Edge Function `process-testimony` nunca e chamada automaticamente.
+
+**Solucao:** Adicionar chamada a `process-testimony` no frontend imediatamente apos o INSERT do testemunho em `SoldadoTestimony.tsx`.
+
+**Arquivo:** `src/pages/SoldadoTestimony.tsx`
+- Apos o INSERT bem-sucedido na tabela `testimonies` (linha ~213), invocar:
+  ```typescript
+  supabase.functions.invoke("process-testimony", {
+    body: { testimony_id: insertedId }
+  });
+  ```
+- Sera fire-and-forget (nao bloqueia a UX de sucesso)
+- Requer retornar o `id` do INSERT (usar `.select('id').single()`)
+
+---
+
+### Etapa 3: UI -- Abrir curadoria para profissional e pastor
+
+**Problema:** `TestimonyCuration.tsx` usa `AdminRoute` que bloqueia profissional e pastor.
+
+**Solucao:** Trocar `AdminRoute` por `RoleRoute` com roles permitidas.
+
+**Arquivo:** `src/pages/admin/TestimonyCuration.tsx`
+- Substituir `<AdminRoute>` por `<RoleRoute allowedRoles={["admin", "desenvolvedor", "profissional", "pastor"]}>`
+- Importar `RoleRoute` no lugar de `AdminRoute`
+
+---
+
+### Etapa 4: UI -- Feedback de aprovacoes pendentes no card
+
+**Problema:** Apos o admin aprovar, o card some os botoes sem explicar o que falta.
+
+**Solucao:** Adicionar mensagem contextual em `ApplicationApprovalCard.tsx`.
+
+**Arquivo:** `src/components/soldado/ApplicationApprovalCard.tsx`
+- Quando `canApprove === false` e `status === "under_review"`:
+  - Mostrar banner informativo: "Sua aprovacao foi registrada. Aguardando: [lista de roles pendentes]"
+  - Calcular roles pendentes a partir de `application.approvals`
+
+---
+
+### Etapa 5: UI -- Guardar curadoria antes de aprovacao
+
+**Problema:** O curador pode aprovar a candidatura ANTES do testemunho ser processado pela IA (status `processing`).
+
+**Solucao:** No `TestimonyCurationCard.tsx`, ja existe logica parcial (`canTakeAction` verifica `analyzed || processing`). Ajustar para:
+- Botoes de "Aprovar"/"Rejeitar" so aparecem quando `testimony.status === "analyzed"`
+- Quando `processing`, mostrar apenas botao "Processar" e mensagem de aguardo
+- Remover `processing` da condicao `canTakeAction` para acoes de curadoria
+
+**Arquivo:** `src/components/soldado/TestimonyCurationCard.tsx` (linha 331-333)
 ```typescript
-const BASE_IDENTITY = getBlock('BASE_IDENTITY') || FALLBACK_BASE_IDENTITY;
+// ANTES:
+const canTakeAction = approverRole !== null && 
+  (testimony.status === "analyzed" || testimony.status === "processing");
 
-// JSON blocks — usar JSON.parse com try/catch
-let AVATAR_EMOTIONAL_CONTEXT = FALLBACK_AVATAR_CONTEXT;
-try {
-  const raw = getBlock('AVATAR_EMOTIONAL_CONTEXT');
-  if (raw) AVATAR_EMOTIONAL_CONTEXT = JSON.parse(raw);
-} catch { /* fallback */ }
-
-let SYNONYM_MAP = FALLBACK_SYNONYM_MAP;
-try {
-  const raw = getBlock('SYNONYM_MAP');
-  if (raw) SYNONYM_MAP = JSON.parse(raw);
-} catch { /* fallback */ }
-
-let intentGuidance = FALLBACK_INTENT_GUIDANCE;
-try {
-  const raw = getBlock('INTENT_GUIDANCE');
-  if (raw) intentGuidance = JSON.parse(raw);
-} catch { /* fallback */ }
-
-// CRISIS KEYWORDS — texto plano, uma keyword por linha (NÃO JSON)
-const parseKeywordLines = (text: string): string[] =>
-  text.split('\n').map(l => l.trim()).filter(Boolean);
-
-const crisisHighRaw = getBlock('CRISIS_KEYWORDS_HIGH');
-const crisisMediumRaw = getBlock('CRISIS_KEYWORDS_MEDIUM');
-const crisisLowRaw = getBlock('CRISIS_KEYWORDS_LOW');
-
-const CRISIS_KEYWORDS = {
-  high: crisisHighRaw ? parseKeywordLines(crisisHighRaw) : FALLBACK_CRISIS_KEYWORDS.high,
-  medium: crisisMediumRaw ? parseKeywordLines(crisisMediumRaw) : FALLBACK_CRISIS_KEYWORDS.medium,
-  low: crisisLowRaw ? parseKeywordLines(crisisLowRaw) : FALLBACK_CRISIS_KEYWORDS.low,
-};
+// DEPOIS:
+const canTakeAction = approverRole !== null && testimony.status === "analyzed";
 ```
 
-### 4. Ajustar funções que usam variáveis globais
+---
 
-- `detectCrisis(text, crisisKeywords)` — novo parâmetro
-- `applyGuardrails(response, chunks, baseId)` — novo parâmetro
-- `rerankByLexicalOverlap(chunks, msg, synMap)` — novo parâmetro
-- `intentGuidance` inline (linha ~1941) — substituir pelo objeto já resolvido
+## Resumo de Arquivos Impactados
 
-Cada chamada atualizada para passar a variável correspondente.
+| Arquivo | Tipo de Mudanca |
+|---|---|
+| Nova migration SQL | Recriar trigger de aprovacao flexivel |
+| `src/pages/SoldadoTestimony.tsx` | Chamar process-testimony apos envio |
+| `src/pages/admin/TestimonyCuration.tsx` | Trocar AdminRoute por RoleRoute |
+| `src/components/soldado/ApplicationApprovalCard.tsx` | Feedback de aprovacoes pendentes |
+| `src/components/soldado/TestimonyCurationCard.tsx` | Bloquear curadoria antes da analise |
 
-### 5. O que NÃO muda
+## Riscos e Mitigacoes
 
-- Nenhuma lógica de pipeline (Steps 1-7)
-- Nenhum edge function além de zyon-chat
-- Nenhuma tabela ou schema
-- Observer, validator, router — intocados
-- Resultado final para o usuário — idêntico
+- **Risco:** Flexibilizar pastor pode permitir aprovacao prematura.
+  **Mitigacao:** A logica so dispensa pastor se literalmente nao existe nenhum usuario com essa role no sistema. Quando um pastor for cadastrado, a exigencia volta automaticamente.
 
-### Resumo da diferença vs plano anterior
-
-| Campo | Plano anterior | Plano corrigido |
-|---|---|---|
-| CRISIS_KEYWORDS_* | `JSON.parse()` | `split('\n').filter(Boolean)` |
-| AVATAR_EMOTIONAL_CONTEXT | `JSON.parse()` | `JSON.parse()` ✓ |
-| SYNONYM_MAP | `JSON.parse()` | `JSON.parse()` ✓ |
-| INTENT_GUIDANCE | `JSON.parse()` | `JSON.parse()` ✓ |
-| BASE_IDENTITY | string direto | string direto ✓ |
+- **Risco:** Chamada fire-and-forget do process-testimony pode falhar silenciosamente.
+  **Mitigacao:** O botao "Processar" na tela de curadoria ja existe como fallback manual.
 

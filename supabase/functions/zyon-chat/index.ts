@@ -177,7 +177,7 @@ const CURRENT_EMBEDDING_TYPE = 'simple-hash-v1';
 // SYMBOLIC AVATAR EMOTIONAL CONTEXT MAPPING
 // ============================================
 
-const AVATAR_EMOTIONAL_CONTEXT: Record<string, { 
+const FALLBACK_AVATAR_CONTEXT: Record<string, { 
   name: string; 
   emotionalHint: string; 
   suggestionForModel: string 
@@ -247,7 +247,7 @@ function extractSymbolicAvatarId(avatarUrl: string | null): string | null {
 // BASE IDENTITY (CONSTITUIÇÃO)
 // ============================================
 
-const BASE_IDENTITY = `Você é Zyon, mentor espiritual da plataforma ZION. Sua missão é acolher pessoas em busca de cura interior, guiando-as pelo processo de metanoia (transformação genuína).
+const FALLBACK_BASE_IDENTITY = `Você é Zyon, mentor espiritual da plataforma ZION. Sua missão é acolher pessoas em busca de cura interior, guiando-as pelo processo de metanoia (transformação genuína).
 
 ## DIRETRIZES FUNDAMENTAIS
 
@@ -337,7 +337,7 @@ Responda sempre em português brasileiro, com empatia genuína e profundidade te
 // CRISIS DETECTION (INLINE)
 // ============================================
 
-const CRISIS_KEYWORDS = {
+const FALLBACK_CRISIS_KEYWORDS = {
   high: [
     "quero morrer", "vou me matar", "não quero mais viver", "suicídio", "suicidar",
     "acabar com tudo", "acabar com minha vida", "tirar minha vida", "me matar",
@@ -347,14 +347,15 @@ const CRISIS_KEYWORDS = {
     "não aguento mais", "estou desesperado", "perdi as esperanças",
     "sem saída", "sem esperança", "desistir de tudo", "cansado de viver",
   ],
+  low: [] as string[],
 };
 
-function detectCrisis(text: string): CrisisResult {
+function detectCrisis(text: string, crisisKeywords: { high: string[]; medium: string[]; low: string[] }): CrisisResult {
   const normalized = text.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   const matched: string[] = [];
   let level: CrisisResult["risk_level"] = "none";
 
-  for (const keyword of CRISIS_KEYWORDS.high) {
+  for (const keyword of crisisKeywords.high) {
     if (normalized.includes(keyword.normalize("NFD").replace(/[\u0300-\u036f]/g, ""))) {
       matched.push(keyword);
       level = "high";
@@ -362,7 +363,7 @@ function detectCrisis(text: string): CrisisResult {
   }
 
   if (level === "none") {
-    for (const keyword of CRISIS_KEYWORDS.medium) {
+    for (const keyword of crisisKeywords.medium) {
       if (normalized.includes(keyword.normalize("NFD").replace(/[\u0300-\u036f]/g, ""))) {
         matched.push(keyword);
         level = "medium";
@@ -480,7 +481,7 @@ function buildRAGPlan(intent: string): RouterResult["rag_plan"] {
 
 const BIBLE_VERSE_PATTERN = /\b([1-3]?\s?[A-Za-zÀ-ú]+)\s+(\d+)[:\.](\d+)(-\d+)?\b/g;
 
-function applyGuardrails(response: string, chunks: ChunkResult[]): { 
+function applyGuardrails(response: string, chunks: ChunkResult[], baseIdentity: string): { 
   clean: boolean; 
   warnings: string[]; 
   suggestion?: string;
@@ -492,7 +493,7 @@ function applyGuardrails(response: string, chunks: ChunkResult[]): {
   const chunkText = chunks.map(c => c.text).join(" ");
   
   for (const verse of verses) {
-    if (!chunkText.includes(verse) && !BASE_IDENTITY.includes(verse)) {
+    if (!chunkText.includes(verse) && !baseIdentity.includes(verse)) {
       warnings.push(`Possível versículo não verificado: ${verse}`);
     }
   }
@@ -836,7 +837,7 @@ async function generateSimpleEmbedding(text: string): Promise<number[]> {
 // SYNONYM MAP FOR SEMANTIC COMPENSATION
 // ============================================
 
-const SYNONYM_MAP: Record<string, string[]> = {
+const FALLBACK_SYNONYM_MAP: Record<string, string[]> = {
   // Emoções -> Virtudes/Pecados
   'odio': ['ira', 'justiça'],
   'ódio': ['ira', 'justiça'],
@@ -888,14 +889,26 @@ const SYNONYM_MAP: Record<string, string[]> = {
 };
 
 // ============================================
+// FALLBACK INTENT GUIDANCE
+// ============================================
+
+const FALLBACK_INTENT_GUIDANCE: Record<string, string> = {
+  ACOLHIMENTO_IMEDIATO: "A pessoa precisa ser OUVIDA primeiro. Foque em validar sentimentos, fazer perguntas abertas e oferecer presença. Não apresse soluções.",
+  DIAGNOSTICO: "Ajude a pessoa a ENTENDER seus padrões. Use a Lógica do Medo: identifique perdas, medos raiz, falsas seguranças. Faça perguntas diagnósticas.",
+  METANOIA_CONFRONTO: "A pessoa está pronta para MUDANÇA. Guie processos de perdão, renúncia, confronto consigo mesma. Seja firme mas amoroso.",
+  PRATICA_CONSOLIDACAO: "Foque em PASSOS PRÁTICOS: exercícios concretos, rotinas, hábitos. Seja específico e gradual.",
+  EXEGESE_DUVIDA_BIBLICA: "Responda com EXEGESE CURTA e aplicada. Use a Bíblia Judaica. Não invente versículos. Se não souber, diga.",
+};
+
+// ============================================
 // LEXICAL OVERLAP RERANKER (PHASE 0 - HYGIENE + SYNONYM EXPANSION)
 // ============================================
 
-function rerankByLexicalOverlap(chunks: ChunkResult[], userMessage: string): ChunkResult[] {
+function rerankByLexicalOverlap(chunks: ChunkResult[], userMessage: string, synonymMap: Record<string, string[]>): ChunkResult[] {
   // Expand message with synonyms for semantic compensation
   let expandedMessage = userMessage.toLowerCase();
   
-  for (const [key, synonyms] of Object.entries(SYNONYM_MAP)) {
+  for (const [key, synonyms] of Object.entries(synonymMap)) {
     if (expandedMessage.includes(key)) {
       expandedMessage += ' ' + synonyms.join(' ');
     }
@@ -1486,6 +1499,62 @@ serve(async (req) => {
       ? createClient(supabaseUrl, supabaseServiceKey) 
       : null;
 
+    // ========================================
+    // PROMPT BLOCKS: Fetch from database with fallback
+    // ========================================
+    let promptBlocks: Array<{key: string; content: string; category: string}> | null = null;
+    if (supabase) {
+      try {
+        const { data } = await supabase
+          .from('ai_prompt_blocks')
+          .select('key, content, category')
+          .eq('is_active', true);
+        promptBlocks = data;
+        console.log("Prompt blocks loaded:", promptBlocks?.length || 0);
+      } catch (err) {
+        console.error("Failed to load prompt blocks, using fallbacks:", err);
+      }
+    }
+
+    const getBlock = (key: string): string => {
+      return promptBlocks?.find(b => b.key === key)?.content || '';
+    };
+
+    // Resolve dynamic variables with fallback
+    const BASE_IDENTITY = getBlock('BASE_IDENTITY') || FALLBACK_BASE_IDENTITY;
+
+    let AVATAR_EMOTIONAL_CONTEXT = FALLBACK_AVATAR_CONTEXT;
+    try {
+      const raw = getBlock('AVATAR_EMOTIONAL_CONTEXT');
+      if (raw) AVATAR_EMOTIONAL_CONTEXT = JSON.parse(raw);
+    } catch { /* fallback */ }
+
+    let SYNONYM_MAP = FALLBACK_SYNONYM_MAP;
+    try {
+      const raw = getBlock('SYNONYM_MAP');
+      if (raw) SYNONYM_MAP = JSON.parse(raw);
+    } catch { /* fallback */ }
+
+    let intentGuidance: Record<string, string> = FALLBACK_INTENT_GUIDANCE;
+    try {
+      const raw = getBlock('INTENT_GUIDANCE');
+      if (raw) intentGuidance = JSON.parse(raw);
+    } catch { /* fallback */ }
+
+    // CRISIS KEYWORDS — texto plano, uma keyword por linha (NÃO JSON)
+    const parseKeywordLines = (text: string): string[] =>
+      text.split('\n').map(l => l.trim()).filter(Boolean);
+
+    const crisisHighRaw = getBlock('CRISIS_KEYWORDS_HIGH');
+    const crisisMediumRaw = getBlock('CRISIS_KEYWORDS_MEDIUM');
+    const crisisLowRaw = getBlock('CRISIS_KEYWORDS_LOW');
+
+    const CRISIS_KEYWORDS = {
+      high: crisisHighRaw ? parseKeywordLines(crisisHighRaw) : FALLBACK_CRISIS_KEYWORDS.high,
+      medium: crisisMediumRaw ? parseKeywordLines(crisisMediumRaw) : FALLBACK_CRISIS_KEYWORDS.medium,
+      low: crisisLowRaw ? parseKeywordLines(crisisLowRaw) : FALLBACK_CRISIS_KEYWORDS.low,
+    };
+
     // Get embedding config
     const embeddingConfig = EMBEDDING_CONFIG[CURRENT_EMBEDDING_TYPE];
 
@@ -1493,7 +1562,7 @@ serve(async (req) => {
     // STEP 1: CRISIS DETECTION (Priority Zero)
     // ========================================
     console.log("Step 1: Crisis Detection");
-    const crisisResult = detectCrisis(message);
+    const crisisResult = detectCrisis(message, CRISIS_KEYWORDS);
     
     if (crisisResult.should_bypass_rag) {
       console.log("⚠️ HIGH RISK DETECTED - Bypassing RAG");
@@ -1667,7 +1736,7 @@ serve(async (req) => {
 
             if (!fallbackError && fallbackResults && fallbackResults.length > 0) {
               // Apply lexical reranking for hygiene
-              chunks = rerankByLexicalOverlap(fallbackResults, message);
+              chunks = rerankByLexicalOverlap(fallbackResults, message, SYNONYM_MAP);
               lowConfidence = true;
               console.log("Fallback retrieval (low confidence, reranked):", chunks.length);
             }
@@ -1938,13 +2007,6 @@ ${chunksText}`;
     }
 
     // Add intent guidance
-    const intentGuidance: Record<string, string> = {
-      ACOLHIMENTO_IMEDIATO: "A pessoa precisa ser OUVIDA primeiro. Foque em validar sentimentos, fazer perguntas abertas e oferecer presença. Não apresse soluções.",
-      DIAGNOSTICO: "Ajude a pessoa a ENTENDER seus padrões. Use a Lógica do Medo: identifique perdas, medos raiz, falsas seguranças. Faça perguntas diagnósticas.",
-      METANOIA_CONFRONTO: "A pessoa está pronta para MUDANÇA. Guie processos de perdão, renúncia, confronto consigo mesma. Seja firme mas amoroso.",
-      PRATICA_CONSOLIDACAO: "Foque em PASSOS PRÁTICOS: exercícios concretos, rotinas, hábitos. Seja específico e gradual.",
-      EXEGESE_DUVIDA_BIBLICA: "Responda com EXEGESE CURTA e aplicada. Use a Bíblia Judaica. Não invente versículos. Se não souber, diga.",
-    };
 
     if (intentGuidance[intent]) {
       systemPrompt += `\n\n## FOCO DESTA CONVERSA\n${intentGuidance[intent]}`;
@@ -2094,7 +2156,7 @@ Temas abordados: ${userMsgs.substring(0, 400)}...`;
     // STEP 7: GUARDRAILS + OUTPUT VALIDATION (PHASE 1-2)
     // ========================================
     console.log("Step 7: Guardrails & Output Validation (Complete)");
-    const guardrailResult = applyGuardrails(aiResponse, chunks);
+    const guardrailResult = applyGuardrails(aiResponse, chunks, BASE_IDENTITY);
     
     // Get spiritualMaturity from profile (need to retrieve it from earlier fetch)
     // Note: userProfile was set in the profile fetch section above
