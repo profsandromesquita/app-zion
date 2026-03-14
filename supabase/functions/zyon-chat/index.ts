@@ -1987,6 +1987,42 @@ serve(async (req) => {
     console.log("User context:", JSON.stringify(userContext));
 
     // ========================================
+    // STEP 2.5: IO PHASE (if enabled)
+    // ========================================
+    let ioPhaseContext: any = null;
+    let isPromptAdapterEnabled = false;
+
+    if (supabase) {
+      try {
+        const { data: promptAdapterFlag } = await supabase.rpc('get_feature_flag', {
+          p_flag_name: 'io_prompt_adapter_enabled',
+          p_user_id: userId || null
+        });
+        isPromptAdapterEnabled = promptAdapterFlag === true;
+        console.log("io_prompt_adapter_enabled:", isPromptAdapterEnabled);
+      } catch (flagErr) {
+        console.error("Failed to check io_prompt_adapter_enabled flag:", flagErr);
+      }
+
+      if (isPromptAdapterEnabled && userId) {
+        try {
+          const { data: ioPhase } = await supabase
+            .from('io_user_phase')
+            .select('current_phase, phase_name, igi_current, streak_current, phase_entered_at, phase_criteria_met')
+            .eq('user_id', userId)
+            .single();
+
+          if (ioPhase) {
+            ioPhaseContext = ioPhase;
+            console.log("IO Phase loaded:", ioPhase.phase_name, "(Phase", ioPhase.current_phase, ")");
+          }
+        } catch (phaseErr) {
+          console.error("Failed to fetch IO phase:", phaseErr);
+        }
+      }
+    }
+
+    // ========================================
     // STEP 3-4: RAG RETRIEVAL (WITH ADAPTIVE THRESHOLD)
     // ========================================
     console.log("Step 3-4: RAG Retrieval (Adaptive Threshold)");
