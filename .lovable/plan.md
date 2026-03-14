@@ -1,90 +1,119 @@
 
 
-# Plano Corrigido: Prompt Adapter IO no zyon-chat
+# Plano de Correcao: Fluxo de Testemunho e Aprovacao de Soldados
 
-## Correções vs plano anterior
+## Diagnostico Confirmado
 
-| Item | Plano anterior | Corrigido |
-|---|---|---|
-| event_type | `prompt_assembly` (não existe no trigger) | Migration para adicionar `prompt_assembly` ao trigger |
-| Campo flags | `flags_snapshot` | `flags_active` |
+Dados reais do banco confirmam os problemas:
+- **1 candidatura travada** em `under_review` com testemunho em `processing` (nunca processado, sem transcrição nem analise)
+- **0 usuarios com role `pastor`** no sistema -- aprovacao tripla e impossivel
+- A pagina de curadoria (`TestimonyCuration`) exige role `admin` via `AdminRoute`, bloqueando `profissional` e `pastor`
+- O envio de testemunho NAO dispara `process-testimony` automaticamente
+- O card de aprovacao (`ApplicationApprovalCard`) nao mostra feedback sobre quais aprovacoes faltam quando o usuario ja aprovou
 
-## Etapa 0: Migration — Adicionar event_type 'prompt_assembly'
+---
 
-```sql
-CREATE OR REPLACE FUNCTION public.validate_observability_event_type()
-RETURNS trigger
-LANGUAGE plpgsql
-SET search_path TO 'public'
-AS $$
-BEGIN
-  IF NEW.event_type NOT IN (
-    'chat_response', 'phase_transition', 'igi_update',
-    'session_daily', 'rag_retrieval', 'validation_result',
-    'rewrite', 'crisis_event', 'flag_check',
-    'prompt_assembly'
-  ) THEN
-    RAISE EXCEPTION 'Invalid event_type: %', NEW.event_type;
-  END IF;
-  RETURN NEW;
-END;
-$$;
+## Ordem de Deploy (5 etapas)
+
+### Etapa 1: Migration -- Flexibilizar aprovacao tripla
+
+**Problema:** Sem pastor no sistema, nenhuma candidatura pode ser aprovada.
+
+**Solucao:** Criar uma funcao que verifica aprovacao com logica flexivel: se nao existe usuario com role `pastor` no sistema, a aprovacao de pastor e dispensada. O trigger `check_soldado_approval_complete` sera atualizado.
+
+```text
+Logica da nova funcao check_soldado_approval_complete:
+  - admin_approved = obrigatorio
+  - profissional_approved = obrigatorio
+  - pastor_approved = obrigatorio SE existir pelo menos 1 usuario com role 'pastor'
+  - Se nao existir pastor, aprovacao completa com admin + profissional
 ```
 
-## Alterações em `supabase/functions/zyon-chat/index.ts`
+**SQL (migration):**
+- Recriar a funcao `check_soldado_approval_complete` com a logica condicional
+- Atualizar a funcao `get_application_approval_status` para refletir o campo `pastor_required`
 
-### 1. Funções auxiliares (antes do MAIN HANDLER)
+---
 
-- `getIOPhaseOrientation(phase: number): string` — orientações por fase (7 fases)
-- `buildIOSystemPrompt(config): string` — prompt modular com 14 blocos
+### Etapa 2: Edge Function -- Auto-processar testemunho apos envio
 
-### 2. STEP 2.5: Fetch IO Phase (após observer, antes do Step 3)
+**Problema:** O testemunho e inserido com status `processing` mas a Edge Function `process-testimony` nunca e chamada automaticamente.
 
+**Solucao:** Adicionar chamada a `process-testimony` no frontend imediatamente apos o INSERT do testemunho em `SoldadoTestimony.tsx`.
+
+**Arquivo:** `src/pages/SoldadoTestimony.tsx`
+- Apos o INSERT bem-sucedido na tabela `testimonies` (linha ~213), invocar:
+  ```typescript
+  supabase.functions.invoke("process-testimony", {
+    body: { testimony_id: insertedId }
+  });
+  ```
+- Sera fire-and-forget (nao bloqueia a UX de sucesso)
+- Requer retornar o `id` do INSERT (usar `.select('id').single()`)
+
+---
+
+### Etapa 3: UI -- Abrir curadoria para profissional e pastor
+
+**Problema:** `TestimonyCuration.tsx` usa `AdminRoute` que bloqueia profissional e pastor.
+
+**Solucao:** Trocar `AdminRoute` por `RoleRoute` com roles permitidas.
+
+**Arquivo:** `src/pages/admin/TestimonyCuration.tsx`
+- Substituir `<AdminRoute>` por `<RoleRoute allowedRoles={["admin", "desenvolvedor", "profissional", "pastor"]}>`
+- Importar `RoleRoute` no lugar de `AdminRoute`
+
+---
+
+### Etapa 4: UI -- Feedback de aprovacoes pendentes no card
+
+**Problema:** Apos o admin aprovar, o card some os botoes sem explicar o que falta.
+
+**Solucao:** Adicionar mensagem contextual em `ApplicationApprovalCard.tsx`.
+
+**Arquivo:** `src/components/soldado/ApplicationApprovalCard.tsx`
+- Quando `canApprove === false` e `status === "under_review"`:
+  - Mostrar banner informativo: "Sua aprovacao foi registrada. Aguardando: [lista de roles pendentes]"
+  - Calcular roles pendentes a partir de `application.approvals`
+
+---
+
+### Etapa 5: UI -- Guardar curadoria antes de aprovacao
+
+**Problema:** O curador pode aprovar a candidatura ANTES do testemunho ser processado pela IA (status `processing`).
+
+**Solucao:** No `TestimonyCurationCard.tsx`, ja existe logica parcial (`canTakeAction` verifica `analyzed || processing`). Ajustar para:
+- Botoes de "Aprovar"/"Rejeitar" so aparecem quando `testimony.status === "analyzed"`
+- Quando `processing`, mostrar apenas botao "Processar" e mensagem de aguardo
+- Remover `processing` da condicao `canTakeAction` para acoes de curadoria
+
+**Arquivo:** `src/components/soldado/TestimonyCurationCard.tsx` (linha 331-333)
 ```typescript
-let ioPhaseContext = null;
-let isPromptAdapterEnabled = false;
+// ANTES:
+const canTakeAction = approverRole !== null && 
+  (testimony.status === "analyzed" || testimony.status === "processing");
 
-const { data: promptAdapterFlag } = await supabase.rpc('get_feature_flag', {
-  p_flag_name: 'io_prompt_adapter_enabled',
-  p_user_id: userId
-});
-isPromptAdapterEnabled = promptAdapterFlag === true;
-
-if (isPromptAdapterEnabled && userId) {
-  // fetch io_user_phase
-}
+// DEPOIS:
+const canTakeAction = approverRole !== null && testimony.status === "analyzed";
 ```
 
-### 3. STEP 5: Branch por flag
+---
 
-- `if (isPromptAdapterEnabled)` → `buildIOSystemPrompt({...})`
-- `else` → cópia literal do código legado atual
+## Resumo de Arquivos Impactados
 
-### 4. Observability log (corrigido)
+| Arquivo | Tipo de Mudanca |
+|---|---|
+| Nova migration SQL | Recriar trigger de aprovacao flexivel |
+| `src/pages/SoldadoTestimony.tsx` | Chamar process-testimony apos envio |
+| `src/pages/admin/TestimonyCuration.tsx` | Trocar AdminRoute por RoleRoute |
+| `src/components/soldado/ApplicationApprovalCard.tsx` | Feedback de aprovacoes pendentes |
+| `src/components/soldado/TestimonyCurationCard.tsx` | Bloquear curadoria antes da analise |
 
-```typescript
-await supabase.from('observability_logs').insert({
-  event_type: 'prompt_assembly',
-  user_id: userId || null,
-  session_id: sessionId || null,
-  event_data: {
-    prompt_path: isPromptAdapterEnabled ? 'io_adapter' : 'legacy',
-    io_phase: ioPhaseContext?.current_phase || null,
-    prompt_length: systemPrompt.length,
-  },
-  flags_active: { io_prompt_adapter_enabled: isPromptAdapterEnabled },
-  latency_ms: 0,
-});
-```
+## Riscos e Mitigacoes
 
-### 5. Debug info (isAdmin block)
+- **Risco:** Flexibilizar pastor pode permitir aprovacao prematura.
+  **Mitigacao:** A logica so dispensa pastor se literalmente nao existe nenhum usuario com essa role no sistema. Quando um pastor for cadastrado, a exigencia volta automaticamente.
 
-Adicionar `prompt_adapter` e `io_phase` ao objeto debug.
-
-## O que NÃO muda
-
-- Flag OFF = comportamento 100% idêntico (branch legado é cópia literal)
-- Observer, validator, Steps 1-4, Steps 6-8 — intocados
-- Nenhum outro edge function alterado
-- UX inalterada
+- **Risco:** Chamada fire-and-forget do process-testimony pode falhar silenciosamente.
+  **Mitigacao:** O botao "Processar" na tela de curadoria ja existe como fallback manual.
 
