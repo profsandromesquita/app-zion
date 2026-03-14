@@ -1555,6 +1555,9 @@ serve(async (req) => {
       low: crisisLowRaw ? parseKeywordLines(crisisLowRaw) : FALLBACK_CRISIS_KEYWORDS.low,
     };
 
+    // Get embedding config
+    const embeddingConfig = EMBEDDING_CONFIG[CURRENT_EMBEDDING_TYPE];
+
     // ========================================
     // STEP 1: CRISIS DETECTION (Priority Zero)
     // ========================================
