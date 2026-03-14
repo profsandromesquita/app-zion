@@ -177,7 +177,7 @@ const CURRENT_EMBEDDING_TYPE = 'simple-hash-v1';
 // SYMBOLIC AVATAR EMOTIONAL CONTEXT MAPPING
 // ============================================
 
-const AVATAR_EMOTIONAL_CONTEXT: Record<string, { 
+const FALLBACK_AVATAR_CONTEXT: Record<string, { 
   name: string; 
   emotionalHint: string; 
   suggestionForModel: string 
