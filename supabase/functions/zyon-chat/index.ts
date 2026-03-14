@@ -2314,106 +2314,151 @@ ${memoryLines}`;
       }
     }
     
-    // Build system prompt: Few-Shot FIRST, then BASE_IDENTITY
-    let systemPrompt = fewShotBlock + BASE_IDENTITY;
-
-    // Add constitution (pinned)
-    if (constitutionInstructions) {
-      systemPrompt += `\n\n## CONSTITUIÇÃO ZION (SEMPRE APLICAR)\n${constitutionInstructions}`;
-    }
-
-    // Add custom instructions
-    if (customInstructions) {
-      systemPrompt += `\n\n## INSTRUÇÕES ADICIONAIS\n${customInstructions}`;
-    }
-
-    // Add retrieved context (PHASE 0: Adapt for low confidence)
-    if (chunks.length > 0) {
-      let chunksText;
+    // ============================================
+    // SUMMARIZE OLDER HISTORY (shared by both paths)
+    // ============================================
+    const recentHistory = history.slice(-8);
+    const olderHistory = history.slice(0, -8);
+    
+    let historySummary = "";
+    if (olderHistory.length > 0) {
+      const userMsgs = olderHistory
+        .filter((m: { role: string }) => m.role === "user")
+        .map((m: { content: string }) => m.content.substring(0, 80))
+        .join(" | ");
       
-      if (lowConfidence) {
-        // Limited text injection for low confidence
-        chunksText = chunks.map((c, i) => {
-          const preview = c.text.substring(0, embeddingConfig.maxChunkTextInFallback);
-          return `### Pista ${i + 1} [${c.layer}]\n${preview}...`;
-        }).join("\n\n");
+      if (userMsgs.length > 0) {
+        historySummary = `\n\n## RESUMO DO INÍCIO DA CONVERSA (${olderHistory.length} mensagens anteriores)
+Temas abordados: ${userMsgs.substring(0, 400)}...`;
+      }
+    }
+
+    // ============================================
+    // PROMPT ASSEMBLY: Branch by flag
+    // ============================================
+    let systemPrompt: string;
+
+    if (isPromptAdapterEnabled) {
+      // ==========================================
+      // IO PROMPT ADAPTER (NOVO)
+      // ==========================================
+      systemPrompt = buildIOSystemPrompt({
+        fewShotBlock,
+        baseIdentity: BASE_IDENTITY,
+        constitutionInstructions,
+        customInstructions,
+        chunks,
+        lowConfidence,
+        intent,
+        intentGuidance,
+        userContext,
+        sessionContext,
+        ioPhase: ioPhaseContext,
+        diaryContext,
+        crisisRiskLevel: crisisResult.risk_level,
+        historySummary,
+      });
+      console.log("Prompt assembled via IO Adapter (phase:", ioPhaseContext?.phase_name || 'N/A', ")");
+    } else {
+      // ==========================================
+      // LEGADO: Montagem inline (cópia literal)
+      // ==========================================
+      systemPrompt = fewShotBlock + BASE_IDENTITY;
+
+      // Add constitution (pinned)
+      if (constitutionInstructions) {
+        systemPrompt += `\n\n## CONSTITUIÇÃO ZION (SEMPRE APLICAR)\n${constitutionInstructions}`;
+      }
+
+      // Add custom instructions
+      if (customInstructions) {
+        systemPrompt += `\n\n## INSTRUÇÕES ADICIONAIS\n${customInstructions}`;
+      }
+
+      // Add retrieved context (PHASE 0: Adapt for low confidence)
+      if (chunks.length > 0) {
+        let chunksText;
         
-        systemPrompt += `\n\n## CONTEXTO (BAIXA CONFIANÇA - USE COMO PISTAS)
+        if (lowConfidence) {
+          chunksText = chunks.map((c, i) => {
+            const preview = c.text.substring(0, embeddingConfig.maxChunkTextInFallback);
+            return `### Pista ${i + 1} [${c.layer}]\n${preview}...`;
+          }).join("\n\n");
+          
+          systemPrompt += `\n\n## CONTEXTO (BAIXA CONFIANÇA - USE COMO PISTAS)
 ATENÇÃO: Estes trechos podem não ser diretamente relevantes.
 - PERGUNTE MAIS, afirme menos
 - Use como PISTAS, não como base para conclusões
 - Seja mais aberto e exploratório
 
 ${chunksText}`;
-      } else {
-        // Normal context (high confidence)
-        chunksText = chunks.map((c, i) => {
-          const path = c.section_path?.join(" > ") || "";
-          return `### Ref ${i + 1} [${c.layer}/${c.domain}]${path ? ` - ${path}` : ""}\n${c.text}`;
-        }).join("\n\n---\n\n");
+        } else {
+          chunksText = chunks.map((c, i) => {
+            const path = c.section_path?.join(" > ") || "";
+            return `### Ref ${i + 1} [${c.layer}/${c.domain}]${path ? ` - ${path}` : ""}\n${c.text}`;
+          }).join("\n\n---\n\n");
 
-        systemPrompt += `\n\n## CONTEXTO DA BASE DE CONHECIMENTO ZION\nUse as seguintes referências para fundamentar suas respostas:\n\n${chunksText}`;
-      }
-    }
-
-    // Add intent guidance
-
-    if (intentGuidance[intent]) {
-      systemPrompt += `\n\n## FOCO DESTA CONVERSA\n${intentGuidance[intent]}`;
-    }
-
-    // Add diary/profile context
-    if (diaryContext) {
-      systemPrompt += diaryContext;
-    }
-
-    // NEW: Inject Observer session insights into prompt
-    if (sessionContext.currentPhase) {
-      const QUESTION_TYPE_GUIDE: Record<string, string> = {
-        EVIDENCE: "Peça EVIDÊNCIAS concretas do que a pessoa afirma sentir (Ex: 'O que te faz dizer isso?')",
-        ALTERNATIVE: "Explore ALTERNATIVAS para a interpretação atual (Ex: 'E se houvesse outra explicação?')",
-        SENSATION: "Pergunte sobre SENSAÇÕES FÍSICAS associadas (Ex: 'Onde você sente isso no corpo?')",
-        VALUE: "Investigue os VALORES em jogo (Ex: 'O que isso representa para você?')",
-        TRUTH: "Guie suavemente para a VERDADE que substitui a mentira (sem nomear diretamente)",
-        PRACTICE: "Sugira PRÁTICAS concretas de consolidação (exercícios, hábitos)",
-      };
-
-      let insightsBlock = `\n\n## ESTADO DA JORNADA (Interno - NÃO mencionar ao usuário)`;
-      insightsBlock += `\nFase atual: ${sessionContext.currentPhase} (confiança: ${(sessionContext.phaseConfidence * 100).toFixed(0)}%)`;
-      insightsBlock += `\nQualidade média das respostas: ${sessionContext.avgScore.toFixed(1)}/5`;
-      
-      if (sessionContext.recommendedQuestionType) {
-        const guide = QUESTION_TYPE_GUIDE[sessionContext.recommendedQuestionType] || sessionContext.recommendedQuestionType;
-        insightsBlock += `\nPróxima pergunta recomendada: ${guide}`;
-      }
-      
-      if (sessionContext.activeLie) {
-        insightsBlock += `\nMentira ativa identificada (uso interno): "${sessionContext.activeLie}"`;
-        insightsBlock += `\n(Esta é a ÂNCORA da sessão. TODO novo assunto deve ser CONECTADO a ela através de PERGUNTAS)`;
-        insightsBlock += `\n(NUNCA nomeie a mentira diretamente - use perguntas para que o usuário a descubra)`;
-        insightsBlock += `\nSe o usuário mencionar outro cenário, PERGUNTE: "Essa sensação de [comportamento observável]... você já sentiu ela antes?"`;
-      }
-      
-      if (sessionContext.targetTruth) {
-        insightsBlock += `\nVerdade alvo: "${sessionContext.targetTruth}"`;
-        insightsBlock += `\n(NÃO apresente ainda - deixe o usuário DESCOBRIR por si mesmo)`;
-      }
-      
-      if (sessionContext.hasRegression) {
-        insightsBlock += `\n\n⚠️ ALERTA: Detectada REGRESSÃO de fase.`;
-        insightsBlock += `\nO usuário pode ter se fechado ou voltado a uma postura defensiva.`;
-        insightsBlock += `\nAção recomendada: RETORNE ao acolhimento. NÃO force avanço. Valide os sentimentos primeiro.`;
-      }
-      
-      if (sessionContext.totalShifts > 0) {
-        insightsBlock += `\nShifts positivos detectados: ${sessionContext.totalShifts} (bom progresso!)`;
+          systemPrompt += `\n\n## CONTEXTO DA BASE DE CONHECIMENTO ZION\nUse as seguintes referências para fundamentar suas respostas:\n\n${chunksText}`;
+        }
       }
 
-      systemPrompt += insightsBlock;
-      
-      // BLOQUEIO DETECTADO: Instrução contextual específica
-      if (userContext.hasBlockage && sessionContext.activeLie) {
-        systemPrompt += `\n\n⚠️ ALERTA: BLOQUEIO DETECTADO
+      // Add intent guidance
+      if (intentGuidance[intent]) {
+        systemPrompt += `\n\n## FOCO DESTA CONVERSA\n${intentGuidance[intent]}`;
+      }
+
+      // Add diary/profile context
+      if (diaryContext) {
+        systemPrompt += diaryContext;
+      }
+
+      // Inject Observer session insights into prompt
+      if (sessionContext.currentPhase) {
+        const QUESTION_TYPE_GUIDE: Record<string, string> = {
+          EVIDENCE: "Peça EVIDÊNCIAS concretas do que a pessoa afirma sentir (Ex: 'O que te faz dizer isso?')",
+          ALTERNATIVE: "Explore ALTERNATIVAS para a interpretação atual (Ex: 'E se houvesse outra explicação?')",
+          SENSATION: "Pergunte sobre SENSAÇÕES FÍSICAS associadas (Ex: 'Onde você sente isso no corpo?')",
+          VALUE: "Investigue os VALORES em jogo (Ex: 'O que isso representa para você?')",
+          TRUTH: "Guie suavemente para a VERDADE que substitui a mentira (sem nomear diretamente)",
+          PRACTICE: "Sugira PRÁTICAS concretas de consolidação (exercícios, hábitos)",
+        };
+
+        let insightsBlock = `\n\n## ESTADO DA JORNADA (Interno - NÃO mencionar ao usuário)`;
+        insightsBlock += `\nFase atual: ${sessionContext.currentPhase} (confiança: ${(sessionContext.phaseConfidence * 100).toFixed(0)}%)`;
+        insightsBlock += `\nQualidade média das respostas: ${sessionContext.avgScore.toFixed(1)}/5`;
+        
+        if (sessionContext.recommendedQuestionType) {
+          const guide = QUESTION_TYPE_GUIDE[sessionContext.recommendedQuestionType] || sessionContext.recommendedQuestionType;
+          insightsBlock += `\nPróxima pergunta recomendada: ${guide}`;
+        }
+        
+        if (sessionContext.activeLie) {
+          insightsBlock += `\nMentira ativa identificada (uso interno): "${sessionContext.activeLie}"`;
+          insightsBlock += `\n(Esta é a ÂNCORA da sessão. TODO novo assunto deve ser CONECTADO a ela através de PERGUNTAS)`;
+          insightsBlock += `\n(NUNCA nomeie a mentira diretamente - use perguntas para que o usuário a descubra)`;
+          insightsBlock += `\nSe o usuário mencionar outro cenário, PERGUNTE: "Essa sensação de [comportamento observável]... você já sentiu ela antes?"`;
+        }
+        
+        if (sessionContext.targetTruth) {
+          insightsBlock += `\nVerdade alvo: "${sessionContext.targetTruth}"`;
+          insightsBlock += `\n(NÃO apresente ainda - deixe o usuário DESCOBRIR por si mesmo)`;
+        }
+        
+        if (sessionContext.hasRegression) {
+          insightsBlock += `\n\n⚠️ ALERTA: Detectada REGRESSÃO de fase.`;
+          insightsBlock += `\nO usuário pode ter se fechado ou voltado a uma postura defensiva.`;
+          insightsBlock += `\nAção recomendada: RETORNE ao acolhimento. NÃO force avanço. Valide os sentimentos primeiro.`;
+        }
+        
+        if (sessionContext.totalShifts > 0) {
+          insightsBlock += `\nShifts positivos detectados: ${sessionContext.totalShifts} (bom progresso!)`;
+        }
+
+        systemPrompt += insightsBlock;
+        
+        // BLOQUEIO DETECTADO: Instrução contextual específica
+        if (userContext.hasBlockage && sessionContext.activeLie) {
+          systemPrompt += `\n\n⚠️ ALERTA: BLOQUEIO DETECTADO
 O usuário parece travado e disse algo como "não sei".
 MENTIRA ATIVA IDENTIFICADA (uso interno): "${sessionContext.activeLie}"
 
@@ -2423,37 +2468,21 @@ AÇÃO: NÃO ofereça hipóteses. Use PERGUNTAS DIRECIONADAS para estreitar o fo
 - Pergunte sobre a função da defesa ("Se essa desconfiança pudesse falar, o que ela diria?")
 
 O objetivo é que O PRÓPRIO USUÁRIO chegue à conexão.`;
+        }
       }
-    }
 
-    // Add risk level awareness
-    if (crisisResult.risk_level === "medium") {
-      systemPrompt += `\n\n## ATENÇÃO: RISCO MÉDIO DETECTADO\nA pessoa pode estar em sofrimento intenso. Seja especialmente acolhedor e mencione recursos de ajuda (CVV 188) de forma natural se apropriado.`;
-    }
+      // Add risk level awareness
+      if (crisisResult.risk_level === "medium") {
+        systemPrompt += `\n\n## ATENÇÃO: RISCO MÉDIO DETECTADO\nA pessoa pode estar em sofrimento intenso. Seja especialmente acolhedor e mencione recursos de ajuda (CVV 188) de forma natural se apropriado.`;
+      }
 
-    console.log("System prompt length:", systemPrompt.length);
-
-    // ============================================
-    // NEW: SUMMARIZE OLDER HISTORY (Beyond last 8)
-    // ============================================
-    const recentHistory = history.slice(-8);
-    const olderHistory = history.slice(0, -8);
-    
-    let historySummary = "";
-    if (olderHistory.length > 0) {
-      // Create a simple summary of older messages (themes discussed)
-      const userMsgs = olderHistory
-        .filter((m: { role: string }) => m.role === "user")
-        .map((m: { content: string }) => m.content.substring(0, 80))
-        .join(" | ");
-      
-      if (userMsgs.length > 0) {
-        historySummary = `\n\n## RESUMO DO INÍCIO DA CONVERSA (${olderHistory.length} mensagens anteriores)
-Temas abordados: ${userMsgs.substring(0, 400)}...`;
+      // Add history summary
+      if (historySummary) {
         systemPrompt += historySummary;
-        console.log(`History summary added: ${olderHistory.length} older messages`);
       }
     }
+
+    console.log("System prompt length:", systemPrompt.length, "(path:", isPromptAdapterEnabled ? "io_adapter" : "legacy", ")");
 
     // Build messages array with recent history only (but summary is in system prompt)
     const messages = [
