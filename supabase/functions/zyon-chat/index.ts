@@ -2740,7 +2740,7 @@ O objetivo é que O PRÓPRIO USUÁRIO chegue à conexão.`;
           issues: validationResult.issues,
           was_rewritten: didRewrite,
         },
-        // NEW: Observer session context
+        // IO Prompt Adapter info
         session_context: sessionContext.currentPhase ? {
           current_phase: sessionContext.currentPhase,
           phase_confidence: sessionContext.phaseConfidence,
@@ -2752,6 +2752,13 @@ O objetivo é que O PRÓPRIO USUÁRIO chegue à conexão.`;
           total_shifts: sessionContext.totalShifts,
           insights_loaded: sessionContext.insights.length,
         } : undefined,
+        prompt_adapter: isPromptAdapterEnabled ? 'io' : 'legacy',
+        io_phase: ioPhaseContext ? {
+          phase: ioPhaseContext.current_phase,
+          name: ioPhaseContext.phase_name,
+          igi: ioPhaseContext.igi_current,
+          streak: ioPhaseContext.streak_current,
+        } : null,
       };
     }
 
