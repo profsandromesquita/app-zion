@@ -904,11 +904,11 @@ const FALLBACK_INTENT_GUIDANCE: Record<string, string> = {
 // LEXICAL OVERLAP RERANKER (PHASE 0 - HYGIENE + SYNONYM EXPANSION)
 // ============================================
 
-function rerankByLexicalOverlap(chunks: ChunkResult[], userMessage: string): ChunkResult[] {
+function rerankByLexicalOverlap(chunks: ChunkResult[], userMessage: string, synonymMap: Record<string, string[]>): ChunkResult[] {
   // Expand message with synonyms for semantic compensation
   let expandedMessage = userMessage.toLowerCase();
   
-  for (const [key, synonyms] of Object.entries(SYNONYM_MAP)) {
+  for (const [key, synonyms] of Object.entries(synonymMap)) {
     if (expandedMessage.includes(key)) {
       expandedMessage += ' ' + synonyms.join(' ');
     }
