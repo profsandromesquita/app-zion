@@ -2004,13 +2004,6 @@ ${chunksText}`;
     }
 
     // Add intent guidance
-    const intentGuidance: Record<string, string> = {
-      ACOLHIMENTO_IMEDIATO: "A pessoa precisa ser OUVIDA primeiro. Foque em validar sentimentos, fazer perguntas abertas e oferecer presença. Não apresse soluções.",
-      DIAGNOSTICO: "Ajude a pessoa a ENTENDER seus padrões. Use a Lógica do Medo: identifique perdas, medos raiz, falsas seguranças. Faça perguntas diagnósticas.",
-      METANOIA_CONFRONTO: "A pessoa está pronta para MUDANÇA. Guie processos de perdão, renúncia, confronto consigo mesma. Seja firme mas amoroso.",
-      PRATICA_CONSOLIDACAO: "Foque em PASSOS PRÁTICOS: exercícios concretos, rotinas, hábitos. Seja específico e gradual.",
-      EXEGESE_DUVIDA_BIBLICA: "Responda com EXEGESE CURTA e aplicada. Use a Bíblia Judaica. Não invente versículos. Se não souber, diga.",
-    };
 
     if (intentGuidance[intent]) {
       systemPrompt += `\n\n## FOCO DESTA CONVERSA\n${intentGuidance[intent]}`;
