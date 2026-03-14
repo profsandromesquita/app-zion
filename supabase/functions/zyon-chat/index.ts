@@ -2153,7 +2153,7 @@ Temas abordados: ${userMsgs.substring(0, 400)}...`;
     // STEP 7: GUARDRAILS + OUTPUT VALIDATION (PHASE 1-2)
     // ========================================
     console.log("Step 7: Guardrails & Output Validation (Complete)");
-    const guardrailResult = applyGuardrails(aiResponse, chunks);
+    const guardrailResult = applyGuardrails(aiResponse, chunks, BASE_IDENTITY);
     
     // Get spiritualMaturity from profile (need to retrieve it from earlier fetch)
     // Note: userProfile was set in the profile fetch section above
