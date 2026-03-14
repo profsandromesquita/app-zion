@@ -837,7 +837,7 @@ async function generateSimpleEmbedding(text: string): Promise<number[]> {
 // SYNONYM MAP FOR SEMANTIC COMPENSATION
 // ============================================
 
-const SYNONYM_MAP: Record<string, string[]> = {
+const FALLBACK_SYNONYM_MAP: Record<string, string[]> = {
   // Emoções -> Virtudes/Pecados
   'odio': ['ira', 'justiça'],
   'ódio': ['ira', 'justiça'],
@@ -886,6 +886,18 @@ const SYNONYM_MAP: Record<string, string[]> = {
   'habito': ['rotina', 'repetição', 'padrão', 'ciclo', 'vício'],
   'casamento': ['relacionamento', 'família', 'amor', 'compromisso'],
   'injustica': ['justiça', 'ira', 'raiva', 'medo'],
+};
+
+// ============================================
+// FALLBACK INTENT GUIDANCE
+// ============================================
+
+const FALLBACK_INTENT_GUIDANCE: Record<string, string> = {
+  ACOLHIMENTO_IMEDIATO: "A pessoa precisa ser OUVIDA primeiro. Foque em validar sentimentos, fazer perguntas abertas e oferecer presença. Não apresse soluções.",
+  DIAGNOSTICO: "Ajude a pessoa a ENTENDER seus padrões. Use a Lógica do Medo: identifique perdas, medos raiz, falsas seguranças. Faça perguntas diagnósticas.",
+  METANOIA_CONFRONTO: "A pessoa está pronta para MUDANÇA. Guie processos de perdão, renúncia, confronto consigo mesma. Seja firme mas amoroso.",
+  PRATICA_CONSOLIDACAO: "Foque em PASSOS PRÁTICOS: exercícios concretos, rotinas, hábitos. Seja específico e gradual.",
+  EXEGESE_DUVIDA_BIBLICA: "Responda com EXEGESE CURTA e aplicada. Use a Bíblia Judaica. Não invente versículos. Se não souber, diga.",
 };
 
 // ============================================
