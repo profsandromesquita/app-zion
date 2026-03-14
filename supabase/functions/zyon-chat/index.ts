@@ -1559,7 +1559,7 @@ serve(async (req) => {
     // STEP 1: CRISIS DETECTION (Priority Zero)
     // ========================================
     console.log("Step 1: Crisis Detection");
-    const crisisResult = detectCrisis(message);
+    const crisisResult = detectCrisis(message, CRISIS_KEYWORDS);
     
     if (crisisResult.should_bypass_rag) {
       console.log("⚠️ HIGH RISK DETECTED - Bypassing RAG");
