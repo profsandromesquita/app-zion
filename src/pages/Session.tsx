@@ -217,6 +217,7 @@ const Session = () => {
           }
         }
 
+        initDoneRef.current = true;
         setInitializing(false);
       } catch (err) {
         console.error("Session init error:", err);
