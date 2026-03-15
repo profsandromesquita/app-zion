@@ -2599,30 +2599,54 @@ O objetivo é que O PRÓPRIO USUÁRIO chegue à conexão.`;
       "Estou aqui para você. Por favor, compartilhe o que está em seu coração.";
 
     // ========================================
-    // STEP 7: GUARDRAILS + OUTPUT VALIDATION (PHASE 1-2)
+    // STEP 7: GUARDRAILS + OUTPUT VALIDATION
     // ========================================
-    console.log("Step 7: Guardrails & Output Validation (Complete)");
+    console.log("Step 7: Guardrails & Output Validation");
     const guardrailResult = applyGuardrails(aiResponse, chunks, BASE_IDENTITY);
     
-    // Get spiritualMaturity from profile (need to retrieve it from earlier fetch)
-    // Note: userProfile was set in the profile fetch section above
     const spiritualMaturity = (typeof userProfile !== 'undefined' && userProfile?.spiritual_maturity) 
       ? userProfile.spiritual_maturity 
       : 'SEEKER';
     
-    const validationResult = validateResponseComplete(aiResponse, intent, userContext, turnCount, spiritualMaturity);
+    // Verificar flag de safety expandida
+    let validationResult: ValidationResult;
+    let usedIOValidator = false;
+    
+    const { data: safetyFlag } = await supabase.rpc('get_feature_flag', {
+      p_flag_name: 'io_safety_expanded_enabled',
+      p_user_id: userId
+    });
+    const isSafetyExpanded = safetyFlag === true;
+    
+    if (isSafetyExpanded) {
+      validationResult = validateResponseIO(
+        aiResponse, intent, userContext, turnCount, spiritualMaturity,
+        ioPhaseContext?.current_phase || null,
+        chunks.length > 0,
+        lowConfidence,
+        false // isSessionDaily — será true quando Fase 5 implementar
+      );
+      usedIOValidator = true;
+      console.log("Validation via IO validator (phase:", 
+        ioPhaseContext?.current_phase || 'N/A', ")");
+    } else {
+      validationResult = validateResponseComplete(aiResponse, intent, userContext, turnCount, spiritualMaturity);
+      console.log("Validation via legacy validator");
+    }
     
     let didRewrite = false;
     const MAX_REWRITE_ATTEMPTS = 1;
     let rewriteAttempts = 0;
     
-    // If validation fails, try rewrite (PHASE 2: Max 1 attempt)
     if (validationResult.needsRewrite && rewriteAttempts < MAX_REWRITE_ATTEMPTS) {
-      console.log("Output validation failed, attempting rewrite:", validationResult.issues.map(i => i.code));
+      console.log("Validation failed, attempting rewrite:", 
+        validationResult.issues.map(i => `${i.code}(${i.severity})`));
       rewriteAttempts++;
       
       try {
-        const rewritePrompt = buildRewritePrompt(aiResponse, validationResult);
+        const rewritePrompt = usedIOValidator 
+          ? buildRewritePromptIO(aiResponse, validationResult, ioPhaseContext?.current_phase || null)
+          : buildRewritePrompt(aiResponse, validationResult);
         
         const rewriteResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
           method: "POST",
@@ -2634,15 +2658,13 @@ O objetivo é que O PRÓPRIO USUÁRIO chegue à conexão.`;
             model: "google/gemini-2.5-flash-lite",
             messages: [{ role: "user", content: rewritePrompt }],
             max_tokens: 500,
-            temperature: 0.3, // Lower temperature for consistency
+            temperature: 0.3,
           }),
         });
 
         if (rewriteResponse.ok) {
           const rewriteData = await rewriteResponse.json();
           const rewrittenContent = rewriteData.choices?.[0]?.message?.content;
-          
-          // Validate that rewrite improved things
           if (rewrittenContent && rewrittenContent.length < aiResponse.length * 1.2) {
             console.log("Response rewritten successfully");
             aiResponse = rewrittenContent;
@@ -2654,7 +2676,7 @@ O objetivo é que O PRÓPRIO USUÁRIO chegue à conexão.`;
       }
     }
 
-    // If rewrite failed or still invalid with CRITICAL, use minimal safe
+    // Fallback para MINIMAL_SAFE_RESPONSE se rewrite falhou + CRITICAL
     if (validationResult.needsRewrite && !didRewrite) {
       const hasCritical = validationResult.issues.some(i => i.severity === 'CRITICAL');
       if (hasCritical) {
@@ -2662,6 +2684,28 @@ O objetivo é que O PRÓPRIO USUÁRIO chegue à conexão.`;
         aiResponse = MINIMAL_SAFE_RESPONSE;
         didRewrite = true;
       }
+    }
+    
+    // Log de observabilidade do validator
+    if (supabase) {
+      await supabase.from('observability_logs').insert({
+        event_type: 'validation_result',
+        user_id: userId || null,
+        session_id: sessionId || null,
+        event_data: {
+          validator: usedIOValidator ? 'io' : 'legacy',
+          io_phase: ioPhaseContext?.current_phase || null,
+          issues: validationResult.issues.map(i => ({ code: i.code, severity: i.severity })),
+          needs_rewrite: validationResult.needsRewrite,
+          did_rewrite: didRewrite,
+          char_count: aiResponse.length,
+          question_count: (aiResponse.match(/\?/g) || []).length,
+        },
+        flags_active: { 
+          io_safety_expanded_enabled: isSafetyExpanded,
+          io_prompt_adapter_enabled: isPromptAdapterEnabled || false 
+        },
+      });
     }
     
     if (!guardrailResult.clean && isAdmin) {
