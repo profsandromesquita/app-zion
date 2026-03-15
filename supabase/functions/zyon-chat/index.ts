@@ -813,7 +813,8 @@ function validateResponseIO(
   ioPhase: number | null,
   hasRAGChunks: boolean,
   lowConfidenceRAG: boolean,
-  isSessionDaily: boolean
+  isSessionDaily: boolean,
+  crisisRiskLevel: string // 'none' | 'low' | 'medium' | 'high'
 ): ValidationResult {
   const issues: ValidationIssue[] = [];
   const rewriteInstructions: string[] = [];
