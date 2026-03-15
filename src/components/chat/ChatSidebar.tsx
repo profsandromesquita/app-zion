@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Plus, Search, LogOut, BookOpen, Shield, User, Star, Settings, ChevronDown, Download, ChevronRight } from "lucide-react";
+import { Plus, Search, LogOut, BookOpen, Shield, User, Star, Settings, ChevronDown, Download, ChevronRight, Sun } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import zionLogo from "@/assets/zion-logo.png";
 import { Button } from "@/components/ui/button";

@@ -1064,6 +1064,9 @@ const Chat = () => {
             />
           )}
 
+          {/* Daily Session Banner */}
+          {user && <DailySessionBanner userId={user.id} />}
+
           {/* Header */}
           <header className="flex items-center justify-between border-b border-border px-4 py-3" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
             <div className="flex items-center gap-3">
