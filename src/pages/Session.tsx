@@ -192,6 +192,18 @@ const Session = () => {
           setCurrentStep(inferStepFromSession(existingSession));
           if (existingSession.check_in_mood) setSelectedMood(existingSession.check_in_mood);
           if (existingSession.registro_text) setRegistroText(existingSession.registro_text);
+          if (existingSession.feedback_generated) setFeedback(existingSession.feedback_generated);
+
+          // Hydrate scales from existing session
+          const hydratedScales: Record<string, number> = {};
+          ALL_DIMENSIONS.forEach((dim) => {
+            const val = existingSession[dim.dbColumn as keyof typeof existingSession];
+            if (val !== null && val !== undefined && typeof val === "number") {
+              hydratedScales[dim.key] = val;
+            }
+          });
+          if (Object.keys(hydratedScales).length > 0) setScales(hydratedScales);
+
           if (existingSession.mission_id) {
             const { data: missionData } = await supabase
               .from("io_missions")
@@ -303,13 +315,6 @@ const Session = () => {
         }
       }
 
-      if (selected && sessionId) {
-        await supabase
-          .from("io_daily_sessions")
-          .update({ mission_id: selected.id })
-          .eq("id", sessionId);
-      }
-
       setMission(selected);
     } catch (err) {
       console.error(err);
@@ -317,6 +322,17 @@ const Session = () => {
       setMissionLoading(false);
     }
   }, [userPhase, sessionId, user, mission, missionLoading]);
+
+  // Persist mission_id whenever both mission and sessionId are available
+  useEffect(() => {
+    if (mission?.id && sessionId) {
+      supabase
+        .from("io_daily_sessions")
+        .update({ mission_id: mission.id })
+        .eq("id", sessionId)
+        .then(() => {});
+    }
+  }, [mission, sessionId]);
 
   useEffect(() => {
     if (currentStep === 2 && !mission && !missionLoading) {
