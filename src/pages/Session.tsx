@@ -136,6 +136,8 @@ const Session = () => {
   } | null>(null);
   const [conclusionLoading, setConclusionLoading] = useState(false);
 
+  const initDoneRef = useRef(false);
+
   // ─── Initialization ─────────────────────────────────────────
 
   useEffect(() => {
@@ -144,6 +146,7 @@ const Session = () => {
       navigate("/auth");
       return;
     }
+    if (initDoneRef.current) return;
 
     const init = async () => {
       try {
