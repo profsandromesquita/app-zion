@@ -36,5 +36,6 @@ export const useAllFeatureFlags = () => {
       return data as any[];
     },
     staleTime: 30 * 1000,
+    refetchOnWindowFocus: true,
   });
 };
