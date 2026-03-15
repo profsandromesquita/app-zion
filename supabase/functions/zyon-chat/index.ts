@@ -801,6 +801,373 @@ function buildRewritePrompt(response: string, validation: ValidationResult): str
 }
 
 // ============================================
+// IO VALIDATOR — Phase-calibrated (Phase 4)
+// ============================================
+
+function validateResponseIO(
+  response: string,
+  intent: string,
+  userContext: UserContext,
+  turnCount: number,
+  spiritualMaturity: string,
+  ioPhase: number | null,
+  hasRAGChunks: boolean,
+  lowConfidenceRAG: boolean,
+  isSessionDaily: boolean
+): ValidationResult {
+  const issues: ValidationIssue[] = [];
+  const rewriteInstructions: string[] = [];
+  
+  const lines = response.split('\n').filter(l => l.trim()).length;
+  const chars = response.length;
+  const questions = (response.match(/\?/g) || []).length;
+  const phase = ioPhase || 1;
+  const isEarlyPhase = phase <= 2;
+  const isIdentityPhase = phase === 3;
+  const isAdvancedPhase = phase >= 4;
+  const isEarlyTurn = turnCount <= 3;
+
+  // ==========================================
+  // REGRAS DE FORMATO (calibradas por fase)
+  // ==========================================
+  
+  const maxChars = isSessionDaily ? 500 
+    : (isAdvancedPhase && hasRAGChunks && !lowConfidenceRAG) ? 1200 
+    : 900;
+  if (chars > maxChars && intent !== 'EXEGESE_DUVIDA_BIBLICA') {
+    issues.push({ 
+      code: 'TOO_LONG', severity: 'FORMAT', 
+      message: `Resposta > ${maxChars} chars (fase ${phase}, sessão diária: ${isSessionDaily})` 
+    });
+    rewriteInstructions.push(`Reduza para no máximo ${maxChars} caracteres`);
+  }
+  
+  const maxLines = isSessionDaily ? 5 : 7;
+  if (lines > maxLines) {
+    issues.push({ 
+      code: 'TOO_MANY_LINES', severity: 'FORMAT', 
+      message: `Mais de ${maxLines} linhas` 
+    });
+    rewriteInstructions.push(`Reduza para no máximo ${maxLines} linhas`);
+  }
+  
+  if (questions < 1) {
+    issues.push({ code: 'TOO_FEW_QUESTIONS', severity: 'FORMAT', 
+      message: 'Menos de 1 pergunta' });
+    rewriteInstructions.push('Inclua pelo menos 1 pergunta');
+  }
+  
+  const maxQuestions = isSessionDaily ? 1 : isEarlyPhase ? 1 : 2;
+  if (questions > maxQuestions && intent !== 'EXEGESE_DUVIDA_BIBLICA') {
+    issues.push({ 
+      code: 'TOO_MANY_QUESTIONS', severity: 'FORMAT', 
+      message: `Mais de ${maxQuestions} pergunta(s) (fase ${phase})` 
+    });
+    rewriteInstructions.push(
+      `Reduza para ${maxQuestions} pergunta(s). ${isEarlyPhase ? 'Nas fases iniciais, prefira UMA pergunta sensorial.' : ''}`
+    );
+  }
+
+  // ==========================================
+  // REGRAS UNIVERSAIS (todas as fases)
+  // ==========================================
+  
+  const sintoRegex = /\bsinto (que|a |o |sua|seu|um |uma )/i;
+  if (sintoRegex.test(response)) {
+    issues.push({ 
+      code: 'SINTO_QUE_BANNED', 
+      severity: isEarlyTurn ? 'CRITICAL' : 'HIGH',
+      message: '"Sinto" referindo-se ao usuário é banido' 
+    });
+    rewriteInstructions.push(
+      'Substitua qualquer "Sinto que/a/o..." por espelhamento: "Você está me dizendo que..." ou "Você sente que..."'
+    );
+  }
+  
+  if (!userContext.hasExplicitEmotion) {
+    const presuncaoRegex = /\b(consigo sentir|percebo que (voc[eê]|h[aá])|vejo que|minha sensa[cç][aã]o [eé] que|h[aá] algo pesando|me parece que h[aá])\b/i;
+    if (presuncaoRegex.test(response)) {
+      issues.push({ 
+        code: 'PRESUMPTION', 
+        severity: isEarlyTurn ? 'CRITICAL' : 'HIGH',
+        message: 'Presunção sem sinal do usuário' 
+      });
+      rewriteInstructions.push(
+        'Remova presunções. Use espelhamento: "Você está me dizendo que..."'
+      );
+    }
+  }
+  
+  const especulacaoRegex = /\b(pode vir (de|da|do)|essa motiva[cç][aã]o (pode|parece)|costuma vir|pode ser (um|uma) (forma|jeito|maneira)|indica que voc[eê]|sugere que|vem de um lugar de|parece vir de)\b/i;
+  if (especulacaoRegex.test(response)) {
+    issues.push({
+      code: 'SPECULATIVE_THEORY', severity: 'CRITICAL',
+      message: 'Teoria especulativa sobre origem do sentimento'
+    });
+    rewriteInstructions.push(
+      'REMOVA qualquer teoria ("pode vir de", "vem de um lugar de"). Apenas ESPELHE e PERGUNTE.'
+    );
+  }
+  
+  const conflictTerms = /\b(inveja|invejoso|invejosos|querem te diminuir|querem te derrubar|minar sua autoconfian[cç]a)\b/i;
+  const sentences = response.split(/[.!]/);
+  for (const sentence of sentences) {
+    if (conflictTerms.test(sentence)) {
+      const hypothesisMarkers = /\b(talvez|pode ser|[eé] poss[ií]vel|hip[oó]tese|ser[aá] que|voc[eê] acha que)\b/i;
+      const hasHypothesisInSentence = hypothesisMarkers.test(sentence);
+      const hasQuestionInSentence = sentence.includes('?');
+      if (!hasHypothesisInSentence && !hasQuestionInSentence) {
+        issues.push({ code: 'CONFLICT_AS_FACT', severity: 'CRITICAL', 
+          message: 'Conflito confirmado como fato' });
+        rewriteInstructions.push('NÃO confirme conflito como fato. Use pergunta de evidência.');
+        break;
+      }
+    }
+  }
+  
+  const griefDetailsRegex = /\b(como (foi|aconteceu|ocorreu) (a |o )?(morte|falecimento|acidente)|detalhes (da|do) (morte|falecimento|acidente)|o que aconteceu com (ele|ela))\b/i;
+  if (userContext.hasGrief && griefDetailsRegex.test(response)) {
+    issues.push({ code: 'GRIEF_TRAUMA_DETAILS', severity: 'CRITICAL', 
+      message: 'Pedindo detalhes do trauma' });
+    rewriteInstructions.push('Remova perguntas sobre detalhes do trauma. Foque em sentimentos.');
+  }
+
+  // ==========================================
+  // REGRAS CALIBRADAS POR FASE IO
+  // ==========================================
+  
+  const causalidadeRegex = /\b(talvez (seja|esteja|voc[eê] esteja|tenha sido) (uma forma|um jeito|um modo|por causa|resultado)|isso (pode ser|parece ser|provavelmente [eé]) (uma|um|sua)|voc[eê] (est[aá]|parece estar) (buscando|tentando|compensando)|h[aá] um padr[aã]o (em sua vida|de))\b/i;
+  if (causalidadeRegex.test(response)) {
+    const severity = isEarlyPhase ? 'CRITICAL' 
+      : isIdentityPhase ? 'HIGH' 
+      : 'MEDIUM';
+    issues.push({ 
+      code: 'CAUSALITY_DIAGNOSTIC', severity,
+      message: `Atribuição causal/diagnóstico (fase ${phase}: ${severity})` 
+    });
+    if (severity === 'CRITICAL' || severity === 'HIGH') {
+      rewriteInstructions.push(
+        'Remova frases causais. Transforme em pergunta.'
+      );
+    }
+  }
+  
+  const diagnosticoRegex = /\b(seu problema [eé]|o seu problema [eé]|isso (mostra|prova|indica) que|[eé] evidente que|claramente|sem d[uú]vida|com certeza|isso revela um padr[aã]o)\b/i;
+  if (diagnosticoRegex.test(response)) {
+    const severity = isEarlyPhase ? 'CRITICAL' 
+      : (isAdvancedPhase && hasRAGChunks) ? 'HIGH' 
+      : 'CRITICAL';
+    issues.push({ 
+      code: 'DIAGNOSTIC_ABSOLUTE', severity,
+      message: `Diagnóstico declarativo (fase ${phase}: ${severity})` 
+    });
+    rewriteInstructions.push('Remova diagnósticos absolutos. Transforme em pergunta.');
+  }
+  
+  const explicacoesRegex = /\b(entendo que|isso (mostra|revela) que|a sua (necessidade|busca) de|acredito que voc[eê]|me parece que h[aá]|[eé] natural que voc[eê]|a sua raiva (vem|vinha) de|o que voc[eê] est[aá] sentindo [eé]|isso indica que)\b/i;
+  if (explicacoesRegex.test(response)) {
+    const severity = isEarlyPhase ? 'CRITICAL' 
+      : isIdentityPhase ? 'HIGH' 
+      : 'MEDIUM';
+    issues.push({ 
+      code: 'PSYCHOLOGICAL_EXPLANATION', severity,
+      message: `Explicação psicológica (fase ${phase}: ${severity})` 
+    });
+    if (severity === 'CRITICAL' || severity === 'HIGH') {
+      rewriteInstructions.push(
+        'Remova explicações. Transforme em pergunta aberta.'
+      );
+    }
+  }
+  
+  if (isEarlyPhase) {
+    const jargaoRegex = /\b(perda\s*->\s*medo|medo raiz|falsa seguran[cç]a|mecanismo de defesa|detector de ciclos|portas dos sentidos|espelho da virtude|ciclo da idolatria|eneagrama|perfil disc)\b/i;
+    if (jargaoRegex.test(response)) {
+      issues.push({ code: 'JARGON_TOO_EARLY', severity: 'MEDIUM', 
+        message: 'Jargão metodológico em fase inicial' });
+      rewriteInstructions.push('Remova jargões. Use linguagem acessível.');
+    }
+  }
+  
+  // TEOLOGIA — cascata por fase + maturidade
+  const biblePattern = /\b([1-3]?\s?[A-Za-zÀ-ú]+)\s+(\d+)[:\.](\d+)/;
+  const biblePhrase = /\b(a b[ií]blia diz|est[aá] escrito|a escritura diz|tanakh|brit hadashah)\b/i;
+  const hasBible = biblePattern.test(response) || biblePhrase.test(response);
+  
+  if (hasBible) {
+    if (userContext.refusedBible) {
+      issues.push({ code: 'BIBLE_REFUSED', severity: 'CRITICAL', 
+        message: 'Usuário recusou Bíblia' });
+      rewriteInstructions.push('Remova toda citação bíblica.');
+    }
+    else if (userContext.hasRevolt) {
+      const permissionQuestion = /voc[eê] quer (s[oó] ser ouvid|que eu procure uma palavra|uma perspectiva b[ií]blica)/i;
+      if (!permissionQuestion.test(response)) {
+        issues.push({ code: 'BIBLE_REVOLT_NO_PERMISSION', severity: 'CRITICAL', 
+          message: 'Bíblia em revolta sem permissão' });
+        rewriteInstructions.push('Adicione pergunta de permissão antes de citar Bíblia.');
+      }
+    }
+    else if (spiritualMaturity === 'CONSOLIDATED') {
+      // OK
+    }
+    else if (spiritualMaturity === 'DISTANT') {
+      if (isEarlyPhase) {
+        if (biblePattern.test(response) && !userContext.askedForBible) {
+          issues.push({ code: 'BIBLE_VERSE_WITHOUT_PERMISSION', severity: 'HIGH', 
+            message: 'Versículo específico em fase inicial sem pedido' });
+          rewriteInstructions.push('Remova versículos específicos. Use linguagem de sabedoria geral.');
+        }
+      } else if (phase <= 5) {
+        if (biblePattern.test(response) && !userContext.askedForBible) {
+          issues.push({ code: 'BIBLE_VERSE_WITHOUT_PERMISSION', severity: 'MEDIUM', 
+            message: 'Versículo em fase intermediária sem pedido (warning)' });
+        }
+      }
+    }
+    else if (!userContext.askedForBible) {
+      issues.push({ code: 'BIBLE_WITHOUT_PERMISSION', severity: 'CRITICAL', 
+        message: `Bíblia proibida para ${spiritualMaturity} (qualquer fase)` });
+      rewriteInstructions.push('Remova toda referência bíblica. Use linguagem universal.');
+    }
+  }
+
+  // ==========================================
+  // REGRAS NOVAS (IO-específicas)
+  // ==========================================
+  
+  const toxicPositivityRegex = /\b([eé] [oó]timo que|fico feliz (em|que|por)|que bom que|parab[eé]ns por|fico contente|que maravilh)/i;
+  if (toxicPositivityRegex.test(response)) {
+    issues.push({ 
+      code: 'TOXIC_POSITIVITY', severity: 'HIGH',
+      message: 'Positividade protocolar detectada' 
+    });
+    rewriteInstructions.push(
+      'Remova frases de positividade protocolar ("É ótimo que...", "Fico feliz..."). Substitua por espelhamento direto.'
+    );
+  }
+  
+  if (isEarlyPhase) {
+    const identityQuestionRegex = /\b(o que (isso|ela|ele|essa) (te )?(diz|revela|mostra) sobre voc[eê]|quem voc[eê] [eé] quando|o que isso significa sobre quem voc[eê])\b/i;
+    if (identityQuestionRegex.test(response)) {
+      issues.push({ 
+        code: 'IDENTITY_QUESTION_WRONG_PHASE', severity: 'MEDIUM',
+        message: 'Pergunta de identidade em fase inicial (deveria ser sensorial)' 
+      });
+      rewriteInstructions.push(
+        'Substitua pergunta de identidade por pergunta sensorial: "Onde no corpo você sente isso?" ou "Como é essa sensação?"'
+      );
+    }
+  }
+  
+  if (!hasRAGChunks || lowConfidenceRAG) {
+    const substantiveRegex = /\b(seu medo (de|é)|sua cren[cç]a|seu padr[aã]o|sua virtude|o ciclo (que|de)|a mentira (que|é)|a verdade (é|que)|seu mecanismo|sua defesa|sua inseguran[cç]a|seu ídolo)\b/i;
+    if (substantiveRegex.test(response)) {
+      issues.push({ 
+        code: 'UNFOUNDED_SUBSTANTIVE', severity: 'MEDIUM',
+        message: 'Afirmação substantiva sem fundamentação RAG (Premissa 15)' 
+      });
+    }
+  }
+  
+  if (questions >= 2) {
+    const questionSentences = response.split('?')
+      .filter(s => s.trim().length > 10)
+      .map(s => s.trim().toLowerCase());
+    
+    if (questionSentences.length >= 2) {
+      const words1 = new Set(questionSentences[0].split(/\s+/).filter(w => w.length > 3));
+      const words2 = new Set(questionSentences[1].split(/\s+/).filter(w => w.length > 3));
+      const overlap = [...words1].filter(w => words2.has(w));
+      
+      if (overlap.length >= 3) {
+        issues.push({ 
+          code: 'REDUNDANT_QUESTIONS', severity: 'MEDIUM',
+          message: `Perguntas redundantes (${overlap.length} palavras em comum)` 
+        });
+        rewriteInstructions.push(
+          'Remova a pergunta mais abstrata. Mantenha apenas a mais concreta/sensorial.'
+        );
+      }
+    }
+  }
+  
+  if (isEarlyPhase) {
+    const deepContentRegex = /\b(perd[aã]o|reconcilia[cç][aã]o|restaurar|governo sobre|autoridade sobre|autonomia|transmitir o que|voc[eê] (j[aá] )?(pode|consegue) ensinar)\b/i;
+    if (deepContentRegex.test(response)) {
+      issues.push({ 
+        code: 'PHASE_DEPTH_VIOLATION', severity: 'HIGH',
+        message: 'Conteúdo de fase avançada em fase inicial' 
+      });
+      rewriteInstructions.push(
+        'Remova referências a perdão/reconciliação/governo/transmissão. Na fase atual, foque em nomear sentimentos e fazer perguntas sensoriais.'
+      );
+    }
+  }
+
+  // ==========================================
+  // POLÍTICA DE DECISÃO
+  // ==========================================
+  const hasCritical = issues.some(i => i.severity === 'CRITICAL');
+  const hasFormat = issues.some(i => i.severity === 'FORMAT');
+  const highCount = issues.filter(i => i.severity === 'HIGH').length;
+  
+  const presenceModeViolation = issues.some(i => 
+    ['PRESUMPTION', 'SINTO_QUE_BANNED', 'CAUSALITY_DIAGNOSTIC', 
+     'DIAGNOSTIC_ABSOLUTE', 'TOXIC_POSITIVITY'].includes(i.code)
+  );
+  
+  const needsRewrite = hasCritical || hasFormat || highCount >= 2 || presenceModeViolation;
+  
+  return { valid: issues.length === 0, issues, needsRewrite, rewriteInstructions };
+}
+
+// ============================================
+// IO REWRITE PROMPT — Phase-aware (Phase 4)
+// ============================================
+
+function buildRewritePromptIO(
+  response: string, 
+  validation: ValidationResult,
+  ioPhase: number | null
+): string {
+  const phase = ioPhase || 1;
+  const phaseContext = phase <= 2 
+    ? 'O usuário está em FASE INICIAL (Consciência/Limites). Use apenas espelhamento puro e perguntas sensoriais. NÃO diagnostique, NÃO explique, NÃO nomeie padrões.'
+    : phase === 3 
+    ? 'O usuário está na FASE DE IDENTIDADE. Pode explorar padrões com cuidado, mas sempre como pergunta, nunca como afirmação.'
+    : 'O usuário está em FASE AVANÇADA. Pode ser mais direto, mas mantenha espelhamento e perguntas.';
+
+  const hasPresenceViolation = validation.issues.some(i => 
+    ['PRESUMPTION', 'SINTO_QUE_BANNED', 'CAUSALITY_DIAGNOSTIC', 
+     'DIAGNOSTIC_ABSOLUTE', 'TOXIC_POSITIVITY'].includes(i.code)
+  );
+  
+  const presenceInstructions = hasPresenceViolation ? [
+    '',
+    'MODO PRESENÇA - Use espelhamento puro:',
+    '- Use APENAS as palavras exatas do usuário',
+    '- PROIBIDO: "Sinto que", "Fico feliz", "É ótimo que", "Percebo que"',
+    '- Em vez de "Sinto que você está carregando algo" → "Você disse que está difícil. O que isso significa para você?"',
+    '- Em vez de "É ótimo que você esteja explorando" → "Você está buscando entender isso."',
+    '- Faça preferencialmente UMA pergunta sensorial',
+  ] : [];
+  
+  const instructions = [
+    `Reescreva a resposta. ${phaseContext}`,
+    '',
+    '- 3-7 linhas curtas',
+    `- ${phase <= 2 ? '1 pergunta sensorial' : '1-2 perguntas curtas'} (NUNCA mais que 2)`,
+    '- Sem presunções, diagnósticos ou teorias',
+    '',
+    ...validation.rewriteInstructions,
+    ...presenceInstructions,
+  ];
+  
+  return instructions.join('\n') + `\n\nOriginal: "${response}"\n\nReescreva APENAS o texto final:`;
+}
+
+// ============================================
 // MINIMAL SAFE RESPONSE (PHASE 2)
 // ============================================
 
@@ -2599,30 +2966,54 @@ O objetivo é que O PRÓPRIO USUÁRIO chegue à conexão.`;
       "Estou aqui para você. Por favor, compartilhe o que está em seu coração.";
 
     // ========================================
-    // STEP 7: GUARDRAILS + OUTPUT VALIDATION (PHASE 1-2)
+    // STEP 7: GUARDRAILS + OUTPUT VALIDATION
     // ========================================
-    console.log("Step 7: Guardrails & Output Validation (Complete)");
+    console.log("Step 7: Guardrails & Output Validation");
     const guardrailResult = applyGuardrails(aiResponse, chunks, BASE_IDENTITY);
     
-    // Get spiritualMaturity from profile (need to retrieve it from earlier fetch)
-    // Note: userProfile was set in the profile fetch section above
     const spiritualMaturity = (typeof userProfile !== 'undefined' && userProfile?.spiritual_maturity) 
       ? userProfile.spiritual_maturity 
       : 'SEEKER';
     
-    const validationResult = validateResponseComplete(aiResponse, intent, userContext, turnCount, spiritualMaturity);
+    // Verificar flag de safety expandida
+    let validationResult: ValidationResult;
+    let usedIOValidator = false;
+    
+    const { data: safetyFlag } = await supabase.rpc('get_feature_flag', {
+      p_flag_name: 'io_safety_expanded_enabled',
+      p_user_id: userId
+    });
+    const isSafetyExpanded = safetyFlag === true;
+    
+    if (isSafetyExpanded) {
+      validationResult = validateResponseIO(
+        aiResponse, intent, userContext, turnCount, spiritualMaturity,
+        ioPhaseContext?.current_phase || null,
+        chunks.length > 0,
+        lowConfidence,
+        false // isSessionDaily — será true quando Fase 5 implementar
+      );
+      usedIOValidator = true;
+      console.log("Validation via IO validator (phase:", 
+        ioPhaseContext?.current_phase || 'N/A', ")");
+    } else {
+      validationResult = validateResponseComplete(aiResponse, intent, userContext, turnCount, spiritualMaturity);
+      console.log("Validation via legacy validator");
+    }
     
     let didRewrite = false;
     const MAX_REWRITE_ATTEMPTS = 1;
     let rewriteAttempts = 0;
     
-    // If validation fails, try rewrite (PHASE 2: Max 1 attempt)
     if (validationResult.needsRewrite && rewriteAttempts < MAX_REWRITE_ATTEMPTS) {
-      console.log("Output validation failed, attempting rewrite:", validationResult.issues.map(i => i.code));
+      console.log("Validation failed, attempting rewrite:", 
+        validationResult.issues.map(i => `${i.code}(${i.severity})`));
       rewriteAttempts++;
       
       try {
-        const rewritePrompt = buildRewritePrompt(aiResponse, validationResult);
+        const rewritePrompt = usedIOValidator 
+          ? buildRewritePromptIO(aiResponse, validationResult, ioPhaseContext?.current_phase || null)
+          : buildRewritePrompt(aiResponse, validationResult);
         
         const rewriteResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
           method: "POST",
@@ -2634,15 +3025,13 @@ O objetivo é que O PRÓPRIO USUÁRIO chegue à conexão.`;
             model: "google/gemini-2.5-flash-lite",
             messages: [{ role: "user", content: rewritePrompt }],
             max_tokens: 500,
-            temperature: 0.3, // Lower temperature for consistency
+            temperature: 0.3,
           }),
         });
 
         if (rewriteResponse.ok) {
           const rewriteData = await rewriteResponse.json();
           const rewrittenContent = rewriteData.choices?.[0]?.message?.content;
-          
-          // Validate that rewrite improved things
           if (rewrittenContent && rewrittenContent.length < aiResponse.length * 1.2) {
             console.log("Response rewritten successfully");
             aiResponse = rewrittenContent;
@@ -2654,7 +3043,7 @@ O objetivo é que O PRÓPRIO USUÁRIO chegue à conexão.`;
       }
     }
 
-    // If rewrite failed or still invalid with CRITICAL, use minimal safe
+    // Fallback para MINIMAL_SAFE_RESPONSE se rewrite falhou + CRITICAL
     if (validationResult.needsRewrite && !didRewrite) {
       const hasCritical = validationResult.issues.some(i => i.severity === 'CRITICAL');
       if (hasCritical) {
@@ -2662,6 +3051,28 @@ O objetivo é que O PRÓPRIO USUÁRIO chegue à conexão.`;
         aiResponse = MINIMAL_SAFE_RESPONSE;
         didRewrite = true;
       }
+    }
+    
+    // Log de observabilidade do validator
+    if (supabase) {
+      await supabase.from('observability_logs').insert({
+        event_type: 'validation_result',
+        user_id: userId || null,
+        session_id: sessionId || null,
+        event_data: {
+          validator: usedIOValidator ? 'io' : 'legacy',
+          io_phase: ioPhaseContext?.current_phase || null,
+          issues: validationResult.issues.map(i => ({ code: i.code, severity: i.severity })),
+          needs_rewrite: validationResult.needsRewrite,
+          did_rewrite: didRewrite,
+          char_count: aiResponse.length,
+          question_count: (aiResponse.match(/\?/g) || []).length,
+        },
+        flags_active: { 
+          io_safety_expanded_enabled: isSafetyExpanded,
+          io_prompt_adapter_enabled: isPromptAdapterEnabled || false 
+        },
+      });
     }
     
     if (!guardrailResult.clean && isAdmin) {
@@ -2770,6 +3181,8 @@ O objetivo é que O PRÓPRIO USUÁRIO chegue à conexão.`;
           question_count: (aiResponse.match(/\?/g) || []).length,
           issues: validationResult.issues,
           was_rewritten: didRewrite,
+          validator_type: usedIOValidator ? 'io' : 'legacy',
+          io_phase_at_validation: ioPhaseContext?.current_phase || null,
         },
         // IO Prompt Adapter info
         session_context: sessionContext.currentPhase ? {

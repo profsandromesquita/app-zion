@@ -1,105 +1,119 @@
 
 
-# Plano: Fase 4 — Validator IO Calibrado por Fase
+# Plano de Correcao: Fluxo de Testemunho e Aprovacao de Soldados
 
-## Resumo
+## Diagnostico Confirmado
 
-Adicionar `validateResponseIO` e `buildRewritePromptIO` ao `zyon-chat/index.ts`, controlados pela flag `io_safety_expanded_enabled`. Quando OFF, `validateResponseComplete` + `buildRewritePrompt` continuam exatamente como hoje.
+Dados reais do banco confirmam os problemas:
+- **1 candidatura travada** em `under_review` com testemunho em `processing` (nunca processado, sem transcrição nem analise)
+- **0 usuarios com role `pastor`** no sistema -- aprovacao tripla e impossivel
+- A pagina de curadoria (`TestimonyCuration`) exige role `admin` via `AdminRoute`, bloqueando `profissional` e `pastor`
+- O envio de testemunho NAO dispara `process-testimony` automaticamente
+- O card de aprovacao (`ApplicationApprovalCard`) nao mostra feedback sobre quais aprovacoes faltam quando o usuario ja aprovou
 
-## Alterações em `supabase/functions/zyon-chat/index.ts`
+---
 
-### 1. Novas funções (após `buildRewritePrompt`, ~linha 801)
+## Ordem de Deploy (5 etapas)
 
-Inserir duas funções:
+### Etapa 1: Migration -- Flexibilizar aprovacao tripla
 
-- **`validateResponseIO()`** — Validator calibrado por fase IO com:
-  - Formato calibrado por fase (maxChars, maxQuestions, maxLines variam)
-  - Regras universais (SINTO_QUE expandido, PRESUNÇÃO, ESPECULAÇÃO, CONFLITO, LUTO)
-  - Regras calibradas por fase (CAUSALIDADE, DIAGNÓSTICO, EXPLICAÇÃO com severidade variável)
-  - Regras novas IO: TOXIC_POSITIVITY, IDENTITY_QUESTION_WRONG_PHASE, UNFOUNDED_SUBSTANTIVE (Premissa 15), REDUNDANT_QUESTIONS, PHASE_DEPTH_VIOLATION, JARGON por fase
-  - Teologia com cascata por fase + maturidade
+**Problema:** Sem pastor no sistema, nenhuma candidatura pode ser aprovada.
 
-- **`buildRewritePromptIO()`** — Prompt de reescrita com contexto de fase e instruções de MODO PRESENÇA expandidas
+**Solucao:** Criar uma funcao que verifica aprovacao com logica flexivel: se nao existe usuario com role `pastor` no sistema, a aprovacao de pastor e dispensada. O trigger `check_soldado_approval_complete` sera atualizado.
 
-Código exato conforme a tarefa do usuário.
-
-### 2. STEP 7: Branch por flag (substituir linhas 2601-2665)
-
-O Step 7 atual será substituído por:
-
-```
-// Verificar flag io_safety_expanded_enabled
-const { data: safetyFlag } = await supabase.rpc('get_feature_flag', {
-  p_flag_name: 'io_safety_expanded_enabled', p_user_id: userId
-});
-const isSafetyExpanded = safetyFlag === true;
-let usedIOValidator = false;
-
-if (isSafetyExpanded) {
-  validationResult = validateResponseIO(aiResponse, intent, userContext, turnCount,
-    spiritualMaturity, ioPhaseContext?.current_phase || null,
-    chunks.length > 0, lowConfidence, false);
-  usedIOValidator = true;
-} else {
-  validationResult = validateResponseComplete(aiResponse, intent, userContext, turnCount, spiritualMaturity);
-}
-
-// Rewrite: usa buildRewritePromptIO ou buildRewritePrompt conforme o validator usado
-const rewritePrompt = usedIOValidator
-  ? buildRewritePromptIO(aiResponse, validationResult, ioPhaseContext?.current_phase || null)
-  : buildRewritePrompt(aiResponse, validationResult);
+```text
+Logica da nova funcao check_soldado_approval_complete:
+  - admin_approved = obrigatorio
+  - profissional_approved = obrigatorio
+  - pastor_approved = obrigatorio SE existir pelo menos 1 usuario com role 'pastor'
+  - Se nao existir pastor, aprovacao completa com admin + profissional
 ```
 
-O resto da lógica de rewrite (fetch, fallback MINIMAL_SAFE) permanece igual.
+**SQL (migration):**
+- Recriar a funcao `check_soldado_approval_complete` com a logica condicional
+- Atualizar a funcao `get_application_approval_status` para refletir o campo `pastor_required`
 
-### 3. Observability log do validator (após rewrite, antes do Step 8)
+---
 
+### Etapa 2: Edge Function -- Auto-processar testemunho apos envio
+
+**Problema:** O testemunho e inserido com status `processing` mas a Edge Function `process-testimony` nunca e chamada automaticamente.
+
+**Solucao:** Adicionar chamada a `process-testimony` no frontend imediatamente apos o INSERT do testemunho em `SoldadoTestimony.tsx`.
+
+**Arquivo:** `src/pages/SoldadoTestimony.tsx`
+- Apos o INSERT bem-sucedido na tabela `testimonies` (linha ~213), invocar:
+  ```typescript
+  supabase.functions.invoke("process-testimony", {
+    body: { testimony_id: insertedId }
+  });
+  ```
+- Sera fire-and-forget (nao bloqueia a UX de sucesso)
+- Requer retornar o `id` do INSERT (usar `.select('id').single()`)
+
+---
+
+### Etapa 3: UI -- Abrir curadoria para profissional e pastor
+
+**Problema:** `TestimonyCuration.tsx` usa `AdminRoute` que bloqueia profissional e pastor.
+
+**Solucao:** Trocar `AdminRoute` por `RoleRoute` com roles permitidas.
+
+**Arquivo:** `src/pages/admin/TestimonyCuration.tsx`
+- Substituir `<AdminRoute>` por `<RoleRoute allowedRoles={["admin", "desenvolvedor", "profissional", "pastor"]}>`
+- Importar `RoleRoute` no lugar de `AdminRoute`
+
+---
+
+### Etapa 4: UI -- Feedback de aprovacoes pendentes no card
+
+**Problema:** Apos o admin aprovar, o card some os botoes sem explicar o que falta.
+
+**Solucao:** Adicionar mensagem contextual em `ApplicationApprovalCard.tsx`.
+
+**Arquivo:** `src/components/soldado/ApplicationApprovalCard.tsx`
+- Quando `canApprove === false` e `status === "under_review"`:
+  - Mostrar banner informativo: "Sua aprovacao foi registrada. Aguardando: [lista de roles pendentes]"
+  - Calcular roles pendentes a partir de `application.approvals`
+
+---
+
+### Etapa 5: UI -- Guardar curadoria antes de aprovacao
+
+**Problema:** O curador pode aprovar a candidatura ANTES do testemunho ser processado pela IA (status `processing`).
+
+**Solucao:** No `TestimonyCurationCard.tsx`, ja existe logica parcial (`canTakeAction` verifica `analyzed || processing`). Ajustar para:
+- Botoes de "Aprovar"/"Rejeitar" so aparecem quando `testimony.status === "analyzed"`
+- Quando `processing`, mostrar apenas botao "Processar" e mensagem de aguardo
+- Remover `processing` da condicao `canTakeAction` para acoes de curadoria
+
+**Arquivo:** `src/components/soldado/TestimonyCurationCard.tsx` (linha 331-333)
 ```typescript
-await supabase.from('observability_logs').insert({
-  event_type: 'validation_result',
-  user_id: userId, session_id: sessionId,
-  event_data: {
-    validator: usedIOValidator ? 'io' : 'legacy',
-    io_phase: ioPhaseContext?.current_phase || null,
-    issues: validationResult.issues.map(i => ({ code: i.code, severity: i.severity })),
-    needs_rewrite: validationResult.needsRewrite,
-    did_rewrite: didRewrite,
-  },
-  flags_active: {
-    io_safety_expanded_enabled: isSafetyExpanded,
-    io_prompt_adapter_enabled: isPromptAdapterEnabled || false
-  },
-});
+// ANTES:
+const canTakeAction = approverRole !== null && 
+  (testimony.status === "analyzed" || testimony.status === "processing");
+
+// DEPOIS:
+const canTakeAction = approverRole !== null && testimony.status === "analyzed";
 ```
 
-### 4. Debug info (isAdmin, ~linha 2767)
+---
 
-Expandir o bloco `validation` existente:
+## Resumo de Arquivos Impactados
 
-```typescript
-validation: {
-  char_count: aiResponse.length,
-  line_count: aiResponse.split('\n').filter((l: string) => l.trim()).length,
-  question_count: (aiResponse.match(/\?/g) || []).length,
-  issues: validationResult.issues,
-  was_rewritten: didRewrite,
-  validator_type: usedIOValidator ? 'io' : 'legacy',
-  io_phase_at_validation: ioPhaseContext?.current_phase || null,
-},
-```
+| Arquivo | Tipo de Mudanca |
+|---|---|
+| Nova migration SQL | Recriar trigger de aprovacao flexivel |
+| `src/pages/SoldadoTestimony.tsx` | Chamar process-testimony apos envio |
+| `src/pages/admin/TestimonyCuration.tsx` | Trocar AdminRoute por RoleRoute |
+| `src/components/soldado/ApplicationApprovalCard.tsx` | Feedback de aprovacoes pendentes |
+| `src/components/soldado/TestimonyCurationCard.tsx` | Bloquear curadoria antes da analise |
 
-## O que NÃO muda
+## Riscos e Mitigacoes
 
-- `validateResponseComplete` — intacta (usada quando flag OFF)
-- `buildRewritePrompt` — intacta (usada quando flag OFF)
-- `buildIOSystemPrompt` / `getIOPhaseOrientation` — intocados (Fase 3)
-- Observer, Steps 1-6, Step 8 — intocados
-- Nenhum outro edge function alterado
-- Nenhuma migration necessária (`validation_result` já é event_type válido)
+- **Risco:** Flexibilizar pastor pode permitir aprovacao prematura.
+  **Mitigacao:** A logica so dispensa pastor se literalmente nao existe nenhum usuario com essa role no sistema. Quando um pastor for cadastrado, a exigencia volta automaticamente.
 
-## Segurança
-
-- Flag `io_safety_expanded_enabled` global está `false` no banco
-- Se RPC falhar, `isSafetyExpanded = false` → validator legado
-- Branch legado é chamada exata ao código atual
+- **Risco:** Chamada fire-and-forget do process-testimony pode falhar silenciosamente.
+  **Mitigacao:** O botao "Processar" na tela de curadoria ja existe como fallback manual.
 
