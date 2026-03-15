@@ -34,6 +34,8 @@ import { useToast } from "@/hooks/use-toast";
 import { ChatSessionContextMenu } from "./ChatSessionContextMenu";
 import { ColorDot, type ColorTag } from "./ColorTagPicker";
 import { InstallAppButton } from "@/components/InstallAppButton";
+import { useFeatureFlag } from "@/hooks/useFeatureFlag";
+import { useQuery } from "@tanstack/react-query";
 
 interface ChatSession {
   id: string;
