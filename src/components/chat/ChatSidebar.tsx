@@ -499,6 +499,7 @@ export function ChatSidebar({
                 Painel Admin
               </Button>
             )}
+            <DailySessionSidebarItem user={user} collapsed={collapsed} navigate={navigate} />
             <Button
               variant="ghost"
               size="sm"
@@ -506,7 +507,7 @@ export function ChatSidebar({
               onClick={() => navigate("/diary")}
             >
               <BookOpen className="mr-2 h-4 w-4" />
-              Diário Espiritual
+              {!collapsed && "Diário Espiritual"}
             </Button>
             <InstallAppButton variant="sidebar" />
           </div>
