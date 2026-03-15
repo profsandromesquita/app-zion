@@ -2814,6 +2814,8 @@ O objetivo é que O PRÓPRIO USUÁRIO chegue à conexão.`;
           question_count: (aiResponse.match(/\?/g) || []).length,
           issues: validationResult.issues,
           was_rewritten: didRewrite,
+          validator_type: usedIOValidator ? 'io' : 'legacy',
+          io_phase_at_validation: ioPhaseContext?.current_phase || null,
         },
         // IO Prompt Adapter info
         session_context: sessionContext.currentPhase ? {
