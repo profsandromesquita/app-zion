@@ -1,119 +1,52 @@
 
 
-# Plano de Correcao: Fluxo de Testemunho e Aprovacao de Soldados
+# Plano: IOJourneySection + Toggle no Profile
 
-## Diagnostico Confirmado
+## Resumo
 
-Dados reais do banco confirmam os problemas:
-- **1 candidatura travada** em `under_review` com testemunho em `processing` (nunca processado, sem transcrição nem analise)
-- **0 usuarios com role `pastor`** no sistema -- aprovacao tripla e impossivel
-- A pagina de curadoria (`TestimonyCuration`) exige role `admin` via `AdminRoute`, bloqueando `profissional` e `pastor`
-- O envio de testemunho NAO dispara `process-testimony` automaticamente
-- O card de aprovacao (`ApplicationApprovalCard`) nao mostra feedback sobre quais aprovacoes faltam quando o usuario ja aprovou
+Criar `IOJourneySection` que exibe progresso IO com 7 fases, IGI, streak, gráfico mini e botão de sessão. No `Profile.tsx`, alternar entre `JourneySection` (flag off) e `IOJourneySection` (flag on).
 
----
+## Arquivos
 
-## Ordem de Deploy (5 etapas)
+### 1. `src/components/profile/IOJourneySection.tsx` (NOVO)
 
-### Etapa 1: Migration -- Flexibilizar aprovacao tripla
+Componente que recebe `userId: string` e:
 
-**Problema:** Sem pastor no sistema, nenhuma candidatura pode ser aprovada.
+- Query `io_user_phase` para dados da fase atual
+- Query `io_daily_sessions` (últimas 5 + check se hoje já completou)
+- Extrai `igi_history` (JSON array) para mini gráfico
 
-**Solucao:** Criar uma funcao que verifica aprovacao com logica flexivel: se nao existe usuario com role `pastor` no sistema, a aprovacao de pastor e dispensada. O trigger `check_soldado_approval_complete` sera atualizado.
+**Seções renderizadas:**
 
-```text
-Logica da nova funcao check_soldado_approval_complete:
-  - admin_approved = obrigatorio
-  - profissional_approved = obrigatorio
-  - pastor_approved = obrigatorio SE existir pelo menos 1 usuario com role 'pastor'
-  - Se nao existir pastor, aprovacao completa com admin + profissional
-```
+a) **Barra de fases** — 7 dots horizontais com labels. Fase atual destacada (ring animado), completadas em verde, futuras esmaecidas. Nomes: Consciência, Limites, Identidade, Ritmo, Vitalidade, Governo, Plenitude.
 
-**SQL (migration):**
-- Recriar a funcao `check_soldado_approval_complete` com a logica condicional
-- Atualizar a funcao `get_application_approval_status` para refletir o campo `pastor_required`
+b) **Cards de dados** — Grid 2x2:
+- IGI atual (com tendência ↑↓→ comparando último vs penúltimo do `igi_history`)
+- Streak (com 🔥)
+- Total sessões
+- Última sessão (formatada)
 
----
+c) **Mini gráfico IGI** — SVG inline simples (polyline) com últimos 7-14 pontos do `igi_history`. Sem lib externa.
 
-### Etapa 2: Edge Function -- Auto-processar testemunho apos envio
+d) **Botão de sessão** — "Iniciar Sessão do Dia" → `/session` se hoje não completou; "Sessão de hoje ✅" desabilitado se completou.
 
-**Problema:** O testemunho e inserido com status `processing` mas a Edge Function `process-testimony` nunca e chamada automaticamente.
+e) **Descrição da fase** — Card com texto fixo por fase (1-7), conforme especificação.
 
-**Solucao:** Adicionar chamada a `process-testimony` no frontend imediatamente apos o INSERT do testemunho em `SoldadoTestimony.tsx`.
+**Design:** Mesmo padrão visual do `JourneySection` — Card com header gradient emerald, cores Zion, responsivo.
 
-**Arquivo:** `src/pages/SoldadoTestimony.tsx`
-- Apos o INSERT bem-sucedido na tabela `testimonies` (linha ~213), invocar:
-  ```typescript
-  supabase.functions.invoke("process-testimony", {
-    body: { testimony_id: insertedId }
-  });
-  ```
-- Sera fire-and-forget (nao bloqueia a UX de sucesso)
-- Requer retornar o `id` do INSERT (usar `.select('id').single()`)
+### 2. `src/pages/Profile.tsx` (ALTERAR)
 
----
+Na seção `{isBuscador && journey && ...}` (linhas 447-450):
 
-### Etapa 3: UI -- Abrir curadoria para profissional e pastor
+- Adicionar state `ioEnabled` com query à RPC `get_feature_flag` para `io_daily_session_enabled`
+- Se `ioEnabled === true`: renderizar `<IOJourneySection userId={user.id} />`
+- Se `ioEnabled === false`: renderizar `<JourneySection journey={journey} />` (atual)
 
-**Problema:** `TestimonyCuration.tsx` usa `AdminRoute` que bloqueia profissional e pastor.
+### 3. `src/components/profile/JourneySection.tsx` — NÃO ALTERADO
 
-**Solucao:** Trocar `AdminRoute` por `RoleRoute` com roles permitidas.
+## O que NÃO muda
 
-**Arquivo:** `src/pages/admin/TestimonyCuration.tsx`
-- Substituir `<AdminRoute>` por `<RoleRoute allowedRoles={["admin", "desenvolvedor", "profissional", "pastor"]}>`
-- Importar `RoleRoute` no lugar de `AdminRoute`
-
----
-
-### Etapa 4: UI -- Feedback de aprovacoes pendentes no card
-
-**Problema:** Apos o admin aprovar, o card some os botoes sem explicar o que falta.
-
-**Solucao:** Adicionar mensagem contextual em `ApplicationApprovalCard.tsx`.
-
-**Arquivo:** `src/components/soldado/ApplicationApprovalCard.tsx`
-- Quando `canApprove === false` e `status === "under_review"`:
-  - Mostrar banner informativo: "Sua aprovacao foi registrada. Aguardando: [lista de roles pendentes]"
-  - Calcular roles pendentes a partir de `application.approvals`
-
----
-
-### Etapa 5: UI -- Guardar curadoria antes de aprovacao
-
-**Problema:** O curador pode aprovar a candidatura ANTES do testemunho ser processado pela IA (status `processing`).
-
-**Solucao:** No `TestimonyCurationCard.tsx`, ja existe logica parcial (`canTakeAction` verifica `analyzed || processing`). Ajustar para:
-- Botoes de "Aprovar"/"Rejeitar" so aparecem quando `testimony.status === "analyzed"`
-- Quando `processing`, mostrar apenas botao "Processar" e mensagem de aguardo
-- Remover `processing` da condicao `canTakeAction` para acoes de curadoria
-
-**Arquivo:** `src/components/soldado/TestimonyCurationCard.tsx` (linha 331-333)
-```typescript
-// ANTES:
-const canTakeAction = approverRole !== null && 
-  (testimony.status === "analyzed" || testimony.status === "processing");
-
-// DEPOIS:
-const canTakeAction = approverRole !== null && testimony.status === "analyzed";
-```
-
----
-
-## Resumo de Arquivos Impactados
-
-| Arquivo | Tipo de Mudanca |
-|---|---|
-| Nova migration SQL | Recriar trigger de aprovacao flexivel |
-| `src/pages/SoldadoTestimony.tsx` | Chamar process-testimony apos envio |
-| `src/pages/admin/TestimonyCuration.tsx` | Trocar AdminRoute por RoleRoute |
-| `src/components/soldado/ApplicationApprovalCard.tsx` | Feedback de aprovacoes pendentes |
-| `src/components/soldado/TestimonyCurationCard.tsx` | Bloquear curadoria antes da analise |
-
-## Riscos e Mitigacoes
-
-- **Risco:** Flexibilizar pastor pode permitir aprovacao prematura.
-  **Mitigacao:** A logica so dispensa pastor se literalmente nao existe nenhum usuario com essa role no sistema. Quando um pastor for cadastrado, a exigencia volta automaticamente.
-
-- **Risco:** Chamada fire-and-forget do process-testimony pode falhar silenciosamente.
-  **Mitigacao:** O botao "Processar" na tela de curadoria ja existe como fallback manual.
+- JourneySection.tsx
+- Nenhum edge function
+- Nenhuma tabela ou RLS
 
