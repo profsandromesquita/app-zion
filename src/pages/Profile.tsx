@@ -15,6 +15,8 @@ import { useToast } from "@/hooks/use-toast";
 import SafetyExit from "@/components/SafetyExit";
 import AvatarEditor from "@/components/profile/AvatarEditor";
 import JourneySection from "@/components/profile/JourneySection";
+import IOJourneySection from "@/components/profile/IOJourneySection";
+import { useFeatureFlag } from "@/hooks/useFeatureFlag";
 import ChurchProfileSection, { ChurchData } from "@/components/profile/ChurchProfileSection";
 import SoldadoConnectionTeaser from "@/components/profile/SoldadoConnectionTeaser";
 import ApplicationStatusBadge from "@/components/soldado/ApplicationStatusBadge";
