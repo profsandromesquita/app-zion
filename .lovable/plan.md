@@ -1,119 +1,115 @@
 
 
-# Plano de Correcao: Fluxo de Testemunho e Aprovacao de Soldados
+# Plano: Fase 5 — Sessão Diária Estruturada (Página /session)
 
-## Diagnostico Confirmado
+## Resumo
 
-Dados reais do banco confirmam os problemas:
-- **1 candidatura travada** em `under_review` com testemunho em `processing` (nunca processado, sem transcrição nem analise)
-- **0 usuarios com role `pastor`** no sistema -- aprovacao tripla e impossivel
-- A pagina de curadoria (`TestimonyCuration`) exige role `admin` via `AdminRoute`, bloqueando `profissional` e `pastor`
-- O envio de testemunho NAO dispara `process-testimony` automaticamente
-- O card de aprovacao (`ApplicationApprovalCard`) nao mostra feedback sobre quais aprovacoes faltam quando o usuario ja aprovou
+Criar a página `/session` com 7 steps em stepper, protegida por auth e feature flag `io_daily_session_enabled`. Usa tabelas existentes (`io_daily_sessions`, `io_missions`, `io_scale_entries`, `io_user_phase`). Nenhum edge function existente é alterado. O Step 5 (Feedback) usará fallback genérico até o edge function `io-session-feedback` ser criado no Bloco 2.
 
----
+## Arquivos a criar/alterar
 
-## Ordem de Deploy (5 etapas)
+### 1. `src/pages/Session.tsx` (NOVO — ~600 linhas)
 
-### Etapa 1: Migration -- Flexibilizar aprovacao tripla
-
-**Problema:** Sem pastor no sistema, nenhuma candidatura pode ser aprovada.
-
-**Solucao:** Criar uma funcao que verifica aprovacao com logica flexivel: se nao existe usuario com role `pastor` no sistema, a aprovacao de pastor e dispensada. O trigger `check_soldado_approval_complete` sera atualizado.
+Página principal com state machine de 7 steps:
 
 ```text
-Logica da nova funcao check_soldado_approval_complete:
-  - admin_approved = obrigatorio
-  - profissional_approved = obrigatorio
-  - pastor_approved = obrigatorio SE existir pelo menos 1 usuario com role 'pastor'
-  - Se nao existir pastor, aprovacao completa com admin + profissional
+┌─────────────────────────────────────┐
+│  Stepper: ① ② ③ ④ ⑤ ⑥ ⑦          │
+├─────────────────────────────────────┤
+│                                     │
+│         [Step Content]              │
+│                                     │
+├─────────────────────────────────────┤
+│              [Botão]                │
+└─────────────────────────────────────┘
 ```
 
-**SQL (migration):**
-- Recriar a funcao `check_soldado_approval_complete` com a logica condicional
-- Atualizar a funcao `get_application_approval_status` para refletir o campo `pastor_required`
+**Lógica de inicialização:**
+- `useAuth()` — redireciona para `/auth` se não logado
+- RPC `get_feature_flag({ p_flag_name: 'io_daily_session_enabled', p_user_id })` — se false, redireciona `/chat` com toast
+- Query `io_daily_sessions` para hoje (`session_date = today`)
+  - Se existe + `completed = true` → tela de resumo
+  - Se existe + incompleta → retomar (inferir step pelos campos preenchidos)
+  - Se não existe → step 1
+- Query `io_user_phase` para fase atual
+- Guardar `startTime = Date.now()` para calcular duração
 
----
+**Step 1 — Check-in:**
+- Grid 3x2 de mood cards (emoji + label), seleção visual
+- Ao avançar: upsert `io_daily_sessions` com `check_in_mood`, `check_in_completed = true`, `phase_at_session`
 
-### Etapa 2: Edge Function -- Auto-processar testemunho apos envio
+**Step 2 — Missão:**
+- Calcular `week_range` baseado em `phase_entered_at`
+- Query `io_missions` filtrado por `phase`, `week_range`, `is_active`
+- Excluir últimas 3 `mission_id` de sessões anteriores
+- Seleção aleatória, salvar `mission_id` no registro
+- Card com título, descrição, badges de tipo e dificuldade
 
-**Problema:** O testemunho e inserido com status `processing` mas a Edge Function `process-testimony` nunca e chamada automaticamente.
+**Step 3 — Registro:**
+- Textarea livre, mínimo 10 chars
+- Salvar em `registro_text`, marcar `mission_completed = true`
 
-**Solucao:** Adicionar chamada a `process-testimony` no frontend imediatamente apos o INSERT do testemunho em `SoldadoTestimony.tsx`.
+**Step 4 — Escalas:**
+- Dimensões dinâmicas por fase (3 em fase 1-2, 4 em fase 3, 7 em fase 4+)
+- Slider 0-10 por dimensão com label e descrição
+- Salvar nas colunas `escala_*` da sessão + insert em `io_scale_entries`
 
-**Arquivo:** `src/pages/SoldadoTestimony.tsx`
-- Apos o INSERT bem-sucedido na tabela `testimonies` (linha ~213), invocar:
-  ```typescript
-  supabase.functions.invoke("process-testimony", {
-    body: { testimony_id: insertedId }
-  });
-  ```
-- Sera fire-and-forget (nao bloqueia a UX de sucesso)
-- Requer retornar o `id` do INSERT (usar `.select('id').single()`)
+**Step 5 — Feedback:**
+- Tentar invocar `io-session-feedback` (se existir)
+- Fallback genérico: frase motivacional fixa
+- Salvar em `feedback_generated`
 
----
+**Step 6 — Reforço Identitário:**
+- Card destacado com frase fixa por fase (1-7)
+- Salvar em `reforco_identitario`
 
-### Etapa 3: UI -- Abrir curadoria para profissional e pastor
+**Step 7 — Conclusão:**
+- RPC `calculate_igi` com as escalas
+- Calcular streak (comparar `last_session_date` com ontem)
+- Atualizar `io_user_phase`: `igi_current`, append `igi_history`, streak, `total_sessions`
+- Marcar sessão `completed = true`, `igi_at_session`, `duration_seconds`
+- Invocar `io-phase-manager` com `action: 'evaluate'`
+- Exibir resultado: celebração se avançou, resumo se manteve
+- Botões: "Voltar ao chat", "Ver minha jornada"
 
-**Problema:** `TestimonyCuration.tsx` usa `AdminRoute` que bloqueia profissional e pastor.
+### 2. `src/components/session/SessionStepper.tsx` (NOVO)
 
-**Solucao:** Trocar `AdminRoute` por `RoleRoute` com roles permitidas.
+Componente de stepper horizontal com 7 dots/números. Step atual destacado com cor primária, completados com check, futuros em cinza. Responsivo.
 
-**Arquivo:** `src/pages/admin/TestimonyCuration.tsx`
-- Substituir `<AdminRoute>` por `<RoleRoute allowedRoles={["admin", "desenvolvedor", "profissional", "pastor"]}>`
-- Importar `RoleRoute` no lugar de `AdminRoute`
+### 3. `src/components/session/SessionComplete.tsx` (NOVO)
 
----
+Tela de "Sessão já concluída" com resumo: mood, missão, IGI, streak. Botões para chat/profile.
 
-### Etapa 4: UI -- Feedback de aprovacoes pendentes no card
+### 4. `src/App.tsx` (ALTERAR)
 
-**Problema:** Apos o admin aprovar, o card some os botoes sem explicar o que falta.
-
-**Solucao:** Adicionar mensagem contextual em `ApplicationApprovalCard.tsx`.
-
-**Arquivo:** `src/components/soldado/ApplicationApprovalCard.tsx`
-- Quando `canApprove === false` e `status === "under_review"`:
-  - Mostrar banner informativo: "Sua aprovacao foi registrada. Aguardando: [lista de roles pendentes]"
-  - Calcular roles pendentes a partir de `application.approvals`
-
----
-
-### Etapa 5: UI -- Guardar curadoria antes de aprovacao
-
-**Problema:** O curador pode aprovar a candidatura ANTES do testemunho ser processado pela IA (status `processing`).
-
-**Solucao:** No `TestimonyCurationCard.tsx`, ja existe logica parcial (`canTakeAction` verifica `analyzed || processing`). Ajustar para:
-- Botoes de "Aprovar"/"Rejeitar" so aparecem quando `testimony.status === "analyzed"`
-- Quando `processing`, mostrar apenas botao "Processar" e mensagem de aguardo
-- Remover `processing` da condicao `canTakeAction` para acoes de curadoria
-
-**Arquivo:** `src/components/soldado/TestimonyCurationCard.tsx` (linha 331-333)
+Adicionar import e rota:
 ```typescript
-// ANTES:
-const canTakeAction = approverRole !== null && 
-  (testimony.status === "analyzed" || testimony.status === "processing");
-
-// DEPOIS:
-const canTakeAction = approverRole !== null && testimony.status === "analyzed";
+import Session from "./pages/Session";
+// Na Routes:
+<Route path="/session" element={<Session />} />
 ```
 
----
+## Detalhes técnicos
 
-## Resumo de Arquivos Impactados
+- **RLS**: Tabelas `io_daily_sessions` e `io_scale_entries` já têm RLS para service_role insert. Precisaremos verificar se `authenticated` pode inserir. Se não, usaremos as policies existentes ou adicionaremos via migration.
+- **Feature flag**: Usa `supabase.rpc('get_feature_flag', { p_flag_name: 'io_daily_session_enabled', p_user_id: user.id })` — mesma pattern do zyon-chat
+- **IGI**: RPC `calculate_igi` já existe com params `p_clareza`, `p_regulacao`, etc.
+- **Phase Manager**: Invoke via `supabase.functions.invoke('io-phase-manager', { body: { action: 'evaluate', user_id } })`
+- **Animações**: `transition-all` com opacity/translate entre steps
+- **Mobile-first**: Cards full-width em mobile, max-w-lg centralizado em desktop
 
-| Arquivo | Tipo de Mudanca |
-|---|---|
-| Nova migration SQL | Recriar trigger de aprovacao flexivel |
-| `src/pages/SoldadoTestimony.tsx` | Chamar process-testimony apos envio |
-| `src/pages/admin/TestimonyCuration.tsx` | Trocar AdminRoute por RoleRoute |
-| `src/components/soldado/ApplicationApprovalCard.tsx` | Feedback de aprovacoes pendentes |
-| `src/components/soldado/TestimonyCurationCard.tsx` | Bloquear curadoria antes da analise |
+## Migration necessária
 
-## Riscos e Mitigacoes
+Verificar RLS de `io_daily_sessions` e `io_scale_entries` para permitir insert/update por `authenticated` users (próprios registros). Se não existirem, criar policies:
+- Users can insert own daily sessions (`user_id = auth.uid()`)
+- Users can update own daily sessions (`user_id = auth.uid()`)
+- Users can view own daily sessions
+- Users can insert own scale entries
+- Users can view own scale entries
 
-- **Risco:** Flexibilizar pastor pode permitir aprovacao prematura.
-  **Mitigacao:** A logica so dispensa pastor se literalmente nao existe nenhum usuario com essa role no sistema. Quando um pastor for cadastrado, a exigencia volta automaticamente.
+## O que NÃO muda
 
-- **Risco:** Chamada fire-and-forget do process-testimony pode falhar silenciosamente.
-  **Mitigacao:** O botao "Processar" na tela de curadoria ja existe como fallback manual.
+- Nenhum edge function existente
+- Chat, Profile, Diary — intocados
+- Tabelas existentes — apenas RLS se necessário
 
