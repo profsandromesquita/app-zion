@@ -15,6 +15,8 @@ import { useToast } from "@/hooks/use-toast";
 import SafetyExit from "@/components/SafetyExit";
 import AvatarEditor from "@/components/profile/AvatarEditor";
 import JourneySection from "@/components/profile/JourneySection";
+import IOJourneySection from "@/components/profile/IOJourneySection";
+import { useFeatureFlag } from "@/hooks/useFeatureFlag";
 import ChurchProfileSection, { ChurchData } from "@/components/profile/ChurchProfileSection";
 import SoldadoConnectionTeaser from "@/components/profile/SoldadoConnectionTeaser";
 import ApplicationStatusBadge from "@/components/soldado/ApplicationStatusBadge";
@@ -72,6 +74,7 @@ const Profile = () => {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const { roles, loading: rolesLoading, isBuscador, isIgreja, isSoldado } = useUserRole();
+  const { enabled: ioEnabled } = useFeatureFlag("io_daily_session_enabled");
   const { toast } = useToast();
 
   const [profile, setProfile] = useState<ProfileData | null>(null);
@@ -445,7 +448,10 @@ const Profile = () => {
           )}
 
           {/* Journey Card - Only for Buscadores */}
-          {isBuscador && journey && (
+          {isBuscador && ioEnabled && user && (
+            <IOJourneySection userId={user.id} />
+          )}
+          {isBuscador && !ioEnabled && journey && (
             <JourneySection journey={journey} />
           )}
 
