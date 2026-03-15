@@ -999,7 +999,7 @@ function validateResponseIO(
     if (userContext.refusedBible) {
       issues.push({ code: 'BIBLE_REFUSED', severity: 'CRITICAL', 
         message: 'Usuário recusou Bíblia' });
-      rewriteInstructions.push('Remova toda citação bíblica.');
+      rewriteInstructions.push('Remova toda citação bíblica. IMPORTANTE: Mesmo em fases avançadas, a recusa do usuário prevalece sobre a fase.');
     }
     else if (userContext.hasRevolt) {
       const permissionQuestion = /voc[eê] quer (s[oó] ser ouvid|que eu procure uma palavra|uma perspectiva b[ií]blica)/i;
