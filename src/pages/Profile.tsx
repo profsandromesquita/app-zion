@@ -448,7 +448,10 @@ const Profile = () => {
           )}
 
           {/* Journey Card - Only for Buscadores */}
-          {isBuscador && journey && (
+          {isBuscador && ioEnabled && user && (
+            <IOJourneySection userId={user.id} />
+          )}
+          {isBuscador && !ioEnabled && journey && (
             <JourneySection journey={journey} />
           )}
 
