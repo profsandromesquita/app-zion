@@ -27,6 +27,7 @@ import Cohorts from "./pages/admin/Cohorts";
 import IOOverview from "./pages/admin/IOOverview";
 import SoldadoTestimony from "./pages/SoldadoTestimony";
 import SoldadoDashboard from "./pages/SoldadoDashboard";
+import Session from "./pages/Session";
 
 const queryClient = new QueryClient();
 
@@ -39,6 +40,7 @@ const App = () => (
         <Routes>
           <Route path="/" element={<Index />} />
           <Route path="/auth" element={<Auth />} />
+          <Route path="/session" element={<Session />} />
           <Route path="/chat" element={<Chat />} />
           <Route path="/diary" element={<Diary />} />
           <Route path="/profile" element={<Profile />} />
