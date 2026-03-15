@@ -14,6 +14,7 @@ import { TimeSlotPicker } from "@/components/chat/TimeSlotPicker";
 import { ScheduleConfirmation, ScheduleConfirmationData } from "@/components/chat/ScheduleConfirmation";
 import { PushNotificationPrompt } from "@/components/PushNotificationPrompt";
 import PendingApplicationBanner from "@/components/soldado/PendingApplicationBanner";
+import DailySessionBanner from "@/components/chat/DailySessionBanner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
