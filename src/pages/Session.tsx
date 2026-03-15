@@ -315,13 +315,6 @@ const Session = () => {
         }
       }
 
-      if (selected && sessionId) {
-        await supabase
-          .from("io_daily_sessions")
-          .update({ mission_id: selected.id })
-          .eq("id", sessionId);
-      }
-
       setMission(selected);
     } catch (err) {
       console.error(err);
@@ -329,6 +322,17 @@ const Session = () => {
       setMissionLoading(false);
     }
   }, [userPhase, sessionId, user, mission, missionLoading]);
+
+  // Persist mission_id whenever both mission and sessionId are available
+  useEffect(() => {
+    if (mission?.id && sessionId) {
+      supabase
+        .from("io_daily_sessions")
+        .update({ mission_id: mission.id })
+        .eq("id", sessionId)
+        .then(() => {});
+    }
+  }, [mission, sessionId]);
 
   useEffect(() => {
     if (currentStep === 2 && !mission && !missionLoading) {
