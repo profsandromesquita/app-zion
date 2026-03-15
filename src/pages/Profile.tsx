@@ -74,6 +74,7 @@ const Profile = () => {
   const navigate = useNavigate();
   const { user, loading: authLoading } = useAuth();
   const { roles, loading: rolesLoading, isBuscador, isIgreja, isSoldado } = useUserRole();
+  const { enabled: ioEnabled } = useFeatureFlag("io_daily_session_enabled");
   const { toast } = useToast();
 
   const [profile, setProfile] = useState<ProfileData | null>(null);
