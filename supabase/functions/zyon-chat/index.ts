@@ -3036,7 +3036,8 @@ O objetivo é que O PRÓPRIO USUÁRIO chegue à conexão.`;
         ioPhaseContext?.current_phase || null,
         chunks.length > 0,
         lowConfidence,
-        false // isSessionDaily — será true quando Fase 5 implementar
+        false, // isSessionDaily — será true quando Fase 5 implementar
+        crisisResult?.risk_level || 'none'
       );
       usedIOValidator = true;
       console.log("Validation via IO validator (phase:", 
