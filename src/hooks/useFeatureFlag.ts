@@ -1,26 +1,32 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 
 export const useFeatureFlag = (flagName: string): { enabled: boolean; loading: boolean } => {
-  const { data, isLoading } = useQuery({
-    queryKey: ["feature-flag", flagName],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("feature_flags")
-        .select("flag_value")
-        .eq("flag_name", flagName)
-        .eq("scope", "global")
-        .single();
+  const { user, loading: authLoading } = useAuth();
 
-      if (error) return false;
-      return (data as any)?.flag_value ?? false;
+  const { data, isLoading } = useQuery({
+    queryKey: ["feature-flag", flagName, user?.id],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("get_feature_flag", {
+        p_flag_name: flagName,
+        p_user_id: user?.id || null,
+        p_cohort_id: null,
+      });
+
+      if (error) {
+        console.error("Feature flag error:", error);
+        return false;
+      }
+      return data === true;
     },
     staleTime: 30 * 1000,
     gcTime: 2 * 60 * 1000,
     refetchOnWindowFocus: true,
+    refetchOnMount: true,
   });
 
-  return { enabled: !!data, loading: isLoading };
+  return { enabled: !!data, loading: isLoading || authLoading };
 };
 
 export const useAllFeatureFlags = () => {
