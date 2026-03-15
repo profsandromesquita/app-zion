@@ -1107,6 +1107,50 @@ function validateResponseIO(
   }
 
   // ==========================================
+  // CENÁRIOS DE SAFETY EXPANDIDA (IO)
+  // ==========================================
+
+  // REGRESSION_INSENSITIVE — resposta menciona regressão de fase em contexto de sofrimento
+  const regressionMentionRegex = /\b(voltou de fase|regrediu|fase anterior|retrocedeu|voltou para a fase|regress[aã]o de fase)\b/i;
+  if (regressionMentionRegex.test(response)) {
+    issues.push({
+      code: 'REGRESSION_INSENSITIVE', severity: 'HIGH',
+      message: 'Resposta menciona regressão de fase (insensível ao sofrimento)'
+    });
+    rewriteInstructions.push(
+      'NÃO mencione regressão de fase. Substitua por acolhimento: "Não é um recuo. É cuidar do que precisa de atenção agora."'
+    );
+  }
+
+  // CRISIS_IN_SESSION — crise detectada durante sessão diária
+  if (isSessionDaily && ['medium', 'high'].includes(crisisRiskLevel)) {
+    const sessionTermsRegex = /\b(miss[aã]o|escala|registro|check-in|checkin|pontua[cç][aã]o|dimens[aã]o|vitalidade|ag[eê]ncia|const[aâ]ncia)\b/i;
+    if (sessionTermsRegex.test(response)) {
+      issues.push({
+        code: 'CRISIS_IN_SESSION', severity: 'CRITICAL',
+        message: 'Crise detectada durante sessão diária — sair da sessão'
+      });
+      rewriteInstructions.push(
+        'PARE a sessão diária imediatamente. NÃO mencione missão, escala ou registro. Entre em modo de segurança e acolhimento. Priorize: "Estou aqui com você. Me conta o que está acontecendo."'
+      );
+    }
+  }
+
+  // SESSION_DEPTH_OVERFLOW — profundidade precoce na sessão diária
+  if (isSessionDaily && isEarlyPhase) {
+    const sessionDepthRegex = /\b(identidade|cren[cç]a[- ]?raiz|padr[aã]o profundo|raiz (do|da|de)|o que isso (diz|revela|mostra) sobre voc[eê]|quem voc[eê] [eé] quando)\b/i;
+    if (sessionDepthRegex.test(response)) {
+      issues.push({
+        code: 'SESSION_DEPTH_OVERFLOW', severity: 'MEDIUM',
+        message: 'Profundidade avançada em sessão diária de fase inicial'
+      });
+      rewriteInstructions.push(
+        'Substitua o conteúdo profundo por: "Esse assunto é importante. Vamos explorar isso no chat com mais calma?"'
+      );
+    }
+  }
+
+  // ==========================================
   // POLÍTICA DE DECISÃO
   // ==========================================
   const hasCritical = issues.some(i => i.severity === 'CRITICAL');
@@ -1115,7 +1159,7 @@ function validateResponseIO(
   
   const presenceModeViolation = issues.some(i => 
     ['PRESUMPTION', 'SINTO_QUE_BANNED', 'CAUSALITY_DIAGNOSTIC', 
-     'DIAGNOSTIC_ABSOLUTE', 'TOXIC_POSITIVITY'].includes(i.code)
+     'DIAGNOSTIC_ABSOLUTE', 'TOXIC_POSITIVITY', 'REGRESSION_INSENSITIVE'].includes(i.code)
   );
   
   const needsRewrite = hasCritical || hasFormat || highCount >= 2 || presenceModeViolation;
