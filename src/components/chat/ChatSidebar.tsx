@@ -58,6 +58,45 @@ interface ChatSidebarProps {
 
 const MAX_FAVORITES = 3;
 
+function DailySessionSidebarItem({ user, collapsed, navigate }: { user: { id: string } | null; collapsed: boolean; navigate: (path: string) => void }) {
+  const { enabled: ioEnabled } = useFeatureFlag("io_daily_session_enabled");
+  const today = new Date().toISOString().split("T")[0];
+
+  const { data: todayCompleted } = useQuery({
+    queryKey: ["daily-session-today-sidebar", user?.id, today],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("io_daily_sessions")
+        .select("id")
+        .eq("user_id", user!.id)
+        .eq("session_date", today)
+        .eq("completed", true)
+        .maybeSingle();
+      return !!data;
+    },
+    enabled: ioEnabled && !!user,
+    staleTime: 2 * 60 * 1000,
+  });
+
+  if (!ioEnabled || !user) return null;
+
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      className="w-full justify-start relative"
+      onClick={() => navigate("/session")}
+    >
+      <Sun className="mr-2 h-4 w-4" />
+      {!collapsed && "Sessão Diária"}
+      {!todayCompleted && (
+        <span className="absolute right-2 top-1/2 -translate-y-1/2 h-2 w-2 rounded-full bg-emerald-500" />
+      )}
+    </Button>
+  );
+}
+
+
 export function ChatSidebar({
   user,
   isAdmin,
