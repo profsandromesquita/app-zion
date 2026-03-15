@@ -15,8 +15,9 @@ export const useFeatureFlag = (flagName: string): { enabled: boolean; loading: b
       if (error) return false;
       return (data as any)?.flag_value ?? false;
     },
-    staleTime: 5 * 60 * 1000,
-    gcTime: 10 * 60 * 1000,
+    staleTime: 30 * 1000,
+    gcTime: 2 * 60 * 1000,
+    refetchOnWindowFocus: true,
   });
 
   return { enabled: !!data, loading: isLoading };
