@@ -14,6 +14,7 @@ import { TimeSlotPicker } from "@/components/chat/TimeSlotPicker";
 import { ScheduleConfirmation, ScheduleConfirmationData } from "@/components/chat/ScheduleConfirmation";
 import { PushNotificationPrompt } from "@/components/PushNotificationPrompt";
 import PendingApplicationBanner from "@/components/soldado/PendingApplicationBanner";
+import DailySessionBanner from "@/components/chat/DailySessionBanner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -1062,6 +1063,9 @@ const Chat = () => {
               status={pendingApplication.status}
             />
           )}
+
+          {/* Daily Session Banner */}
+          {user && <DailySessionBanner userId={user.id} />}
 
           {/* Header */}
           <header className="flex items-center justify-between border-b border-border px-4 py-3" style={{ paddingTop: 'max(0.75rem, env(safe-area-inset-top))' }}>
