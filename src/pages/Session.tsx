@@ -192,6 +192,18 @@ const Session = () => {
           setCurrentStep(inferStepFromSession(existingSession));
           if (existingSession.check_in_mood) setSelectedMood(existingSession.check_in_mood);
           if (existingSession.registro_text) setRegistroText(existingSession.registro_text);
+          if (existingSession.feedback_generated) setFeedback(existingSession.feedback_generated);
+
+          // Hydrate scales from existing session
+          const hydratedScales: Record<string, number> = {};
+          ALL_DIMENSIONS.forEach((dim) => {
+            const val = existingSession[dim.dbColumn as keyof typeof existingSession];
+            if (val !== null && val !== undefined && typeof val === "number") {
+              hydratedScales[dim.key] = val;
+            }
+          });
+          if (Object.keys(hydratedScales).length > 0) setScales(hydratedScales);
+
           if (existingSession.mission_id) {
             const { data: missionData } = await supabase
               .from("io_missions")
