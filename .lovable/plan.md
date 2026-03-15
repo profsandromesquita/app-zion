@@ -1,119 +1,45 @@
 
+## Objetivo
+Eliminar inconsistência do `useFeatureFlag` no frontend fazendo-o usar a mesma lógica de resolução de flags do backend (cascata **user > cohort > global**) via RPC `get_feature_flag`, em vez de consultar diretamente `feature_flags` com `scope = 'global'`.
 
-# Plano de Correcao: Fluxo de Testemunho e Aprovacao de Soldados
+## Escopo / Regras (seguindo seu pedido)
+- Alterar **APENAS** `useFeatureFlag` em `src/hooks/useFeatureFlag.ts`
+- **NÃO** alterar `useAllFeatureFlags`
+- **NÃO** alterar edge functions
+- **NÃO** alterar tabelas
 
-## Diagnostico Confirmado
+## O que vou mudar (arquivo: `src/hooks/useFeatureFlag.ts`)
+### 1) Importar e usar autenticação
+- Adicionar `import { useAuth } from "@/hooks/useAuth";`
+- Dentro do hook: `const { user, loading: authLoading } = useAuth();`
 
-Dados reais do banco confirmam os problemas:
-- **1 candidatura travada** em `under_review` com testemunho em `processing` (nunca processado, sem transcrição nem analise)
-- **0 usuarios com role `pastor`** no sistema -- aprovacao tripla e impossivel
-- A pagina de curadoria (`TestimonyCuration`) exige role `admin` via `AdminRoute`, bloqueando `profissional` e `pastor`
-- O envio de testemunho NAO dispara `process-testimony` automaticamente
-- O card de aprovacao (`ApplicationApprovalCard`) nao mostra feedback sobre quais aprovacoes faltam quando o usuario ja aprovou
+### 2) Trocar consulta direta por RPC `get_feature_flag`
+Substituir o `queryFn` atual (que faz `.from("feature_flags")...eq("scope","global")...single()`) por:
 
----
+- `supabase.rpc("get_feature_flag", { p_flag_name: flagName, p_user_id: user?.id || null, p_cohort_id: null })`
+- Em caso de erro: `console.error("Feature flag error:", error); return false;`
+- Retorno: `return data === true;`
 
-## Ordem de Deploy (5 etapas)
+### 3) Ajustar cache/atualização para reduzir “sumiço/aparecimento”
+- `queryKey`: incluir o usuário para “bust” automático quando o auth mudar  
+  `queryKey: ["feature-flag", flagName, user?.id]`
+- Manter:
+  - `staleTime: 30 * 1000`
+  - `gcTime: 2 * 60 * 1000`
+  - `refetchOnWindowFocus: true`
+- Adicionar:
+  - `refetchOnMount: true` (conforme solicitado)
 
-### Etapa 1: Migration -- Flexibilizar aprovacao tripla
+### 4) Estado de loading consistente (evitar flicker na troca null → user)
+- Retornar `loading: isLoading || authLoading` (continua dentro do escopo do `useFeatureFlag` e melhora a estabilidade visual durante bootstrap do auth)
 
-**Problema:** Sem pastor no sistema, nenhuma candidatura pode ser aprovada.
+## Resultado esperado
+- O frontend passa a calcular “flag habilitada” exatamente como o backend (mesma função RPC já usada em `io-phase-manager`, `zyon-chat`, `io-session-feedback`).
+- Flags por usuário e por cohort deixam de ser ignoradas.
+- Reduz drasticamente o caso de UI “aparecer/desaparecer” por leitura global incompleta + timing de autenticação.
 
-**Solucao:** Criar uma funcao que verifica aprovacao com logica flexivel: se nao existe usuario com role `pastor` no sistema, a aprovacao de pastor e dispensada. O trigger `check_soldado_approval_complete` sera atualizado.
-
-```text
-Logica da nova funcao check_soldado_approval_complete:
-  - admin_approved = obrigatorio
-  - profissional_approved = obrigatorio
-  - pastor_approved = obrigatorio SE existir pelo menos 1 usuario com role 'pastor'
-  - Se nao existir pastor, aprovacao completa com admin + profissional
-```
-
-**SQL (migration):**
-- Recriar a funcao `check_soldado_approval_complete` com a logica condicional
-- Atualizar a funcao `get_application_approval_status` para refletir o campo `pastor_required`
-
----
-
-### Etapa 2: Edge Function -- Auto-processar testemunho apos envio
-
-**Problema:** O testemunho e inserido com status `processing` mas a Edge Function `process-testimony` nunca e chamada automaticamente.
-
-**Solucao:** Adicionar chamada a `process-testimony` no frontend imediatamente apos o INSERT do testemunho em `SoldadoTestimony.tsx`.
-
-**Arquivo:** `src/pages/SoldadoTestimony.tsx`
-- Apos o INSERT bem-sucedido na tabela `testimonies` (linha ~213), invocar:
-  ```typescript
-  supabase.functions.invoke("process-testimony", {
-    body: { testimony_id: insertedId }
-  });
-  ```
-- Sera fire-and-forget (nao bloqueia a UX de sucesso)
-- Requer retornar o `id` do INSERT (usar `.select('id').single()`)
-
----
-
-### Etapa 3: UI -- Abrir curadoria para profissional e pastor
-
-**Problema:** `TestimonyCuration.tsx` usa `AdminRoute` que bloqueia profissional e pastor.
-
-**Solucao:** Trocar `AdminRoute` por `RoleRoute` com roles permitidas.
-
-**Arquivo:** `src/pages/admin/TestimonyCuration.tsx`
-- Substituir `<AdminRoute>` por `<RoleRoute allowedRoles={["admin", "desenvolvedor", "profissional", "pastor"]}>`
-- Importar `RoleRoute` no lugar de `AdminRoute`
-
----
-
-### Etapa 4: UI -- Feedback de aprovacoes pendentes no card
-
-**Problema:** Apos o admin aprovar, o card some os botoes sem explicar o que falta.
-
-**Solucao:** Adicionar mensagem contextual em `ApplicationApprovalCard.tsx`.
-
-**Arquivo:** `src/components/soldado/ApplicationApprovalCard.tsx`
-- Quando `canApprove === false` e `status === "under_review"`:
-  - Mostrar banner informativo: "Sua aprovacao foi registrada. Aguardando: [lista de roles pendentes]"
-  - Calcular roles pendentes a partir de `application.approvals`
-
----
-
-### Etapa 5: UI -- Guardar curadoria antes de aprovacao
-
-**Problema:** O curador pode aprovar a candidatura ANTES do testemunho ser processado pela IA (status `processing`).
-
-**Solucao:** No `TestimonyCurationCard.tsx`, ja existe logica parcial (`canTakeAction` verifica `analyzed || processing`). Ajustar para:
-- Botoes de "Aprovar"/"Rejeitar" so aparecem quando `testimony.status === "analyzed"`
-- Quando `processing`, mostrar apenas botao "Processar" e mensagem de aguardo
-- Remover `processing` da condicao `canTakeAction` para acoes de curadoria
-
-**Arquivo:** `src/components/soldado/TestimonyCurationCard.tsx` (linha 331-333)
-```typescript
-// ANTES:
-const canTakeAction = approverRole !== null && 
-  (testimony.status === "analyzed" || testimony.status === "processing");
-
-// DEPOIS:
-const canTakeAction = approverRole !== null && testimony.status === "analyzed";
-```
-
----
-
-## Resumo de Arquivos Impactados
-
-| Arquivo | Tipo de Mudanca |
-|---|---|
-| Nova migration SQL | Recriar trigger de aprovacao flexivel |
-| `src/pages/SoldadoTestimony.tsx` | Chamar process-testimony apos envio |
-| `src/pages/admin/TestimonyCuration.tsx` | Trocar AdminRoute por RoleRoute |
-| `src/components/soldado/ApplicationApprovalCard.tsx` | Feedback de aprovacoes pendentes |
-| `src/components/soldado/TestimonyCurationCard.tsx` | Bloquear curadoria antes da analise |
-
-## Riscos e Mitigacoes
-
-- **Risco:** Flexibilizar pastor pode permitir aprovacao prematura.
-  **Mitigacao:** A logica so dispensa pastor se literalmente nao existe nenhum usuario com essa role no sistema. Quando um pastor for cadastrado, a exigencia volta automaticamente.
-
-- **Risco:** Chamada fire-and-forget do process-testimony pode falhar silenciosamente.
-  **Mitigacao:** O botao "Processar" na tela de curadoria ja existe como fallback manual.
-
+## Checklist de validação (manual)
+1. Logar como um usuário comum e verificar se IO aparece quando `global=true`.
+2. Setar `global=false` e criar uma flag `scope=user` para o usuário → IO deve aparecer só para ele.
+3. Alternar usuário (logout/login) e confirmar que o comportamento acompanha o novo `userId` (queryKey muda).
+4. Alternar aba do navegador e confirmar que volta atualizando (refetchOnWindowFocus).
