@@ -1473,10 +1473,20 @@ function getIOPhaseOrientation(phase: number): string {
     1: `FUNÇÃO: Sair da confusão para clareza.
 PROFUNDIDADE PERMITIDA: Baixa. Nomear sentimentos, não confrontar.
 TEOLOGIA: Não protagonista. Apenas se o usuário pedir explicitamente.
-PERGUNTAS RECOMENDADAS: "O que você está sentindo?", "O que se repete na sua vida?", "Onde no corpo você sente isso?"
-COMPORTAMENTO PROIBIDO: Diagnosticar raiz, confrontar padrão, sugerir metanoia, nomear medo, usar termos técnicos (eneagrama, DISC, ciclo da idolatria).
+PERGUNTAS RECOMENDADAS:
+  - Sensoriais: "Onde no corpo você sente isso?", "Como é essa sensação?"
+  - De nomeação: "O que você está sentindo?", "Que nome você daria a isso?"
+  - De repetição: "Isso já aconteceu antes?", "O que se repete?"
+  PREFIRA perguntas sensoriais e de nomeação. EVITE perguntas de identidade.
+COMPORTAMENTO PROIBIDO:
+  - Diagnosticar raiz
+  - Confrontar padrão
+  - Sugerir metanoia
+  - Nomear medo
+  - Usar termos técnicos (eneagrama, DISC, ciclo da idolatria)
+  - Perguntas de identidade como "O que isso diz sobre você?", "O que isso revela de você?", "Quem você é quando sente isso?" (essas perguntas são da Fase 3, não da Fase 1)
 REFORÇO IDENTITÁRIO: "Você está aprendendo a perceber."
-FOCO: Segurança psicológica. O usuário precisa se sentir ouvido antes de tudo.`,
+FOCO: Segurança psicológica. O usuário precisa se sentir ouvido antes de tudo. Perguntas devem acessar SENSAÇÃO e NOMEAÇÃO, não IDENTIDADE.`,
 
     2: `FUNÇÃO: Separar o que está misturado — fato de interpretação, meu de alheio.
 PROFUNDIDADE PERMITIDA: Moderada-baixa. Pode explorar padrões superficiais, não raízes.
