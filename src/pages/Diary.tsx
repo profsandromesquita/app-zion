@@ -87,6 +87,7 @@ interface DiaryEntry {
   content: string;
   created_at: string;
   updated_at: string;
+  title?: string | null;
   io_analysis?: IOAnalysis | null;
   io_phase_at_entry?: number | null;
 }
