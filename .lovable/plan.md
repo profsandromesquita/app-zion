@@ -1,119 +1,66 @@
 
 
-# Plano de Correcao: Fluxo de Testemunho e Aprovacao de Soldados
+# Reprocessar Diários — Botão Admin + Backfill io_phase_at_entry
 
-## Diagnostico Confirmado
+## Análise
 
-Dados reais do banco confirmam os problemas:
-- **1 candidatura travada** em `under_review` com testemunho em `processing` (nunca processado, sem transcrição nem analise)
-- **0 usuarios com role `pastor`** no sistema -- aprovacao tripla e impossivel
-- A pagina de curadoria (`TestimonyCuration`) exige role `admin` via `AdminRoute`, bloqueando `profissional` e `pastor`
-- O envio de testemunho NAO dispara `process-testimony` automaticamente
-- O card de aprovacao (`ApplicationApprovalCard`) nao mostra feedback sobre quais aprovacoes faltam quando o usuario ja aprovou
+- **analyze-diary** já tem `primary_category` no schema e sempre sobrescreve `io_analysis` — não há check de "já analisado". Nenhuma alteração necessária na edge function.
+- Entradas antigas precisam ser reprocessadas para ganhar `primary_category`.
+- `io_phase_at_entry` NULL precisa ser preenchido com `1` como default.
 
----
+## Alterações
 
-## Ordem de Deploy (5 etapas)
+### 1. Migration: backfill `io_phase_at_entry`
 
-### Etapa 1: Migration -- Flexibilizar aprovacao tripla
-
-**Problema:** Sem pastor no sistema, nenhuma candidatura pode ser aprovada.
-
-**Solucao:** Criar uma funcao que verifica aprovacao com logica flexivel: se nao existe usuario com role `pastor` no sistema, a aprovacao de pastor e dispensada. O trigger `check_soldado_approval_complete` sera atualizado.
-
-```text
-Logica da nova funcao check_soldado_approval_complete:
-  - admin_approved = obrigatorio
-  - profissional_approved = obrigatorio
-  - pastor_approved = obrigatorio SE existir pelo menos 1 usuario com role 'pastor'
-  - Se nao existir pastor, aprovacao completa com admin + profissional
+```sql
+UPDATE diary_entries SET io_phase_at_entry = 1 WHERE io_phase_at_entry IS NULL;
 ```
 
-**SQL (migration):**
-- Recriar a funcao `check_soldado_approval_complete` com a logica condicional
-- Atualizar a funcao `get_application_approval_status` para refletir o campo `pastor_required`
+### 2. Botão "Reprocessar Diários" no IOOverview
 
----
+**Arquivo:** `src/pages/admin/IOOverview.tsx`
 
-### Etapa 2: Edge Function -- Auto-processar testemunho apos envio
+Adicionar seção após os Overview Cards (antes do Phase Distribution) com um Card contendo:
 
-**Problema:** O testemunho e inserido com status `processing` mas a Edge Function `process-testimony` nunca e chamada automaticamente.
+- Botão "Reprocessar Diários" que ao clicar:
+  1. Busca `diary_entries` onde `io_analysis` IS NULL ou não contém `primary_category`, com `content` >= 10 chars (usando service role via RPC ou client query com admin RLS)
+  2. Itera sequencialmente chamando `supabase.functions.invoke('analyze-diary', { body: { diary_entry_id, content, user_id } })`
+  3. Delay de 1s entre chamadas
+  4. Mostra progresso: "Reprocessando X de Y..."
+  5. Ao final: toast com total reprocessado
 
-**Solucao:** Adicionar chamada a `process-testimony` no frontend imediatamente apos o INSERT do testemunho em `SoldadoTestimony.tsx`.
+- State: `reprocessing: boolean`, `reprocessProgress: { current: number, total: number } | null`
 
-**Arquivo:** `src/pages/SoldadoTestimony.tsx`
-- Apos o INSERT bem-sucedido na tabela `testimonies` (linha ~213), invocar:
-  ```typescript
-  supabase.functions.invoke("process-testimony", {
-    body: { testimony_id: insertedId }
-  });
-  ```
-- Sera fire-and-forget (nao bloqueia a UX de sucesso)
-- Requer retornar o `id` do INSERT (usar `.select('id').single()`)
+- Query para buscar entradas pendentes: buscar todas `diary_entries` e filtrar client-side as que não têm `io_analysis?.primary_category` (já que `io_analysis` é jsonb e não dá para filtrar campo interno facilmente via PostgREST)
 
----
+- Nota: admin RLS já permite SELECT em `diary_entries`? Não — RLS só permite users verem suas próprias. Precisamos de uma abordagem alternativa: criar uma **edge function `reprocess-diaries`** que roda com service role, busca as entradas pendentes e chama analyze-diary internamente (ou processa em batch).
 
-### Etapa 3: UI -- Abrir curadoria para profissional e pastor
+**Decisão de arquitetura:** Criar edge function `reprocess-diaries` que:
+1. Usa service role para buscar diary_entries pendentes
+2. Processa em batches de até 20 por invocação (respeitando timeout de 60s com ~1s delay = ~20 entradas)
+3. Retorna `{ processed, remaining, continued }` para o frontend continuar chamando
+4. Frontend faz loop automático enquanto `remaining > 0`
 
-**Problema:** `TestimonyCuration.tsx` usa `AdminRoute` que bloqueia profissional e pastor.
+### 3. Nova Edge Function: `supabase/functions/reprocess-diaries/index.ts`
 
-**Solucao:** Trocar `AdminRoute` por `RoleRoute` com roles permitidas.
+- Recebe `{ batch_size?: number }` (default 20)
+- Query com service role: `diary_entries` onde content >= 10 chars
+- Filtra client-side: `io_analysis IS NULL` ou `io_analysis` não contém `primary_category`
+- Para cada entrada (até batch_size): chama analyze-diary internamente (inline, não invoke) — copia a lógica de chamada AI diretamente para evitar overhead de invoke
+- Na verdade, mais simples: usa `supabase.functions.invoke('analyze-diary')` internamente com delay de 1.5s
+- Retorna `{ processed, remaining, total }`
 
-**Arquivo:** `src/pages/admin/TestimonyCuration.tsx`
-- Substituir `<AdminRoute>` por `<RoleRoute allowedRoles={["admin", "desenvolvedor", "profissional", "pastor"]}>`
-- Importar `RoleRoute` no lugar de `AdminRoute`
+### 4. Frontend no IOOverview
 
----
+Adicionar Card "Ferramentas de Manutenção" com:
+- Botão "Reprocessar Diários"
+- Progress bar durante execução
+- Texto "Processando X de Y..." 
+- Resultado final "Y entradas reprocessadas"
 
-### Etapa 4: UI -- Feedback de aprovacoes pendentes no card
+## Arquivos
 
-**Problema:** Apos o admin aprovar, o card some os botoes sem explicar o que falta.
-
-**Solucao:** Adicionar mensagem contextual em `ApplicationApprovalCard.tsx`.
-
-**Arquivo:** `src/components/soldado/ApplicationApprovalCard.tsx`
-- Quando `canApprove === false` e `status === "under_review"`:
-  - Mostrar banner informativo: "Sua aprovacao foi registrada. Aguardando: [lista de roles pendentes]"
-  - Calcular roles pendentes a partir de `application.approvals`
-
----
-
-### Etapa 5: UI -- Guardar curadoria antes de aprovacao
-
-**Problema:** O curador pode aprovar a candidatura ANTES do testemunho ser processado pela IA (status `processing`).
-
-**Solucao:** No `TestimonyCurationCard.tsx`, ja existe logica parcial (`canTakeAction` verifica `analyzed || processing`). Ajustar para:
-- Botoes de "Aprovar"/"Rejeitar" so aparecem quando `testimony.status === "analyzed"`
-- Quando `processing`, mostrar apenas botao "Processar" e mensagem de aguardo
-- Remover `processing` da condicao `canTakeAction` para acoes de curadoria
-
-**Arquivo:** `src/components/soldado/TestimonyCurationCard.tsx` (linha 331-333)
-```typescript
-// ANTES:
-const canTakeAction = approverRole !== null && 
-  (testimony.status === "analyzed" || testimony.status === "processing");
-
-// DEPOIS:
-const canTakeAction = approverRole !== null && testimony.status === "analyzed";
-```
-
----
-
-## Resumo de Arquivos Impactados
-
-| Arquivo | Tipo de Mudanca |
-|---|---|
-| Nova migration SQL | Recriar trigger de aprovacao flexivel |
-| `src/pages/SoldadoTestimony.tsx` | Chamar process-testimony apos envio |
-| `src/pages/admin/TestimonyCuration.tsx` | Trocar AdminRoute por RoleRoute |
-| `src/components/soldado/ApplicationApprovalCard.tsx` | Feedback de aprovacoes pendentes |
-| `src/components/soldado/TestimonyCurationCard.tsx` | Bloquear curadoria antes da analise |
-
-## Riscos e Mitigacoes
-
-- **Risco:** Flexibilizar pastor pode permitir aprovacao prematura.
-  **Mitigacao:** A logica so dispensa pastor se literalmente nao existe nenhum usuario com essa role no sistema. Quando um pastor for cadastrado, a exigencia volta automaticamente.
-
-- **Risco:** Chamada fire-and-forget do process-testimony pode falhar silenciosamente.
-  **Mitigacao:** O botao "Processar" na tela de curadoria ja existe como fallback manual.
+- `supabase/functions/reprocess-diaries/index.ts` (novo)
+- `src/pages/admin/IOOverview.tsx` (adicionar seção de reprocessamento)
+- Migration SQL para backfill `io_phase_at_entry`
 
