@@ -571,6 +571,26 @@ export function ChatSidebar({
             )}
           </div>
         )}
+
+        <Dialog open={isJourneyOpen} onOpenChange={setIsJourneyOpen}>
+          <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto p-0">
+            <DialogHeader className="p-6 pb-0">
+              <DialogTitle>Minha Jornada IO</DialogTitle>
+            </DialogHeader>
+            <div className="px-2">
+              <IOJourneySection userId={user!.id} />
+            </div>
+            <div className="p-4 pt-0">
+              <button
+                onClick={() => { setIsJourneyOpen(false); navigate('/profile'); }}
+                className="text-xs text-muted-foreground hover:underline w-full text-center"
+              >
+                Ver perfil completo →
+              </button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         <Separator className="mb-2" />
         
         {!collapsed && (
