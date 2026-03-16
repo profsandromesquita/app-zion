@@ -31,6 +31,18 @@ import { OnboardingFlow, OnboardingData } from "@/components/onboarding/Onboardi
 import { calculateNextOccurrence, formatDateTimePtBr } from "@/lib/icalendar";
 import zionLogo from "@/assets/zion-logo.png";
 import type { Database } from "@/integrations/supabase/types";
+import { useQuery } from "@tanstack/react-query";
+import { useFeatureFlag } from "@/hooks/useFeatureFlag";
+
+const PHASE_HEADER_SUBTITLES: Record<number, string> = {
+  1: 'Percebendo o que sente',
+  2: 'Separando o que é seu',
+  3: 'Descobrindo seus padrões',
+  4: 'Construindo constância',
+  5: 'Restaurando vínculos',
+  6: 'Assumindo sua vida',
+  7: 'Vivendo com inteireza',
+};
 
 type SoldadoApplicationStatus = Database["public"]["Enums"]["soldado_application_status"];
 
