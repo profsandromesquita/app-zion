@@ -19,6 +19,7 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useFeatureFlag } from "@/hooks/useFeatureFlag";
 import SafetyExit from "@/components/SafetyExit";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
