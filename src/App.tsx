@@ -27,6 +27,7 @@ import Cohorts from "./pages/admin/Cohorts";
 import IOOverview from "./pages/admin/IOOverview";
 import IODashboard from "./pages/admin/IODashboard";
 import IOMissions from "./pages/admin/IOMissions";
+import IOAudit from "./pages/admin/IOAudit";
 import SoldadoTestimony from "./pages/SoldadoTestimony";
 import SoldadoDashboard from "./pages/SoldadoDashboard";
 import Session from "./pages/Session";
@@ -66,6 +67,7 @@ const App = () => (
           <Route path="/admin/io-dashboard" element={<IODashboard />} />
           <Route path="/admin/io-missions" element={<IOMissions />} />
           <Route path="/admin/io-overview" element={<IOOverview />} />
+          <Route path="/admin/io-audit" element={<IOAudit />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
