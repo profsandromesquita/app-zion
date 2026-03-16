@@ -426,7 +426,20 @@ const Documents = () => {
                 Gerencie documentos para a Base de Conhecimento com pipeline de ingestão
               </p>
             </div>
-            <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={handleReprocessAllEmbeddings}
+                disabled={reprocessing}
+              >
+                {reprocessing ? (
+                  <div className="animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full mr-2" />
+                ) : (
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                )}
+                Reprocessar Embeddings
+              </Button>
+              <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
               <DialogTrigger asChild>
                 <Button className="bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all duration-300">
                   <Plus className="mr-2 h-4 w-4" />
