@@ -24,7 +24,8 @@ import {
   Clock, 
   AlertCircle,
   Eye,
-  Layers
+  Layers,
+  RefreshCw
 } from "lucide-react";
 
 type DocLayer = "CONSTITUICAO" | "NUCLEO" | "BIBLIOTECA";
