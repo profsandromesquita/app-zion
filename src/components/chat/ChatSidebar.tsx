@@ -46,6 +46,14 @@ interface ChatSession {
   favorited_at: string | null;
 }
 
+interface IOPhaseData {
+  current_phase: number;
+  streak_current: number;
+  total_sessions: number;
+  last_session_date: string | null;
+  igi_current: number;
+}
+
 interface ChatSidebarProps {
   user: { id: string; email?: string } | null;
   isAdmin: boolean;
@@ -54,7 +62,14 @@ interface ChatSidebarProps {
   onNewChat: () => void;
   onSignOut: () => void;
   onSidebarReady?: (refresh: () => void) => void;
+  ioPhaseData?: IOPhaseData | null;
+  isIOEnabled?: boolean;
 }
+
+const IO_PHASE_NAMES: Record<number, string> = {
+  1: 'Consciência', 2: 'Limites', 3: 'Identidade', 4: 'Ritmo',
+  5: 'Vitalidade', 6: 'Governo', 7: 'Plenitude',
+};
 
 const MAX_FAVORITES = 3;
 
