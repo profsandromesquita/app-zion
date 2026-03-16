@@ -297,7 +297,8 @@ const Diary = () => {
         if (error) throw error;
 
         setEntries((prev) => [data as DiaryEntry, ...prev]);
-        setSelectedEntry(data as DiaryEntry);
+        setSelectedEntry(null);
+        setContent('');
         setIsCreating(false);
 
         toast({
@@ -326,6 +327,8 @@ const Diary = () => {
             e.id === selectedEntry.id ? { ...e, content: content.trim() } : e
           )
         );
+        setSelectedEntry(null);
+        setContent('');
 
         toast({
           title: "Entrada atualizada",
