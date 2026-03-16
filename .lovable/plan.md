@@ -1,75 +1,119 @@
 
 
-# Redesign IOJourneySection — Narrativa Contextual
+# Plano de Correcao: Fluxo de Testemunho e Aprovacao de Soldados
 
-## Resumo
-Reescrever `src/components/profile/IOJourneySection.tsx` para transformar dados brutos em narrativa emocional. Nenhuma alteração em backend, tabelas ou edge functions.
+## Diagnostico Confirmado
 
-## Alterações em `src/components/profile/IOJourneySection.tsx`
+Dados reais do banco confirmam os problemas:
+- **1 candidatura travada** em `under_review` com testemunho em `processing` (nunca processado, sem transcrição nem analise)
+- **0 usuarios com role `pastor`** no sistema -- aprovacao tripla e impossivel
+- A pagina de curadoria (`TestimonyCuration`) exige role `admin` via `AdminRoute`, bloqueando `profissional` e `pastor`
+- O envio de testemunho NAO dispara `process-testimony` automaticamente
+- O card de aprovacao (`ApplicationApprovalCard`) nao mostra feedback sobre quais aprovacoes faltam quando o usuario ja aprovou
 
-### 1. Dados derivados (sem novas queries)
-- **Dias desde entrada na fase**: `daysSincePhaseEntry = daysDiff(phase_entered_at, now)`
-- **Adesão**: `totalSessions / daysSincePhaseEntry`
-- **Semana atual (streak visual)**: query `io_daily_sessions` dos últimos 7 dias para marcar quais dias tiveram sessão completa
+---
 
-Nova query adicional (leve):
-```typescript
-const { data: weekSessions } = useQuery({
-  queryKey: ["io-week-sessions", userId],
-  queryFn: async () => {
-    const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 6);
-    const { data } = await supabase.from("io_daily_sessions")
-      .select("session_date").eq("user_id", userId).eq("completed", true)
-      .gte("session_date", weekAgo.toISOString().split("T")[0]);
-    return new Set((data || []).map(d => d.session_date));
-  },
-});
+## Ordem de Deploy (5 etapas)
+
+### Etapa 1: Migration -- Flexibilizar aprovacao tripla
+
+**Problema:** Sem pastor no sistema, nenhuma candidatura pode ser aprovada.
+
+**Solucao:** Criar uma funcao que verifica aprovacao com logica flexivel: se nao existe usuario com role `pastor` no sistema, a aprovacao de pastor e dispensada. O trigger `check_soldado_approval_complete` sera atualizado.
+
+```text
+Logica da nova funcao check_soldado_approval_complete:
+  - admin_approved = obrigatorio
+  - profissional_approved = obrigatorio
+  - pastor_approved = obrigatorio SE existir pelo menos 1 usuario com role 'pastor'
+  - Se nao existir pastor, aprovacao completa com admin + profissional
 ```
 
-### 2. Constantes de conteúdo narrativo
-- `IGI_MESSAGES`: mapa de faixas (0-2, 2-4, 4-6, 6-8, 8-10) com frases contextuais
-- `STREAK_MESSAGES`: mapa por faixa (0, 1-2, 3-4, 5+)
-- `ADHERENCE_MESSAGES`: mapa por faixa (<30%, 30-60%, >60%)
-- `PHASE_DETAILS`: 7 entradas com descrição expandida + critério de avanço
-- IGI zero: mensagem especial
+**SQL (migration):**
+- Recriar a funcao `check_soldado_approval_complete` com a logica condicional
+- Atualizar a funcao `get_application_approval_status` para refletir o campo `pastor_required`
 
-### 3. Layout vertical (ordem)
+---
 
-**a) Barra de fases** — manter a barra de 7 círculos existente (sem mudança)
+### Etapa 2: Edge Function -- Auto-processar testemunho apos envio
 
-**b) Card da fase atual** — manter card verde, adicionar:
-- `Collapsible` com trigger "Entender esta fase" (ChevronDown)
-- Conteúdo expandido: descrição longa + "O que falta para avançar:" com texto da fase
+**Problema:** O testemunho e inserido com status `processing` mas a Edge Function `process-testimony` nunca e chamada automaticamente.
 
-**c) Índice de Integridade (IGI)**
-- Label: "Seu índice de integridade"
-- Valor `X.X / 10` com seta de tendência
-- `Progress` bar (0-10 mapeado para 0-100%)
-- Frase contextual abaixo por faixa
+**Solucao:** Adicionar chamada a `process-testimony` no frontend imediatamente apos o INSERT do testemunho em `SoldadoTestimony.tsx`.
 
-**d) Streak Visual (7 dias)**
-- Linha horizontal de 7 círculos (Seg-Dom da semana atual)
-- Preenchido verde se sessão, cinza vazio se não
-- Labels dos dias (S T Q Q S S D)
-- Frase contextual por faixa de streak
-- Número de streak menor abaixo
+**Arquivo:** `src/pages/SoldadoTestimony.tsx`
+- Apos o INSERT bem-sucedido na tabela `testimonies` (linha ~213), invocar:
+  ```typescript
+  supabase.functions.invoke("process-testimony", {
+    body: { testimony_id: insertedId }
+  });
+  ```
+- Sera fire-and-forget (nao bloqueia a UX de sucesso)
+- Requer retornar o `id` do INSERT (usar `.select('id').single()`)
 
-**e) Sessões com proporção**
-- "X sessões em Y dias"
-- Frase de adesão
+---
 
-**f) Gráfico de evolução IGI**
-- Se `igi_history.length >= 3`: manter `MiniIGIChart` existente, adicionar eixos leves
-- Se `< 3`: mensagem de construção com ícone `BarChart3` + texto motivacional
+### Etapa 3: UI -- Abrir curadoria para profissional e pastor
 
-**g) Botão de sessão** — manter como está
+**Problema:** `TestimonyCuration.tsx` usa `AdminRoute` que bloqueia profissional e pastor.
 
-### 4. Componentes usados
-- `Collapsible`, `CollapsibleTrigger`, `CollapsibleContent` de `@radix-ui/react-collapsible`
-- `Progress` existente
-- `ChevronDown` de lucide-react
-- Tailwind classes existentes (paleta emerald/lime)
+**Solucao:** Trocar `AdminRoute` por `RoleRoute` com roles permitidas.
 
-### 5. Arquivo alterado
-- `src/components/profile/IOJourneySection.tsx` (reescrita completa, ~350 linhas)
+**Arquivo:** `src/pages/admin/TestimonyCuration.tsx`
+- Substituir `<AdminRoute>` por `<RoleRoute allowedRoles={["admin", "desenvolvedor", "profissional", "pastor"]}>`
+- Importar `RoleRoute` no lugar de `AdminRoute`
+
+---
+
+### Etapa 4: UI -- Feedback de aprovacoes pendentes no card
+
+**Problema:** Apos o admin aprovar, o card some os botoes sem explicar o que falta.
+
+**Solucao:** Adicionar mensagem contextual em `ApplicationApprovalCard.tsx`.
+
+**Arquivo:** `src/components/soldado/ApplicationApprovalCard.tsx`
+- Quando `canApprove === false` e `status === "under_review"`:
+  - Mostrar banner informativo: "Sua aprovacao foi registrada. Aguardando: [lista de roles pendentes]"
+  - Calcular roles pendentes a partir de `application.approvals`
+
+---
+
+### Etapa 5: UI -- Guardar curadoria antes de aprovacao
+
+**Problema:** O curador pode aprovar a candidatura ANTES do testemunho ser processado pela IA (status `processing`).
+
+**Solucao:** No `TestimonyCurationCard.tsx`, ja existe logica parcial (`canTakeAction` verifica `analyzed || processing`). Ajustar para:
+- Botoes de "Aprovar"/"Rejeitar" so aparecem quando `testimony.status === "analyzed"`
+- Quando `processing`, mostrar apenas botao "Processar" e mensagem de aguardo
+- Remover `processing` da condicao `canTakeAction` para acoes de curadoria
+
+**Arquivo:** `src/components/soldado/TestimonyCurationCard.tsx` (linha 331-333)
+```typescript
+// ANTES:
+const canTakeAction = approverRole !== null && 
+  (testimony.status === "analyzed" || testimony.status === "processing");
+
+// DEPOIS:
+const canTakeAction = approverRole !== null && testimony.status === "analyzed";
+```
+
+---
+
+## Resumo de Arquivos Impactados
+
+| Arquivo | Tipo de Mudanca |
+|---|---|
+| Nova migration SQL | Recriar trigger de aprovacao flexivel |
+| `src/pages/SoldadoTestimony.tsx` | Chamar process-testimony apos envio |
+| `src/pages/admin/TestimonyCuration.tsx` | Trocar AdminRoute por RoleRoute |
+| `src/components/soldado/ApplicationApprovalCard.tsx` | Feedback de aprovacoes pendentes |
+| `src/components/soldado/TestimonyCurationCard.tsx` | Bloquear curadoria antes da analise |
+
+## Riscos e Mitigacoes
+
+- **Risco:** Flexibilizar pastor pode permitir aprovacao prematura.
+  **Mitigacao:** A logica so dispensa pastor se literalmente nao existe nenhum usuario com essa role no sistema. Quando um pastor for cadastrado, a exigencia volta automaticamente.
+
+- **Risco:** Chamada fire-and-forget do process-testimony pode falhar silenciosamente.
+  **Mitigacao:** O botao "Processar" na tela de curadoria ja existe como fallback manual.
 
