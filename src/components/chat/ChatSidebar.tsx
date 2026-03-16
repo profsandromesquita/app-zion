@@ -120,6 +120,8 @@ export function ChatSidebar({
   onNewChat,
   onSignOut,
   onSidebarReady,
+  ioPhaseData,
+  isIOEnabled,
 }: ChatSidebarProps) {
   const navigate = useNavigate();
   const { state, isMobile } = useSidebar();
