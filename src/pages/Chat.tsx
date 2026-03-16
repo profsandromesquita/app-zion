@@ -1175,7 +1175,7 @@ const Chat = () => {
                 <div>
                   <h1 className="font-medium text-foreground">Zion</h1>
                   <p className="text-xs text-muted-foreground">
-                    {isIOEnabled && ioPhase ? PHASE_HEADER_SUBTITLES[ioPhase] || 'Acolhimento' : 'Acolhimento'}
+                    {isIOEnabled && ioPhaseNumber ? PHASE_HEADER_SUBTITLES[ioPhaseNumber] || 'Acolhimento' : 'Acolhimento'}
                   </p>
                 </div>
               </div>
