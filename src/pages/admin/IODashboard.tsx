@@ -13,7 +13,7 @@ import {
 import {
   Users, CalendarCheck, Percent, TrendingUp, Flame, GitCompareArrows,
   AlertTriangle, AlertCircle, ArrowUpRight, ArrowDownRight, Minus,
-  ExternalLink,
+  ExternalLink, BarChart3, Info,
 } from "lucide-react";
 import { Link } from "react-router-dom";
 
