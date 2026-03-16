@@ -250,9 +250,9 @@ const DocumentChunks = () => {
 
           {/* Actions */}
           <div className="flex justify-end">
-            <Button onClick={reprocessEmbeddings}>
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Reprocessar Embeddings
+            <Button onClick={reprocessEmbeddings} disabled={reprocessing}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${reprocessing ? "animate-spin" : ""}`} />
+              {reprocessing ? "Reprocessando..." : "Reprocessar Embeddings"}
             </Button>
           </div>
 
