@@ -134,6 +134,7 @@ export function ChatSidebar({
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [isJourneyOpen, setIsJourneyOpen] = useState(false);
   const [openGroups, setOpenGroups] = useState({
     today: true,
     lastWeek: true,
