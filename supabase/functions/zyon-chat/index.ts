@@ -2375,8 +2375,20 @@ serve(async (req) => {
       low: crisisLowRaw ? parseKeywordLines(crisisLowRaw) : FALLBACK_CRISIS_KEYWORDS.low,
     };
 
-    // Get embedding config
-    const embeddingConfig = EMBEDDING_CONFIG[CURRENT_EMBEDDING_TYPE];
+    // Get embedding config - resolve at runtime based on feature flag
+    let useSemanticEmbedding = false;
+    try {
+      const { data: ragFlag } = await supabase.rpc('get_feature_flag', {
+        p_flag_name: 'io_rag_domains_enabled',
+        p_user_id: userId || null
+      });
+      useSemanticEmbedding = ragFlag === true;
+    } catch (err) {
+      console.warn("[Embedding] Feature flag check failed, using hash:", err);
+    }
+    const currentEmbeddingType = useSemanticEmbedding ? 'semantic-real' : 'simple-hash-v1';
+    const embeddingConfig = EMBEDDING_CONFIG[currentEmbeddingType];
+    console.log(`[Embedding] Mode: ${currentEmbeddingType} (flag io_rag_domains_enabled=${useSemanticEmbedding})`);
 
     // ========================================
     // STEP 1: CRISIS DETECTION (Priority Zero)
