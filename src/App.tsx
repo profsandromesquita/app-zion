@@ -26,6 +26,7 @@ import FeatureFlags from "./pages/admin/FeatureFlags";
 import Cohorts from "./pages/admin/Cohorts";
 import IOOverview from "./pages/admin/IOOverview";
 import IODashboard from "./pages/admin/IODashboard";
+import IOMissions from "./pages/admin/IOMissions";
 import SoldadoTestimony from "./pages/SoldadoTestimony";
 import SoldadoDashboard from "./pages/SoldadoDashboard";
 import Session from "./pages/Session";
