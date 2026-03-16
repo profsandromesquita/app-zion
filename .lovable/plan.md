@@ -1,119 +1,47 @@
 
 
-# Plano de Correcao: Fluxo de Testemunho e Aprovacao de Soldados
+# Plano: Integração Diário Espiritual com IO
 
-## Diagnostico Confirmado
+## Alterações
 
-Dados reais do banco confirmam os problemas:
-- **1 candidatura travada** em `under_review` com testemunho em `processing` (nunca processado, sem transcrição nem analise)
-- **0 usuarios com role `pastor`** no sistema -- aprovacao tripla e impossivel
-- A pagina de curadoria (`TestimonyCuration`) exige role `admin` via `AdminRoute`, bloqueando `profissional` e `pastor`
-- O envio de testemunho NAO dispara `process-testimony` automaticamente
-- O card de aprovacao (`ApplicationApprovalCard`) nao mostra feedback sobre quais aprovacoes faltam quando o usuario ja aprovou
+### 1. Migration SQL
 
----
+- `ALTER TABLE diary_entries ADD COLUMN io_analysis jsonb DEFAULT NULL`
+- `ALTER TABLE diary_entries ADD COLUMN io_phase_at_entry integer DEFAULT NULL`
+- Inserir flag `io_diary_integration_enabled` (global, false, description)
 
-## Ordem de Deploy (5 etapas)
+### 2. Nova edge function `analyze-diary/index.ts`
 
-### Etapa 1: Migration -- Flexibilizar aprovacao tripla
+Criar edge function separada (não modificar `io-session-feedback`) que:
+- Recebe `{ user_id, diary_entry_id, content }`
+- Chama LLM (gemini-2.5-flash-lite, temp 0.3) via tool calling para extrair:
+  - `genuineness_score` (0.0-1.0)
+  - `depth_level`: "superficial" | "moderate" | "deep"
+  - `key_themes`: string[]
+  - `emotional_tone`: "positive" | "neutral" | "negative" | "mixed"
+  - `analysis_summary`: string
+- Grava resultado em `diary_entries.io_analysis` via `UPDATE`
+- Try/catch: se falhar, grava `null`, retorna sucesso parcial
+- Se content < 10 chars: grava objeto `{ skipped: true, analysis_summary: "Registro insuficiente" }`
 
-**Problema:** Sem pastor no sistema, nenhuma candidatura pode ser aprovada.
+### 3. Frontend `src/pages/Diary.tsx`
 
-**Solucao:** Criar uma funcao que verifica aprovacao com logica flexivel: se nao existe usuario com role `pastor` no sistema, a aprovacao de pastor e dispensada. O trigger `check_soldado_approval_complete` sera atualizado.
+No `handleSave`, após salvar com sucesso:
 
-```text
-Logica da nova funcao check_soldado_approval_complete:
-  - admin_approved = obrigatorio
-  - profissional_approved = obrigatorio
-  - pastor_approved = obrigatorio SE existir pelo menos 1 usuario com role 'pastor'
-  - Se nao existir pastor, aprovacao completa com admin + profissional
-```
+- Checar flag `io_diary_integration_enabled` via `useFeatureFlag`
+- Se true:
+  - Buscar `io_user_phase.current_phase` do usuário
+  - Atualizar `diary_entries.io_phase_at_entry` com a fase
+  - Invocar `analyze-diary` edge function em background (fire-and-forget, sem bloquear UI)
 
-**SQL (migration):**
-- Recriar a funcao `check_soldado_approval_complete` com a logica condicional
-- Atualizar a funcao `get_application_approval_status` para refletir o campo `pastor_required`
+### Arquivos alterados
+- `supabase/functions/analyze-diary/index.ts` (novo)
+- `src/pages/Diary.tsx`
+- 1 migration SQL (2 colunas + flag)
+- `supabase/config.toml` — adicionar entry para `analyze-diary` com `verify_jwt = false`
 
----
-
-### Etapa 2: Edge Function -- Auto-processar testemunho apos envio
-
-**Problema:** O testemunho e inserido com status `processing` mas a Edge Function `process-testimony` nunca e chamada automaticamente.
-
-**Solucao:** Adicionar chamada a `process-testimony` no frontend imediatamente apos o INSERT do testemunho em `SoldadoTestimony.tsx`.
-
-**Arquivo:** `src/pages/SoldadoTestimony.tsx`
-- Apos o INSERT bem-sucedido na tabela `testimonies` (linha ~213), invocar:
-  ```typescript
-  supabase.functions.invoke("process-testimony", {
-    body: { testimony_id: insertedId }
-  });
-  ```
-- Sera fire-and-forget (nao bloqueia a UX de sucesso)
-- Requer retornar o `id` do INSERT (usar `.select('id').single()`)
-
----
-
-### Etapa 3: UI -- Abrir curadoria para profissional e pastor
-
-**Problema:** `TestimonyCuration.tsx` usa `AdminRoute` que bloqueia profissional e pastor.
-
-**Solucao:** Trocar `AdminRoute` por `RoleRoute` com roles permitidas.
-
-**Arquivo:** `src/pages/admin/TestimonyCuration.tsx`
-- Substituir `<AdminRoute>` por `<RoleRoute allowedRoles={["admin", "desenvolvedor", "profissional", "pastor"]}>`
-- Importar `RoleRoute` no lugar de `AdminRoute`
-
----
-
-### Etapa 4: UI -- Feedback de aprovacoes pendentes no card
-
-**Problema:** Apos o admin aprovar, o card some os botoes sem explicar o que falta.
-
-**Solucao:** Adicionar mensagem contextual em `ApplicationApprovalCard.tsx`.
-
-**Arquivo:** `src/components/soldado/ApplicationApprovalCard.tsx`
-- Quando `canApprove === false` e `status === "under_review"`:
-  - Mostrar banner informativo: "Sua aprovacao foi registrada. Aguardando: [lista de roles pendentes]"
-  - Calcular roles pendentes a partir de `application.approvals`
-
----
-
-### Etapa 5: UI -- Guardar curadoria antes de aprovacao
-
-**Problema:** O curador pode aprovar a candidatura ANTES do testemunho ser processado pela IA (status `processing`).
-
-**Solucao:** No `TestimonyCurationCard.tsx`, ja existe logica parcial (`canTakeAction` verifica `analyzed || processing`). Ajustar para:
-- Botoes de "Aprovar"/"Rejeitar" so aparecem quando `testimony.status === "analyzed"`
-- Quando `processing`, mostrar apenas botao "Processar" e mensagem de aguardo
-- Remover `processing` da condicao `canTakeAction` para acoes de curadoria
-
-**Arquivo:** `src/components/soldado/TestimonyCurationCard.tsx` (linha 331-333)
-```typescript
-// ANTES:
-const canTakeAction = approverRole !== null && 
-  (testimony.status === "analyzed" || testimony.status === "processing");
-
-// DEPOIS:
-const canTakeAction = approverRole !== null && testimony.status === "analyzed";
-```
-
----
-
-## Resumo de Arquivos Impactados
-
-| Arquivo | Tipo de Mudanca |
-|---|---|
-| Nova migration SQL | Recriar trigger de aprovacao flexivel |
-| `src/pages/SoldadoTestimony.tsx` | Chamar process-testimony apos envio |
-| `src/pages/admin/TestimonyCuration.tsx` | Trocar AdminRoute por RoleRoute |
-| `src/components/soldado/ApplicationApprovalCard.tsx` | Feedback de aprovacoes pendentes |
-| `src/components/soldado/TestimonyCurationCard.tsx` | Bloquear curadoria antes da analise |
-
-## Riscos e Mitigacoes
-
-- **Risco:** Flexibilizar pastor pode permitir aprovacao prematura.
-  **Mitigacao:** A logica so dispensa pastor se literalmente nao existe nenhum usuario com essa role no sistema. Quando um pastor for cadastrado, a exigencia volta automaticamente.
-
-- **Risco:** Chamada fire-and-forget do process-testimony pode falhar silenciosamente.
-  **Mitigacao:** O botao "Processar" na tela de curadoria ja existe como fallback manual.
+### Segurança
+- Flag OFF = zero mudança no comportamento do diário
+- Falha na análise não bloqueia save
+- Nenhum outro edge function alterado
 
