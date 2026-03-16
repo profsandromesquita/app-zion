@@ -92,8 +92,11 @@ function getTrend(history: { value: number }[]): "up" | "down" | "stable" {
 function daysDiff(dateStr: string | null): number {
   if (!dateStr) return 1;
   const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return 1;
   const now = new Date();
-  return Math.max(1, Math.floor((now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24)));
+  const diffMs = now.getTime() - d.getTime();
+  const days = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  return Math.max(1, days);
 }
 
 /** Returns ISO date strings (YYYY-MM-DD) for the current week Mon-Sun */
@@ -376,7 +379,7 @@ const IOJourneySection = ({ userId }: IOJourneySectionProps) => {
         {/* e) Sessões com proporção */}
         <div className="rounded-lg border bg-card p-4 space-y-1">
           <p className="text-sm font-medium text-foreground">
-            {totalSessions} sessão{totalSessions !== 1 ? "ões" : ""} em {daysInPhase} dia{daysInPhase !== 1 ? "s" : ""}
+            {totalSessions} {totalSessions === 1 ? "sessão" : "sessões"} em {daysInPhase} dia{daysInPhase !== 1 ? "s" : ""}
           </p>
           <p className="text-xs text-muted-foreground italic">{getAdherenceMessage(adherenceRatio)}</p>
         </div>
