@@ -1223,9 +1223,36 @@ O que você está sentindo neste momento?
 Como isso tem afetado seu dia a dia?`;
 
 // ============================================
-// EMBEDDING GENERATION (Simple hash-based)
+// EMBEDDING GENERATION
 // ============================================
 
+// Semantic embedding via OpenAI (with hash fallback)
+async function generateSemanticEmbedding(text: string): Promise<{ embedding: number[], model: string }> {
+  const apiKey = Deno.env.get("OPENAI_API_KEY");
+  if (!apiKey) {
+    console.warn("[Embedding] OPENAI_API_KEY not found, falling back to hash");
+    return { embedding: await generateSimpleEmbedding(text), model: "simple-hash-v1" };
+  }
+  try {
+    const res = await fetch("https://api.openai.com/v1/embeddings", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "text-embedding-3-small", input: text }),
+    });
+    if (!res.ok) {
+      const errBody = await res.text();
+      throw new Error(`OpenAI API error ${res.status}: ${errBody}`);
+    }
+    const data = await res.json();
+    console.log("[Embedding] Semantic embedding generated (text-embedding-3-small)");
+    return { embedding: data.data[0].embedding, model: "text-embedding-3-small" };
+  } catch (err) {
+    console.error("[Embedding] OpenAI API failed, falling back to hash:", err);
+    return { embedding: await generateSimpleEmbedding(text), model: "simple-hash-v1" };
+  }
+}
+
+// Hash-based embedding (FALLBACK)
 async function generateSimpleEmbedding(text: string): Promise<number[]> {
   const embedding: number[] = [];
   const encoder = new TextEncoder();
@@ -2348,8 +2375,20 @@ serve(async (req) => {
       low: crisisLowRaw ? parseKeywordLines(crisisLowRaw) : FALLBACK_CRISIS_KEYWORDS.low,
     };
 
-    // Get embedding config
-    const embeddingConfig = EMBEDDING_CONFIG[CURRENT_EMBEDDING_TYPE];
+    // Get embedding config - resolve at runtime based on feature flag
+    let useSemanticEmbedding = false;
+    try {
+      const { data: ragFlag } = await supabase.rpc('get_feature_flag', {
+        p_flag_name: 'io_rag_domains_enabled',
+        p_user_id: userId || null
+      });
+      useSemanticEmbedding = ragFlag === true;
+    } catch (err) {
+      console.warn("[Embedding] Feature flag check failed, using hash:", err);
+    }
+    const currentEmbeddingType = useSemanticEmbedding ? 'semantic-real' : 'simple-hash-v1';
+    const embeddingConfig = EMBEDDING_CONFIG[currentEmbeddingType];
+    console.log(`[Embedding] Mode: ${currentEmbeddingType} (flag io_rag_domains_enabled=${useSemanticEmbedding})`);
 
     // ========================================
     // STEP 1: CRISIS DETECTION (Priority Zero)
@@ -2519,7 +2558,9 @@ serve(async (req) => {
       // Vector search for chunks (PHASE 0: Adaptive threshold + fallback)
       if (ragPlan.topK > 0) {
         try {
-          const queryEmbedding = await generateSimpleEmbedding(message);
+          const queryEmbedding = useSemanticEmbedding
+            ? (await generateSemanticEmbedding(message)).embedding
+            : await generateSimpleEmbedding(message);
           
           // Build filter for layers
           const filterLayer = ragPlan.layers.length === 1 ? ragPlan.layers[0] : null;

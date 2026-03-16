@@ -1,76 +1,119 @@
 
 
-# Plano: Migração de Embedding Hash para Semântico (Fase 7 - Bloco 1)
+# Plano de Correcao: Fluxo de Testemunho e Aprovacao de Soldados
 
-## Resumo
+## Diagnostico Confirmado
 
-Substituir `generateSimpleEmbedding` (SHA-256 hash) por `generateSemanticEmbedding` (OpenAI `text-embedding-3-small`) em 3 edge functions, com fallback automático para hash em caso de falha da API.
+Dados reais do banco confirmam os problemas:
+- **1 candidatura travada** em `under_review` com testemunho em `processing` (nunca processado, sem transcrição nem analise)
+- **0 usuarios com role `pastor`** no sistema -- aprovacao tripla e impossivel
+- A pagina de curadoria (`TestimonyCuration`) exige role `admin` via `AdminRoute`, bloqueando `profissional` e `pastor`
+- O envio de testemunho NAO dispara `process-testimony` automaticamente
+- O card de aprovacao (`ApplicationApprovalCard`) nao mostra feedback sobre quais aprovacoes faltam quando o usuario ja aprovou
 
-## Alterações por Arquivo
+---
 
-### 1. `supabase/functions/ingest-document/index.ts`
+## Ordem de Deploy (5 etapas)
 
-- **Adicionar** função `generateSemanticEmbedding(text)`:
-  - Chama `POST https://api.openai.com/v1/embeddings` com `model: "text-embedding-3-small"`
-  - Usa `Deno.env.get("OPENAI_API_KEY")`
-  - Em caso de erro, loga warning e faz fallback para `generateSimpleEmbedding`
-  - Retorna `{ embedding: number[], model: string }` (para saber qual modelo foi usado)
-- **Linha 393**: Substituir `generateSimpleEmbedding(chunk.text)` por `generateSemanticEmbedding(chunk.text)`
-- **Linha 399**: Alterar `embedding_model_id` de `"simple-hash-v1"` para o modelo retornado (será `"text-embedding-3-small"` ou `"simple-hash-v1"` no fallback)
-- **Manter** `generateSimpleEmbedding` intacta como fallback
+### Etapa 1: Migration -- Flexibilizar aprovacao tripla
 
-### 2. `supabase/functions/search-chunks/index.ts`
+**Problema:** Sem pastor no sistema, nenhuma candidatura pode ser aprovada.
 
-- **Adicionar** função `generateSemanticEmbedding(text)` (mesma lógica: OpenAI API + fallback hash)
-- **Linha 42**: Substituir `generateSimpleEmbedding(query)` por `generateSemanticEmbedding(query)`
-- Adicionar log de qual embedding foi usado
-- Incluir `embedding_type` na resposta JSON
-- **Manter** `generateSimpleEmbedding` como fallback
+**Solucao:** Criar uma funcao que verifica aprovacao com logica flexivel: se nao existe usuario com role `pastor` no sistema, a aprovacao de pastor e dispensada. O trigger `check_soldado_approval_complete` sera atualizado.
 
-### 3. `supabase/functions/zyon-chat/index.ts`
-
-- **Adicionar** função `generateSemanticEmbedding(text)` (mesma lógica)
-- **Linha 2522**: Proteger com feature flag `io_rag_domains_enabled`:
-  - Flag ON: usar `generateSemanticEmbedding`, `CURRENT_EMBEDDING_TYPE = 'semantic-real'`
-  - Flag OFF: manter `generateSimpleEmbedding`, `CURRENT_EMBEDDING_TYPE = 'simple-hash-v1'`
-- A decisão de qual embedding usar é feita em runtime, não no nível da constante
-- **Manter** `generateSimpleEmbedding` intacta
-
-## Estrutura da Função `generateSemanticEmbedding`
-
-```typescript
-async function generateSemanticEmbedding(text: string): Promise<{ embedding: number[], model: string }> {
-  const apiKey = Deno.env.get("OPENAI_API_KEY");
-  if (!apiKey) {
-    console.warn("[Embedding] OPENAI_API_KEY not found, falling back to hash");
-    return { embedding: await generateSimpleEmbedding(text), model: "simple-hash-v1" };
-  }
-  try {
-    const res = await fetch("https://api.openai.com/v1/embeddings", {
-      method: "POST",
-      headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ model: "text-embedding-3-small", input: text }),
-    });
-    if (!res.ok) throw new Error(`OpenAI API error: ${res.status}`);
-    const data = await res.json();
-    console.log("[Embedding] Semantic embedding generated successfully");
-    return { embedding: data.data[0].embedding, model: "text-embedding-3-small" };
-  } catch (err) {
-    console.error("[Embedding] OpenAI API failed, falling back to hash:", err);
-    return { embedding: await generateSimpleEmbedding(text), model: "simple-hash-v1" };
-  }
-}
+```text
+Logica da nova funcao check_soldado_approval_complete:
+  - admin_approved = obrigatorio
+  - profissional_approved = obrigatorio
+  - pastor_approved = obrigatorio SE existir pelo menos 1 usuario com role 'pastor'
+  - Se nao existir pastor, aprovacao completa com admin + profissional
 ```
 
-## O que NÃO muda
+**SQL (migration):**
+- Recriar a funcao `check_soldado_approval_complete` com a logica condicional
+- Atualizar a funcao `get_application_approval_status` para refletir o campo `pastor_required`
 
-- Schema da tabela `chunks` (vector(1536) compatível)
-- Função RPC `search_chunks`
-- Pipeline de chat, montagem de prompt, validator
-- Lógica de crise, intent router, guardrails
-- Feature flags existentes (valores permanecem `false`)
+---
 
-## Nota sobre Compatibilidade
+### Etapa 2: Edge Function -- Auto-processar testemunho apos envio
 
-Chunks antigos (hash) e novos (semântico) coexistirão na tabela. A busca semântica só retornará resultados de alta qualidade quando os chunks forem reprocessados (Bloco 2). Enquanto isso, o fallback de threshold baixo do `search_chunks` RPC garante continuidade.
+**Problema:** O testemunho e inserido com status `processing` mas a Edge Function `process-testimony` nunca e chamada automaticamente.
+
+**Solucao:** Adicionar chamada a `process-testimony` no frontend imediatamente apos o INSERT do testemunho em `SoldadoTestimony.tsx`.
+
+**Arquivo:** `src/pages/SoldadoTestimony.tsx`
+- Apos o INSERT bem-sucedido na tabela `testimonies` (linha ~213), invocar:
+  ```typescript
+  supabase.functions.invoke("process-testimony", {
+    body: { testimony_id: insertedId }
+  });
+  ```
+- Sera fire-and-forget (nao bloqueia a UX de sucesso)
+- Requer retornar o `id` do INSERT (usar `.select('id').single()`)
+
+---
+
+### Etapa 3: UI -- Abrir curadoria para profissional e pastor
+
+**Problema:** `TestimonyCuration.tsx` usa `AdminRoute` que bloqueia profissional e pastor.
+
+**Solucao:** Trocar `AdminRoute` por `RoleRoute` com roles permitidas.
+
+**Arquivo:** `src/pages/admin/TestimonyCuration.tsx`
+- Substituir `<AdminRoute>` por `<RoleRoute allowedRoles={["admin", "desenvolvedor", "profissional", "pastor"]}>`
+- Importar `RoleRoute` no lugar de `AdminRoute`
+
+---
+
+### Etapa 4: UI -- Feedback de aprovacoes pendentes no card
+
+**Problema:** Apos o admin aprovar, o card some os botoes sem explicar o que falta.
+
+**Solucao:** Adicionar mensagem contextual em `ApplicationApprovalCard.tsx`.
+
+**Arquivo:** `src/components/soldado/ApplicationApprovalCard.tsx`
+- Quando `canApprove === false` e `status === "under_review"`:
+  - Mostrar banner informativo: "Sua aprovacao foi registrada. Aguardando: [lista de roles pendentes]"
+  - Calcular roles pendentes a partir de `application.approvals`
+
+---
+
+### Etapa 5: UI -- Guardar curadoria antes de aprovacao
+
+**Problema:** O curador pode aprovar a candidatura ANTES do testemunho ser processado pela IA (status `processing`).
+
+**Solucao:** No `TestimonyCurationCard.tsx`, ja existe logica parcial (`canTakeAction` verifica `analyzed || processing`). Ajustar para:
+- Botoes de "Aprovar"/"Rejeitar" so aparecem quando `testimony.status === "analyzed"`
+- Quando `processing`, mostrar apenas botao "Processar" e mensagem de aguardo
+- Remover `processing` da condicao `canTakeAction` para acoes de curadoria
+
+**Arquivo:** `src/components/soldado/TestimonyCurationCard.tsx` (linha 331-333)
+```typescript
+// ANTES:
+const canTakeAction = approverRole !== null && 
+  (testimony.status === "analyzed" || testimony.status === "processing");
+
+// DEPOIS:
+const canTakeAction = approverRole !== null && testimony.status === "analyzed";
+```
+
+---
+
+## Resumo de Arquivos Impactados
+
+| Arquivo | Tipo de Mudanca |
+|---|---|
+| Nova migration SQL | Recriar trigger de aprovacao flexivel |
+| `src/pages/SoldadoTestimony.tsx` | Chamar process-testimony apos envio |
+| `src/pages/admin/TestimonyCuration.tsx` | Trocar AdminRoute por RoleRoute |
+| `src/components/soldado/ApplicationApprovalCard.tsx` | Feedback de aprovacoes pendentes |
+| `src/components/soldado/TestimonyCurationCard.tsx` | Bloquear curadoria antes da analise |
+
+## Riscos e Mitigacoes
+
+- **Risco:** Flexibilizar pastor pode permitir aprovacao prematura.
+  **Mitigacao:** A logica so dispensa pastor se literalmente nao existe nenhum usuario com essa role no sistema. Quando um pastor for cadastrado, a exigencia volta automaticamente.
+
+- **Risco:** Chamada fire-and-forget do process-testimony pode falhar silenciosamente.
+  **Mitigacao:** O botao "Processar" na tela de curadoria ja existe como fallback manual.
 
