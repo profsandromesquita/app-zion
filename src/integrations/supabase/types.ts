@@ -901,6 +901,7 @@ export type Database = {
           mission_id: string | null
           phase_at_session: number
           reforco_identitario: string | null
+          registro_analysis: Json | null
           registro_text: string | null
           session_date: string
           updated_at: string
@@ -926,6 +927,7 @@ export type Database = {
           mission_id?: string | null
           phase_at_session: number
           reforco_identitario?: string | null
+          registro_analysis?: Json | null
           registro_text?: string | null
           session_date: string
           updated_at?: string
@@ -951,6 +953,7 @@ export type Database = {
           mission_id?: string | null
           phase_at_session?: number
           reforco_identitario?: string | null
+          registro_analysis?: Json | null
           registro_text?: string | null
           session_date?: string
           updated_at?: string
