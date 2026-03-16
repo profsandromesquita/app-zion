@@ -850,7 +850,8 @@ function validateResponseIO(
   lowConfidenceRAG: boolean,
   isSessionDaily: boolean,
   crisisRiskLevel: string, // 'none' | 'low' | 'medium' | 'high'
-  isRagFoundationRequired: boolean = false
+  isRagFoundationRequired: boolean = false,
+  userMessage: string = ''
 ): ValidationResult {
   const issues: ValidationIssue[] = [];
   const rewriteInstructions: string[] = [];
