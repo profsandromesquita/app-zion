@@ -51,7 +51,18 @@ serve(async (req) => {
     }
 
     // Call LLM with tool calling for structured output
-    const systemPrompt = `Você é um analista de reflexões espirituais. Analise o texto do diário e extraia informações estruturadas sobre a qualidade e profundidade da reflexão. Responda APENAS usando a ferramenta fornecida.`;
+    const systemPrompt = `Você é um analista de reflexões espirituais. Analise o texto do diário e extraia informações estruturadas sobre a qualidade e profundidade da reflexão. Responda APENAS usando a ferramenta fornecida.
+
+Classifique também a categoria principal da reflexão:
+- familia: sobre pais, filhos, cônjuge, parentes, dinâmica familiar
+- carreira: sobre trabalho, profissão, estudos, carreira
+- relacionamento: sobre amizades, namoro, casamento, vínculos afetivos
+- autoestima: sobre valor próprio, autoimagem, insegurança pessoal
+- saude: sobre corpo, doença, saúde mental, hábitos físicos
+- financas: sobre dinheiro, dívidas, provisão, estabilidade financeira
+- fe_espiritualidade: sobre Deus, oração, fé, dúvidas espirituais
+- autoconhecimento: sobre padrões internos, descobertas pessoais, reflexão profunda
+- outro: quando não se encaixa claramente em nenhuma categoria acima`;
 
     const userPrompt = `Analise esta reflexão espontânea de um diário espiritual:\n\n"${content}"`;
 
@@ -103,8 +114,17 @@ serve(async (req) => {
                       type: "string",
                       description: "Uma frase resumindo a reflexão",
                     },
+                    primary_category: {
+                      type: "string",
+                      enum: [
+                        "familia", "carreira", "relacionamento",
+                        "autoestima", "saude", "financas",
+                        "fe_espiritualidade", "autoconhecimento", "outro"
+                      ],
+                      description: "Categoria principal da reflexão baseada no tema dominante. Escolha a que melhor representa o foco central do texto.",
+                    },
                   },
-                  required: ["genuineness_score", "depth_level", "key_themes", "emotional_tone", "analysis_summary"],
+                  required: ["genuineness_score", "depth_level", "key_themes", "emotional_tone", "analysis_summary", "primary_category"],
                   additionalProperties: false,
                 },
               },
