@@ -467,7 +467,7 @@ const Diary = () => {
                 >
                   <CardHeader className="p-3">
                     <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
+                        <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5">
                           <CardTitle className="text-sm font-medium">
                             {format(new Date(entry.created_at), "d 'de' MMMM", {
@@ -480,10 +480,22 @@ const Diary = () => {
                             </span>
                           )}
                         </div>
-                        <p className="mt-1 truncate text-xs text-muted-foreground">
-                          {entry.content.substring(0, 50)}
-                          {entry.content.length > 50 ? "..." : ""}
-                        </p>
+                        {entry.title ? (
+                          <>
+                            <p className="mt-1 truncate text-sm font-medium text-foreground">
+                              {entry.title}
+                            </p>
+                            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                              {entry.content.substring(0, 50)}
+                              {entry.content.length > 50 ? "..." : ""}
+                            </p>
+                          </>
+                        ) : (
+                          <p className="mt-1 truncate text-xs text-muted-foreground">
+                            {entry.content.substring(0, 50)}
+                            {entry.content.length > 50 ? "..." : ""}
+                          </p>
+                        )}
                         <EntryIOBadges entry={entry} isDiaryIOEnabled={isDiaryIOEnabled} />
                       </div>
                       <AlertDialog>
