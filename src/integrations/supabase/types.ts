@@ -2297,10 +2297,14 @@ export type Database = {
         }
         Returns: {
           doc_id: string
+          doc_status: Database["public"]["Enums"]["doc_status"]
+          doc_title: string
           domain: string
+          embedding_model_id: string
           id: string
           layer: Database["public"]["Enums"]["doc_layer"]
           priority: number
+          retrievable: boolean
           section_path: Json
           similarity: number
           tags_json: Json
