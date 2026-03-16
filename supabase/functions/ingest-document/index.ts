@@ -386,17 +386,14 @@ serve(async (req) => {
                 .update({ embedding_status: "processing" })
                 .eq("id", chunk.id);
 
-              // Gerar embedding usando Lovable AI (Gemini como proxy para embeddings)
-              // Nota: Lovable AI não suporta embeddings nativamente, então usamos uma alternativa
-              // Aqui simulamos com um vetor de 1536 dimensões baseado em hash do texto
-              // Em produção, você usaria OpenAI text-embedding-ada-002 ou similar
-              const embedding = await generateSimpleEmbedding(chunk.text);
+              // Gerar embedding semântico (com fallback para hash)
+              const { embedding, model: embeddingModel } = await generateSemanticEmbedding(chunk.text);
 
               await supabase
                 .from("chunks")
                 .update({ 
                   embedding,
-                  embedding_model_id: "simple-hash-v1",
+                  embedding_model_id: embeddingModel,
                   embedding_status: "ok"
                 })
                 .eq("id", chunk.id);
