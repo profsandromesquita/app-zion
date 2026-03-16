@@ -1217,6 +1217,7 @@ async function handleEvaluate(supabase: any, userId: string) {
         blocked_by_observer: blockedByObserver,
         registro_analysis_summary: registroSummary || null,
         blocked_by_registro: registroBlock,
+        diary_signals: diarySignals || null,
       },
     });
   }
