@@ -297,7 +297,8 @@ const Diary = () => {
         if (error) throw error;
 
         setEntries((prev) => [data as DiaryEntry, ...prev]);
-        setSelectedEntry(data as DiaryEntry);
+        setSelectedEntry(null);
+        setContent('');
         setIsCreating(false);
 
         toast({
