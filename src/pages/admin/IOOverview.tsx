@@ -15,7 +15,9 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import { Loader2, Activity, Users, TrendingUp, Flame, Play, Eye, Settings2, AlertTriangle, GitCompareArrows, Brain } from "lucide-react";
+import { Loader2, Activity, Users, TrendingUp, Flame, Play, Eye, Settings2, AlertTriangle, GitCompareArrows, Brain, RefreshCw } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
+import { toast } from "@/hooks/use-toast";
 
 const OBSERVER_TO_IO_RANGE: Record<string, number[]> = {
   ACOLHIMENTO: [1],
