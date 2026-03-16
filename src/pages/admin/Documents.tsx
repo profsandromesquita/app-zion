@@ -24,7 +24,8 @@ import {
   Clock, 
   AlertCircle,
   Eye,
-  Layers
+  Layers,
+  RefreshCw
 } from "lucide-react";
 
 type DocLayer = "CONSTITUICAO" | "NUCLEO" | "BIBLIOTECA";
@@ -87,6 +88,7 @@ const Documents = () => {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [processing, setProcessing] = useState<string | null>(null);
+  const [reprocessing, setReprocessing] = useState(false);
   
   // Form state
   const [formData, setFormData] = useState({
@@ -367,6 +369,40 @@ const Documents = () => {
     }
   };
 
+  const handleReprocessAllEmbeddings = async () => {
+    setReprocessing(true);
+    let totalSuccess = 0;
+    let totalFailed = 0;
+    let batchNum = 0;
+
+    try {
+      toast.info("Iniciando reprocessamento de embeddings...");
+
+      let continued = true;
+      while (continued) {
+        batchNum++;
+        const { data, error } = await supabase.functions.invoke("ingest-document", {
+          body: { action: "reprocess_all_embeddings" },
+        });
+
+        if (error) throw error;
+
+        totalSuccess += data.success_count || 0;
+        totalFailed += data.failed || 0;
+        continued = data.continued || false;
+
+        toast.info(`Batch ${batchNum}: ${data.success_count} ok, ${data.failed} falhas. Restam: ${data.remaining}`);
+      }
+
+      toast.success(`Reprocessamento completo! ${totalSuccess} atualizados, ${totalFailed} falhas.`);
+    } catch (err) {
+      console.error("Reprocess error:", err);
+      toast.error(`Erro no batch ${batchNum}. ${totalSuccess} já processados.`);
+    } finally {
+      setReprocessing(false);
+    }
+  };
+
   const resetForm = () => {
     setFormData({ title: "", layer: "BIBLIOTECA", domain: "geral", rawText: "" });
     setEditingId(null);
@@ -390,7 +426,20 @@ const Documents = () => {
                 Gerencie documentos para a Base de Conhecimento com pipeline de ingestão
               </p>
             </div>
-            <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={handleReprocessAllEmbeddings}
+                disabled={reprocessing}
+              >
+                {reprocessing ? (
+                  <div className="animate-spin h-4 w-4 border-2 border-primary border-t-transparent rounded-full mr-2" />
+                ) : (
+                  <RefreshCw className="h-4 w-4 mr-2" />
+                )}
+                Reprocessar Embeddings
+              </Button>
+              <Dialog open={dialogOpen} onOpenChange={(open) => { setDialogOpen(open); if (!open) resetForm(); }}>
               <DialogTrigger asChild>
                 <Button className="bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all duration-300">
                   <Plus className="mr-2 h-4 w-4" />
@@ -498,6 +547,7 @@ const Documents = () => {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
+            </div>
           </div>
 
           {/* Documents List */}
