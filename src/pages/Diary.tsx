@@ -60,10 +60,10 @@ const PHASE_PLACEHOLDERS: Record<number, string> = {
   7: "O que você aprendeu sobre si mesmo que gostaria de lembrar?",
 };
 
-const DEPTH_MAP: Record<string, { color: string; label: string }> = {
-  deep: { color: "bg-emerald-500", label: "profundo" },
-  moderate: { color: "bg-yellow-500", label: "moderado" },
-  superficial: { color: "bg-muted-foreground/50", label: "breve" },
+const DEPTH_MAP: Record<string, { color: string; label: string; variant: string }> = {
+  deep: { color: "bg-emerald-500", label: "profundo", variant: "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300" },
+  moderate: { color: "bg-yellow-500", label: "moderado", variant: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" },
+  superficial: { color: "bg-muted-foreground/50", label: "breve", variant: "bg-slate-100 text-slate-500 dark:bg-slate-800/40 dark:text-slate-400" },
 };
 
 const TONE_MAP: Record<string, { variant: string; label: string }> = {
