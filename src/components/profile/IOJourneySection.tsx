@@ -379,7 +379,7 @@ const IOJourneySection = ({ userId }: IOJourneySectionProps) => {
         {/* e) Sessões com proporção */}
         <div className="rounded-lg border bg-card p-4 space-y-1">
           <p className="text-sm font-medium text-foreground">
-            {totalSessions} sessão{totalSessions !== 1 ? "ões" : ""} em {daysInPhase} dia{daysInPhase !== 1 ? "s" : ""}
+            {totalSessions} {totalSessions === 1 ? "sessão" : "sessões"} em {daysInPhase} dia{daysInPhase !== 1 ? "s" : ""}
           </p>
           <p className="text-xs text-muted-foreground italic">{getAdherenceMessage(adherenceRatio)}</p>
         </div>
