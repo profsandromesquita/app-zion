@@ -866,7 +866,12 @@ async function handleEvaluate(supabase: any, userId: string) {
   });
   const isRegistroAnalysisEnabled = registroFlagResult === true;
 
-  // STEP 2: Fetch current state
+  // STEP 1.7: Diary integration feature flag check
+  const { data: diaryFlagResult } = await supabase.rpc("get_feature_flag", {
+    p_flag_name: "io_diary_integration_enabled",
+    p_user_id: userId,
+  });
+  const isDiaryIntegrationEnabled = diaryFlagResult === true;
   let { data: userPhase } = await supabase
     .from("io_user_phase")
     .select("*")
