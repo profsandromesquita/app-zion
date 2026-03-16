@@ -393,11 +393,23 @@ const Session = () => {
     }
   };
 
+  const FALLBACK_FEEDBACK = "Que bom que você dedicou esse tempo para si hoje. Cada passo conta na sua jornada.";
+
+  const saveFallbackFeedback = useCallback(async (text: string) => {
+    setFeedback(text);
+    if (sessionId) {
+      await supabase
+        .from("io_daily_sessions")
+        .update({ feedback_generated: text })
+        .eq("id", sessionId);
+    }
+  }, [sessionId]);
+
   const handleFeedback = useCallback(async () => {
     if (feedbackLoading || feedback) return;
     setFeedbackLoading(true);
     try {
-      const { data, error } = await supabase.functions.invoke("io-session-feedback", {
+      const feedbackPromise = supabase.functions.invoke("io-session-feedback", {
         body: {
           user_id: user!.id,
           session_id: sessionId,
@@ -407,6 +419,12 @@ const Session = () => {
         },
       });
 
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("Feedback timeout")), 15000)
+      );
+
+      const { data, error } = await Promise.race([feedbackPromise, timeoutPromise]);
+
       if (error || !data?.feedback) throw new Error("No feedback");
 
       setFeedback(data.feedback);
@@ -415,18 +433,11 @@ const Session = () => {
         .update({ feedback_generated: data.feedback })
         .eq("id", sessionId!);
     } catch {
-      const fallback = "Você completou mais um passo na sua jornada. A constância constrói o que a motivação apenas começa.";
-      setFeedback(fallback);
-      if (sessionId) {
-        await supabase
-          .from("io_daily_sessions")
-          .update({ feedback_generated: fallback })
-          .eq("id", sessionId);
-      }
+      await saveFallbackFeedback(FALLBACK_FEEDBACK);
     } finally {
       setFeedbackLoading(false);
     }
-  }, [feedbackLoading, feedback, user, sessionId, scales, selectedMood, userPhase]);
+  }, [feedbackLoading, feedback, user, sessionId, scales, selectedMood, userPhase, saveFallbackFeedback]);
 
   useEffect(() => {
     if (currentStep === 5 && !feedback && !feedbackLoading) {
@@ -770,24 +781,30 @@ const Session = () => {
               </div>
 
               {feedbackLoading ? (
-                <div className="flex justify-center py-12">
+                <div className="flex flex-col items-center gap-3 py-12">
                   <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                  <p className="text-xs text-muted-foreground">Gerando reflexão personalizada…</p>
                 </div>
               ) : (
                 <Card className="bg-primary/5 border-primary/20">
                   <CardContent className="p-6">
-                    <p className="text-foreground leading-relaxed">{feedback}</p>
+                    <p className="text-foreground leading-relaxed">{feedback || FALLBACK_FEEDBACK}</p>
                   </CardContent>
                 </Card>
               )}
 
               <Button
-                onClick={() => setCurrentStep(6)}
-                disabled={feedbackLoading}
+                onClick={async () => {
+                  if (feedbackLoading) {
+                    setFeedbackLoading(false);
+                    await saveFallbackFeedback(FALLBACK_FEEDBACK);
+                  }
+                  setCurrentStep(6);
+                }}
                 className="w-full"
                 size="lg"
               >
-                Continuar
+                {feedbackLoading ? "Continuar sem feedback" : "Continuar"}
               </Button>
             </div>
           )}
