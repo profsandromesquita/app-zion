@@ -87,6 +87,7 @@ interface DiaryEntry {
   content: string;
   created_at: string;
   updated_at: string;
+  title?: string | null;
   io_analysis?: IOAnalysis | null;
   io_phase_at_entry?: number | null;
 }
@@ -231,7 +232,7 @@ const Diary = () => {
 
     const { data, error } = await supabase
       .from("diary_entries")
-      .select("id, content, created_at, updated_at, io_analysis, io_phase_at_entry")
+      .select("id, content, created_at, updated_at, title, io_analysis, io_phase_at_entry")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
 
@@ -304,6 +305,13 @@ const Diary = () => {
           description: "Sua reflexão foi registrada com sucesso.",
         });
 
+        // Always generate title (independent of IO flag)
+        supabase.functions.invoke("generate-diary-title", {
+          body: { diary_entry_id: data.id, content: content.trim() },
+        }).catch((err) => console.warn("Diary title gen failed:", err));
+
+        setTimeout(() => loadEntries(), 3000);
+
         triggerIOAnalysis(data.id, content.trim());
       } else if (selectedEntry) {
         const { error } = await supabase
@@ -323,6 +331,13 @@ const Diary = () => {
           title: "Entrada atualizada",
           description: "Suas alterações foram salvas.",
         });
+
+        // Always generate title (independent of IO flag)
+        supabase.functions.invoke("generate-diary-title", {
+          body: { diary_entry_id: selectedEntry.id, content: content.trim() },
+        }).catch((err) => console.warn("Diary title gen failed:", err));
+
+        setTimeout(() => loadEntries(), 3000);
 
         triggerIOAnalysis(selectedEntry.id, content.trim());
       }
@@ -452,7 +467,7 @@ const Diary = () => {
                 >
                   <CardHeader className="p-3">
                     <div className="flex items-start justify-between gap-2">
-                      <div className="min-w-0 flex-1">
+                        <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-1.5">
                           <CardTitle className="text-sm font-medium">
                             {format(new Date(entry.created_at), "d 'de' MMMM", {
@@ -465,10 +480,22 @@ const Diary = () => {
                             </span>
                           )}
                         </div>
-                        <p className="mt-1 truncate text-xs text-muted-foreground">
-                          {entry.content.substring(0, 50)}
-                          {entry.content.length > 50 ? "..." : ""}
-                        </p>
+                        {entry.title ? (
+                          <>
+                            <p className="mt-1 truncate text-sm font-medium text-foreground">
+                              {entry.title}
+                            </p>
+                            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                              {entry.content.substring(0, 50)}
+                              {entry.content.length > 50 ? "..." : ""}
+                            </p>
+                          </>
+                        ) : (
+                          <p className="mt-1 truncate text-xs text-muted-foreground">
+                            {entry.content.substring(0, 50)}
+                            {entry.content.length > 50 ? "..." : ""}
+                          </p>
+                        )}
                         <EntryIOBadges entry={entry} isDiaryIOEnabled={isDiaryIOEnabled} />
                       </div>
                       <AlertDialog>
@@ -515,20 +542,25 @@ const Diary = () => {
           <>
             <div className="flex items-center justify-between border-b border-border p-4">
               <div>
-                <h2 className="font-medium text-foreground">
-                  {isCreating
-                    ? "Nova Entrada"
-                    : format(new Date(selectedEntry!.created_at), "EEEE, d 'de' MMMM 'de' yyyy", {
+                {isCreating ? (
+                  <h2 className="font-medium text-foreground">Nova Entrada</h2>
+                ) : (
+                  <>
+                    {selectedEntry?.title && (
+                      <h2 className="text-lg font-semibold text-foreground">{selectedEntry.title}</h2>
+                    )}
+                    <p className={`text-sm text-muted-foreground ${selectedEntry?.title ? '' : 'font-medium text-foreground'}`}>
+                      {format(new Date(selectedEntry!.created_at), "EEEE, d 'de' MMMM 'de' yyyy", {
                         locale: ptBR,
                       })}
-                </h2>
-                {!isCreating && (
-                  <p className="text-xs text-muted-foreground">
-                    Última edição:{" "}
-                    {format(new Date(selectedEntry!.updated_at), "HH:mm", {
-                      locale: ptBR,
-                    })}
-                  </p>
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Última edição:{" "}
+                      {format(new Date(selectedEntry!.updated_at), "HH:mm", {
+                        locale: ptBR,
+                      })}
+                    </p>
+                  </>
                 )}
               </div>
               <Button onClick={handleSave} disabled={!content.trim() || isSaving} className="bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all duration-300">

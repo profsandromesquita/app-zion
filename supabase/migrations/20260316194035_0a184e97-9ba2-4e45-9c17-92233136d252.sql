@@ -1,0 +1,1 @@
+ALTER TABLE diary_entries ADD COLUMN title text DEFAULT NULL;

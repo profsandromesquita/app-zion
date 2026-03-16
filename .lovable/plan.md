@@ -1,53 +1,119 @@
 
 
-# Títulos Automáticos para o Diário Espiritual
+# Plano de Correcao: Fluxo de Testemunho e Aprovacao de Soldados
 
-## Resumo
-Adicionar coluna `title` em `diary_entries`, criar edge function `generate-diary-title` (mesma lógica do chat), chamar fire-and-forget ao salvar, e exibir título na sidebar e na visualização.
+## Diagnostico Confirmado
 
-## Alterações
+Dados reais do banco confirmam os problemas:
+- **1 candidatura travada** em `under_review` com testemunho em `processing` (nunca processado, sem transcrição nem analise)
+- **0 usuarios com role `pastor`** no sistema -- aprovacao tripla e impossivel
+- A pagina de curadoria (`TestimonyCuration`) exige role `admin` via `AdminRoute`, bloqueando `profissional` e `pastor`
+- O envio de testemunho NAO dispara `process-testimony` automaticamente
+- O card de aprovacao (`ApplicationApprovalCard`) nao mostra feedback sobre quais aprovacoes faltam quando o usuario ja aprovou
 
-### 1. Migration — coluna title
-```sql
-ALTER TABLE diary_entries ADD COLUMN title text DEFAULT NULL;
+---
+
+## Ordem de Deploy (5 etapas)
+
+### Etapa 1: Migration -- Flexibilizar aprovacao tripla
+
+**Problema:** Sem pastor no sistema, nenhuma candidatura pode ser aprovada.
+
+**Solucao:** Criar uma funcao que verifica aprovacao com logica flexivel: se nao existe usuario com role `pastor` no sistema, a aprovacao de pastor e dispensada. O trigger `check_soldado_approval_complete` sera atualizado.
+
+```text
+Logica da nova funcao check_soldado_approval_complete:
+  - admin_approved = obrigatorio
+  - profissional_approved = obrigatorio
+  - pastor_approved = obrigatorio SE existir pelo menos 1 usuario com role 'pastor'
+  - Se nao existir pastor, aprovacao completa com admin + profissional
 ```
 
-### 2. Edge Function `supabase/functions/generate-diary-title/index.ts`
-- Entrada: `{ diary_entry_id, content }`
-- Verifica se já tem título (skip se sim), skip se content < 10 chars
-- Chama Lovable AI (gemini-2.5-flash-lite, temp 0.3, max_tokens 20) com system prompt para gerar título 3-5 palavras em português
-- Limpa aspas, limita 50 chars, UPDATE diary_entries SET title
-- Se falhar: retorna sem gravar (fallback no frontend)
-- Config.toml: `[functions.generate-diary-title] verify_jwt = false`
+**SQL (migration):**
+- Recriar a funcao `check_soldado_approval_complete` com a logica condicional
+- Atualizar a funcao `get_application_approval_status` para refletir o campo `pastor_required`
 
-### 3. `src/pages/Diary.tsx` — Chamada + UI
+---
 
-**Interface**: Adicionar `title?: string | null` ao `DiaryEntry`.
+### Etapa 2: Edge Function -- Auto-processar testemunho apos envio
 
-**Select**: Adicionar `title` ao `.select(...)` do `loadEntries`.
+**Problema:** O testemunho e inserido com status `processing` mas a Edge Function `process-testimony` nunca e chamada automaticamente.
 
-**Chamada fire-and-forget**: Extrair a chamada de `generate-diary-title` para FORA do `triggerIOAnalysis` (que é condicionada a flag IO). No `handleSave`, após o save bem-sucedido (tanto create quanto update):
+**Solucao:** Adicionar chamada a `process-testimony` no frontend imediatamente apos o INSERT do testemunho em `SoldadoTestimony.tsx`.
 
+**Arquivo:** `src/pages/SoldadoTestimony.tsx`
+- Apos o INSERT bem-sucedido na tabela `testimonies` (linha ~213), invocar:
+  ```typescript
+  supabase.functions.invoke("process-testimony", {
+    body: { testimony_id: insertedId }
+  });
+  ```
+- Sera fire-and-forget (nao bloqueia a UX de sucesso)
+- Requer retornar o `id` do INSERT (usar `.select('id').single()`)
+
+---
+
+### Etapa 3: UI -- Abrir curadoria para profissional e pastor
+
+**Problema:** `TestimonyCuration.tsx` usa `AdminRoute` que bloqueia profissional e pastor.
+
+**Solucao:** Trocar `AdminRoute` por `RoleRoute` com roles permitidas.
+
+**Arquivo:** `src/pages/admin/TestimonyCuration.tsx`
+- Substituir `<AdminRoute>` por `<RoleRoute allowedRoles={["admin", "desenvolvedor", "profissional", "pastor"]}>`
+- Importar `RoleRoute` no lugar de `AdminRoute`
+
+---
+
+### Etapa 4: UI -- Feedback de aprovacoes pendentes no card
+
+**Problema:** Apos o admin aprovar, o card some os botoes sem explicar o que falta.
+
+**Solucao:** Adicionar mensagem contextual em `ApplicationApprovalCard.tsx`.
+
+**Arquivo:** `src/components/soldado/ApplicationApprovalCard.tsx`
+- Quando `canApprove === false` e `status === "under_review"`:
+  - Mostrar banner informativo: "Sua aprovacao foi registrada. Aguardando: [lista de roles pendentes]"
+  - Calcular roles pendentes a partir de `application.approvals`
+
+---
+
+### Etapa 5: UI -- Guardar curadoria antes de aprovacao
+
+**Problema:** O curador pode aprovar a candidatura ANTES do testemunho ser processado pela IA (status `processing`).
+
+**Solucao:** No `TestimonyCurationCard.tsx`, ja existe logica parcial (`canTakeAction` verifica `analyzed || processing`). Ajustar para:
+- Botoes de "Aprovar"/"Rejeitar" so aparecem quando `testimony.status === "analyzed"`
+- Quando `processing`, mostrar apenas botao "Processar" e mensagem de aguardo
+- Remover `processing` da condicao `canTakeAction` para acoes de curadoria
+
+**Arquivo:** `src/components/soldado/TestimonyCurationCard.tsx` (linha 331-333)
 ```typescript
-// Sempre (independente de flag IO):
-supabase.functions.invoke('generate-diary-title', {
-  body: { diary_entry_id: id, content: content.trim() }
-}).catch(err => console.warn("Diary title gen failed:", err));
+// ANTES:
+const canTakeAction = approverRole !== null && 
+  (testimony.status === "analyzed" || testimony.status === "processing");
 
-// Reload após delay
-setTimeout(() => loadEntries(), 3000);
-
-// Condicional IO:
-triggerIOAnalysis(id, content.trim());
+// DEPOIS:
+const canTakeAction = approverRole !== null && testimony.status === "analyzed";
 ```
 
-**Sidebar cards**: Se `entry.title` existe, mostrar título como texto principal (font-medium) e conteúdo truncado menor abaixo (text-xs muted). Se não, manter como hoje.
+---
 
-**Visualização**: Se `selectedEntry.title` existe, mostrar como heading `text-lg font-semibold mb-2` acima do conteúdo. Data abaixo em `text-sm text-muted-foreground`. Se não, manter como hoje.
+## Resumo de Arquivos Impactados
 
-## Arquivos alterados
-- Migration SQL (nova coluna)
-- `supabase/functions/generate-diary-title/index.ts` (novo)
-- `supabase/config.toml` (adicionar função)
-- `src/pages/Diary.tsx` (interface, select, chamada, UI sidebar + visualização)
+| Arquivo | Tipo de Mudanca |
+|---|---|
+| Nova migration SQL | Recriar trigger de aprovacao flexivel |
+| `src/pages/SoldadoTestimony.tsx` | Chamar process-testimony apos envio |
+| `src/pages/admin/TestimonyCuration.tsx` | Trocar AdminRoute por RoleRoute |
+| `src/components/soldado/ApplicationApprovalCard.tsx` | Feedback de aprovacoes pendentes |
+| `src/components/soldado/TestimonyCurationCard.tsx` | Bloquear curadoria antes da analise |
+
+## Riscos e Mitigacoes
+
+- **Risco:** Flexibilizar pastor pode permitir aprovacao prematura.
+  **Mitigacao:** A logica so dispensa pastor se literalmente nao existe nenhum usuario com essa role no sistema. Quando um pastor for cadastrado, a exigencia volta automaticamente.
+
+- **Risco:** Chamada fire-and-forget do process-testimony pode falhar silenciosamente.
+  **Mitigacao:** O botao "Processar" na tela de curadoria ja existe como fallback manual.
 

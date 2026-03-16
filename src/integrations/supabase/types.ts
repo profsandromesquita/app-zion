@@ -573,6 +573,7 @@ export type Database = {
           id: string
           io_analysis: Json | null
           io_phase_at_entry: number | null
+          title: string | null
           updated_at: string
           user_id: string
         }
@@ -582,6 +583,7 @@ export type Database = {
           id?: string
           io_analysis?: Json | null
           io_phase_at_entry?: number | null
+          title?: string | null
           updated_at?: string
           user_id: string
         }
@@ -591,6 +593,7 @@ export type Database = {
           id?: string
           io_analysis?: Json | null
           io_phase_at_entry?: number | null
+          title?: string | null
           updated_at?: string
           user_id?: string
         }
