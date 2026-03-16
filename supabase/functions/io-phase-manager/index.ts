@@ -789,6 +789,13 @@ async function handleEvaluate(supabase: any, userId: string) {
   });
   const isObserverSignalsEnabled = observerFlagResult === true;
 
+  // STEP 1.6: Registro analysis feature flag check
+  const { data: registroFlagResult } = await supabase.rpc("get_feature_flag", {
+    p_flag_name: "io_pm_registro_analysis_enabled",
+    p_user_id: userId,
+  });
+  const isRegistroAnalysisEnabled = registroFlagResult === true;
+
   // STEP 2: Fetch current state
   let { data: userPhase } = await supabase
     .from("io_user_phase")
