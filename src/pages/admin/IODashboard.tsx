@@ -21,8 +21,8 @@ import { Link } from "react-router-dom";
 type PeriodDays = 7 | 30 | 90 | null;
 
 const PHASE_NAMES: Record<number, string> = {
-  1: "Consciência", 2: "Regulação", 3: "Identidade", 4: "Constância",
-  5: "Vitalidade", 6: "Agência", 7: "Autonomia",
+  1: "Consciência", 2: "Limites", 3: "Identidade", 4: "Ritmo",
+  5: "Vitalidade", 6: "Governo", 7: "Plenitude",
 };
 
 const PERIOD_OPTIONS: { label: string; value: PeriodDays }[] = [
