@@ -36,6 +36,7 @@ const Diary = () => {
   const navigate = useNavigate();
   const { user, loading } = useAuth();
   const { toast } = useToast();
+  const { enabled: isDiaryIOEnabled } = useFeatureFlag("io_diary_integration_enabled");
 
   const [entries, setEntries] = useState<DiaryEntry[]>([]);
   const [selectedEntry, setSelectedEntry] = useState<DiaryEntry | null>(null);
