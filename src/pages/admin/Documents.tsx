@@ -547,6 +547,7 @@ const Documents = () => {
                 </DialogFooter>
               </DialogContent>
             </Dialog>
+            </div>
           </div>
 
           {/* Documents List */}
