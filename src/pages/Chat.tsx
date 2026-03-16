@@ -123,15 +123,34 @@ const Chat = () => {
   const { isAdmin, loading: rolesLoading } = useUserRole();
   const { enabled: isIOEnabled } = useFeatureFlag("io_prompt_adapter_enabled");
 
-  const { data: ioPhase } = useQuery({
+  const { data: ioPhaseData } = useQuery({
     queryKey: ['io-phase-header', user?.id],
     queryFn: async () => {
       const { data } = await supabase
         .from('io_user_phase')
-        .select('current_phase')
+        .select('current_phase, streak_current, total_sessions, last_session_date')
         .eq('user_id', user!.id)
         .maybeSingle();
-      return data?.current_phase || null;
+      return data || null;
+    },
+    staleTime: 5 * 60 * 1000,
+    enabled: isIOEnabled && !!user?.id,
+  });
+
+  const ioPhaseNumber = ioPhaseData?.current_phase || null;
+
+  const { data: didSessionToday } = useQuery({
+    queryKey: ['io-today-session', user?.id],
+    queryFn: async () => {
+      const today = new Date().toISOString().split('T')[0];
+      const { data } = await supabase
+        .from('io_daily_sessions')
+        .select('id')
+        .eq('user_id', user!.id)
+        .eq('session_date', today)
+        .eq('completed', true)
+        .maybeSingle();
+      return !!data;
     },
     staleTime: 5 * 60 * 1000,
     enabled: isIOEnabled && !!user?.id,
