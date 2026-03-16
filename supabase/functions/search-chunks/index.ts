@@ -38,8 +38,9 @@ serve(async (req) => {
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-    // Gerar embedding da query
-    const queryEmbedding = await generateSimpleEmbedding(query);
+    // Gerar embedding da query (semântico com fallback para hash)
+    const { embedding: queryEmbedding, model: embeddingModel } = await generateSemanticEmbedding(query);
+    console.log(`[Embedding] Using model: ${embeddingModel}`);
 
     // Buscar chunks similares usando a função RPC
     const { data: chunks, error: searchError } = await supabase.rpc("search_chunks", {
@@ -62,6 +63,7 @@ serve(async (req) => {
         success: true,
         chunks: chunks || [],
         query_length: query.length,
+        embedding_type: embeddingModel,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );
@@ -77,7 +79,33 @@ serve(async (req) => {
   }
 });
 
-// Helper: Gerar embedding simples baseado em hash (mesma implementação do ingest)
+// Helper: Gerar embedding semântico via OpenAI (com fallback para hash)
+async function generateSemanticEmbedding(text: string): Promise<{ embedding: number[], model: string }> {
+  const apiKey = Deno.env.get("OPENAI_API_KEY");
+  if (!apiKey) {
+    console.warn("[Embedding] OPENAI_API_KEY not found, falling back to hash");
+    return { embedding: await generateSimpleEmbedding(text), model: "simple-hash-v1" };
+  }
+  try {
+    const res = await fetch("https://api.openai.com/v1/embeddings", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "text-embedding-3-small", input: text }),
+    });
+    if (!res.ok) {
+      const errBody = await res.text();
+      throw new Error(`OpenAI API error ${res.status}: ${errBody}`);
+    }
+    const data = await res.json();
+    console.log("[Embedding] Semantic embedding generated (text-embedding-3-small)");
+    return { embedding: data.data[0].embedding, model: "text-embedding-3-small" };
+  } catch (err) {
+    console.error("[Embedding] OpenAI API failed, falling back to hash:", err);
+    return { embedding: await generateSimpleEmbedding(text), model: "simple-hash-v1" };
+  }
+}
+
+// Helper: Gerar embedding simples baseado em hash (FALLBACK)
 async function generateSimpleEmbedding(text: string): Promise<number[]> {
   const embedding: number[] = [];
   const encoder = new TextEncoder();

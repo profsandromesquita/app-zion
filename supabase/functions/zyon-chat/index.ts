@@ -2558,7 +2558,9 @@ serve(async (req) => {
       // Vector search for chunks (PHASE 0: Adaptive threshold + fallback)
       if (ragPlan.topK > 0) {
         try {
-          const queryEmbedding = await generateSimpleEmbedding(message);
+          const queryEmbedding = useSemanticEmbedding
+            ? (await generateSemanticEmbedding(message)).embedding
+            : await generateSimpleEmbedding(message);
           
           // Build filter for layers
           const filterLayer = ragPlan.layers.length === 1 ? ragPlan.layers[0] : null;
