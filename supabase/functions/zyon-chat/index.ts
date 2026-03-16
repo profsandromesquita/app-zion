@@ -2539,6 +2539,13 @@ serve(async (req) => {
       }
     }
 
+    // Build RAG plan (after ioPhaseContext is available)
+    const ragPlan = (useSemanticEmbedding && ioPhaseContext?.current_phase)
+      ? buildIORAGPlan(intent, ioPhaseContext.current_phase)
+      : buildRAGPlan(intent);
+    const ragPlanType = (useSemanticEmbedding && ioPhaseContext?.current_phase) ? 'io' : 'legacy';
+    console.log(`[RAG Plan] Type: ${ragPlanType}, domains: ${ragPlan.filters.domains?.join(', ') || 'none'}, topK: ${ragPlan.topK}`);
+
     // ========================================
     // STEP 3-4: RAG RETRIEVAL (WITH ADAPTIVE THRESHOLD)
     // ========================================
