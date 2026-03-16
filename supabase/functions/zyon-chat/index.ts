@@ -3114,11 +3114,18 @@ O objetivo é que O PRÓPRIO USUÁRIO chegue à conexão.`;
     let validationResult: ValidationResult;
     let usedIOValidator = false;
     
-    const { data: safetyFlag } = await supabase.rpc('get_feature_flag', {
-      p_flag_name: 'io_safety_expanded_enabled',
-      p_user_id: userId
-    });
+    const [{ data: safetyFlag }, { data: ragFoundationFlag }] = await Promise.all([
+      supabase.rpc('get_feature_flag', {
+        p_flag_name: 'io_safety_expanded_enabled',
+        p_user_id: userId
+      }),
+      supabase.rpc('get_feature_flag', {
+        p_flag_name: 'io_rag_foundation_required',
+        p_user_id: userId
+      })
+    ]);
     const isSafetyExpanded = safetyFlag === true;
+    const isRagFoundationRequired = ragFoundationFlag === true;
     
     if (isSafetyExpanded) {
       validationResult = validateResponseIO(
@@ -3127,7 +3134,8 @@ O objetivo é que O PRÓPRIO USUÁRIO chegue à conexão.`;
         chunks.length > 0,
         lowConfidence,
         false, // isSessionDaily — será true quando Fase 5 implementar
-        crisisResult?.risk_level || 'none'
+        crisisResult?.risk_level || 'none',
+        isRagFoundationRequired
       );
       usedIOValidator = true;
       console.log("Validation via IO validator (phase:", 
