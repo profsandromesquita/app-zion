@@ -1,67 +1,119 @@
 
 
-# Redesign do Diário Espiritual
+# Plano de Correcao: Fluxo de Testemunho e Aprovacao de Soldados
 
-## Resumo
-Enriquecer a página `/diary` com dados IO (fase, análise), placeholders contextuais por fase, card de análise na visualização, e contadores na sidebar. Tudo retrocompatível — sem dados IO, funciona como hoje.
+## Diagnostico Confirmado
 
-## Alterações em `src/pages/Diary.tsx`
+Dados reais do banco confirmam os problemas:
+- **1 candidatura travada** em `under_review` com testemunho em `processing` (nunca processado, sem transcrição nem analise)
+- **0 usuarios com role `pastor`** no sistema -- aprovacao tripla e impossivel
+- A pagina de curadoria (`TestimonyCuration`) exige role `admin` via `AdminRoute`, bloqueando `profissional` e `pastor`
+- O envio de testemunho NAO dispara `process-testimony` automaticamente
+- O card de aprovacao (`ApplicationApprovalCard`) nao mostra feedback sobre quais aprovacoes faltam quando o usuario ja aprovou
 
-### 1. Interface e constantes
+---
 
-- Expandir `DiaryEntry` para incluir `io_analysis?: any` e `io_phase_at_entry?: number | null`
-- Adicionar constantes `PHASE_INSPIRATIONS` (7 frases por fase), `PHASE_PLACEHOLDERS` (7 placeholders por fase), `PHASE_NAMES` (mapeamento fase → nome: Consciência, Limites, etc.)
-- Adicionar query de `io_user_phase` para o usuário atual (apenas `current_phase`), condicionada a `isDiaryIOEnabled`
+## Ordem de Deploy (5 etapas)
 
-### 2. Select enriquecido
+### Etapa 1: Migration -- Flexibilizar aprovacao tripla
 
-Atualizar `loadEntries` de `.select("*")` para `.select("id, content, created_at, updated_at, io_analysis, io_phase_at_entry")` — garante que os campos IO vêm no resultado.
+**Problema:** Sem pastor no sistema, nenhuma candidatura pode ser aprovada.
 
-### 3. Mini contador no topo da sidebar (item 5)
+**Solucao:** Criar uma funcao que verifica aprovacao com logica flexivel: se nao existe usuario com role `pastor` no sistema, a aprovacao de pastor e dispensada. O trigger `check_soldado_approval_complete` sera atualizado.
 
-Entre o header e o ScrollArea, inserir linha `text-xs text-muted-foreground`:
-- Se `entries.length > 0`: `📖 X reflexões · última há Y dias`
-- Se vazio: `📖 Comece sua primeira reflexão`
+```text
+Logica da nova funcao check_soldado_approval_complete:
+  - admin_approved = obrigatorio
+  - profissional_approved = obrigatorio
+  - pastor_approved = obrigatorio SE existir pelo menos 1 usuario com role 'pastor'
+  - Se nao existir pastor, aprovacao completa com admin + profissional
+```
 
-Calcular Y com `differenceInDays(new Date(), new Date(entries[0].created_at))`.
+**SQL (migration):**
+- Recriar a funcao `check_soldado_approval_complete` com a logica condicional
+- Atualizar a funcao `get_application_approval_status` para refletir o campo `pastor_required`
 
-### 4. Cards enriquecidos na sidebar (item 1)
+---
 
-Em cada card de entrada:
-- Ao lado da data, se `entry.io_phase_at_entry`: badge `Fase N` com estilo `text-[10px] bg-muted rounded-full px-1.5`
-- Abaixo do texto truncado, se `entry.io_analysis` existe:
-  - Dot colorido + depth_level traduzido (deep→verde/profundo, moderate→amarelo/moderado, superficial→cinza/breve)
-  - Separador ` · ` + até 2 key_themes
-  - Tudo em `text-[10px] text-muted-foreground`
+### Etapa 2: Edge Function -- Auto-processar testemunho apos envio
 
-### 5. Estado vazio inspirador (item 2)
+**Problema:** O testemunho e inserido com status `processing` mas a Edge Function `process-testimony` nunca e chamada automaticamente.
 
-Substituir o bloco central (quando nada selecionado) por:
-- Logo Zion (menor, `h-12 w-12`)
-- Frase inspiradora por fase IO (se `isDiaryIOEnabled && currentPhase`) ou fallback atual
-- Contadores: `X reflexões · última há Y dias` ou `Nenhuma reflexão ainda`
-- Botão Nova Entrada (manter)
+**Solucao:** Adicionar chamada a `process-testimony` no frontend imediatamente apos o INSERT do testemunho em `SoldadoTestimony.tsx`.
 
-### 6. Placeholder contextual no textarea (item 3)
+**Arquivo:** `src/pages/SoldadoTestimony.tsx`
+- Apos o INSERT bem-sucedido na tabela `testimonies` (linha ~213), invocar:
+  ```typescript
+  supabase.functions.invoke("process-testimony", {
+    body: { testimony_id: insertedId }
+  });
+  ```
+- Sera fire-and-forget (nao bloqueia a UX de sucesso)
+- Requer retornar o `id` do INSERT (usar `.select('id').single()`)
 
-Quando `isCreating`, usar placeholder da fase IO se disponível, senão fallback genérico.
+---
 
-### 7. Card de análise abaixo do conteúdo (item 4)
+### Etapa 3: UI -- Abrir curadoria para profissional e pastor
 
-Quando `selectedEntry?.io_analysis` existe e `isDiaryIOEnabled`:
-- Card sutil `bg-muted/30 rounded-lg p-4 mt-4 border border-border/50`
-- Título: "Sobre esta reflexão" uppercase tracking-wide
-- Badges: tom emocional (positive→verde, neutral→cinza, negative→"sensível" vermelho-suave, mixed→amarelo), profundidade (deep→profundo, moderate→moderado, superficial→breve)
-- Tags de key_themes
-- Fase na época: `Escrito na Fase N — Nome`
-- Resumo em itálico (analysis_summary)
+**Problema:** `TestimonyCuration.tsx` usa `AdminRoute` que bloqueia profissional e pastor.
 
-### 8. Imports adicionais
+**Solucao:** Trocar `AdminRoute` por `RoleRoute` com roles permitidas.
 
-- `Badge` de `@/components/ui/badge`
-- `differenceInDays` de `date-fns`
-- `useQuery` de `@tanstack/react-query` (para io_user_phase query)
+**Arquivo:** `src/pages/admin/TestimonyCuration.tsx`
+- Substituir `<AdminRoute>` por `<RoleRoute allowedRoles={["admin", "desenvolvedor", "profissional", "pastor"]}>`
+- Importar `RoleRoute` no lugar de `AdminRoute`
 
-## Arquivos alterados
-- `src/pages/Diary.tsx` (único arquivo)
+---
+
+### Etapa 4: UI -- Feedback de aprovacoes pendentes no card
+
+**Problema:** Apos o admin aprovar, o card some os botoes sem explicar o que falta.
+
+**Solucao:** Adicionar mensagem contextual em `ApplicationApprovalCard.tsx`.
+
+**Arquivo:** `src/components/soldado/ApplicationApprovalCard.tsx`
+- Quando `canApprove === false` e `status === "under_review"`:
+  - Mostrar banner informativo: "Sua aprovacao foi registrada. Aguardando: [lista de roles pendentes]"
+  - Calcular roles pendentes a partir de `application.approvals`
+
+---
+
+### Etapa 5: UI -- Guardar curadoria antes de aprovacao
+
+**Problema:** O curador pode aprovar a candidatura ANTES do testemunho ser processado pela IA (status `processing`).
+
+**Solucao:** No `TestimonyCurationCard.tsx`, ja existe logica parcial (`canTakeAction` verifica `analyzed || processing`). Ajustar para:
+- Botoes de "Aprovar"/"Rejeitar" so aparecem quando `testimony.status === "analyzed"`
+- Quando `processing`, mostrar apenas botao "Processar" e mensagem de aguardo
+- Remover `processing` da condicao `canTakeAction` para acoes de curadoria
+
+**Arquivo:** `src/components/soldado/TestimonyCurationCard.tsx` (linha 331-333)
+```typescript
+// ANTES:
+const canTakeAction = approverRole !== null && 
+  (testimony.status === "analyzed" || testimony.status === "processing");
+
+// DEPOIS:
+const canTakeAction = approverRole !== null && testimony.status === "analyzed";
+```
+
+---
+
+## Resumo de Arquivos Impactados
+
+| Arquivo | Tipo de Mudanca |
+|---|---|
+| Nova migration SQL | Recriar trigger de aprovacao flexivel |
+| `src/pages/SoldadoTestimony.tsx` | Chamar process-testimony apos envio |
+| `src/pages/admin/TestimonyCuration.tsx` | Trocar AdminRoute por RoleRoute |
+| `src/components/soldado/ApplicationApprovalCard.tsx` | Feedback de aprovacoes pendentes |
+| `src/components/soldado/TestimonyCurationCard.tsx` | Bloquear curadoria antes da analise |
+
+## Riscos e Mitigacoes
+
+- **Risco:** Flexibilizar pastor pode permitir aprovacao prematura.
+  **Mitigacao:** A logica so dispensa pastor se literalmente nao existe nenhum usuario com essa role no sistema. Quando um pastor for cadastrado, a exigencia volta automaticamente.
+
+- **Risco:** Chamada fire-and-forget do process-testimony pode falhar silenciosamente.
+  **Mitigacao:** O botao "Processar" na tela de curadoria ja existe como fallback manual.
 
