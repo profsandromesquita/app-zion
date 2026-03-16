@@ -3165,7 +3165,8 @@ O objetivo é que O PRÓPRIO USUÁRIO chegue à conexão.`;
         lowConfidence,
         false, // isSessionDaily — será true quando Fase 5 implementar
         crisisResult?.risk_level || 'none',
-        isRagFoundationRequired
+        isRagFoundationRequired,
+        message
       );
       usedIOValidator = true;
       console.log("Validation via IO validator (phase:", 
