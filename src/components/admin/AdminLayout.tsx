@@ -16,7 +16,8 @@ import {
   ToggleLeft,
   FlaskConical,
   Activity,
-  BarChart3
+  BarChart3,
+  Target
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import zionLogo from "@/assets/zion-logo.png";
