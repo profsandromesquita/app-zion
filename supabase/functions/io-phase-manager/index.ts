@@ -1232,16 +1232,9 @@ async function handleEvaluate(supabase: any, userId: string) {
   (activeFlags || []).forEach(
     (f: { flag_name: string; flag_value: boolean }) => {
       flagsSnapshot[f.flag_name] = f.flag_value;
-  }
-
-  if (diarySignals) {
-    response.diary_signals = {
-      consulted: true,
-      ...diarySignals,
-      blocking: false,
-    };
-  }
+    }
   );
+
 
   const observerRecommendation = observerSignals
     ? observerSignals.hasSevereBlock
