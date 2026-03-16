@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, ArrowLeft, Trash2, Calendar, Save, X } from "lucide-react";
+import { Plus, ArrowLeft, Trash2, Calendar, Save, X, Sparkles, Bookmark } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
@@ -60,17 +60,17 @@ const PHASE_PLACEHOLDERS: Record<number, string> = {
   7: "O que você aprendeu sobre si mesmo que gostaria de lembrar?",
 };
 
-const DEPTH_MAP: Record<string, { color: string; label: string }> = {
-  deep: { color: "bg-emerald-500", label: "profundo" },
-  moderate: { color: "bg-yellow-500", label: "moderado" },
-  superficial: { color: "bg-muted-foreground/50", label: "breve" },
+const DEPTH_MAP: Record<string, { color: string; label: string; variant: string }> = {
+  deep: { color: "bg-emerald-500", label: "profundo", variant: "bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300" },
+  moderate: { color: "bg-yellow-500", label: "moderado", variant: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" },
+  superficial: { color: "bg-muted-foreground/50", label: "breve", variant: "bg-slate-100 text-slate-500 dark:bg-slate-800/40 dark:text-slate-400" },
 };
 
 const TONE_MAP: Record<string, { variant: string; label: string }> = {
   positive: { variant: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300", label: "positivo" },
-  neutral: { variant: "bg-muted text-muted-foreground", label: "neutro" },
-  negative: { variant: "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-300", label: "sensível" },
-  mixed: { variant: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300", label: "misto" },
+  neutral: { variant: "bg-slate-100 text-slate-600 dark:bg-slate-800/40 dark:text-slate-300", label: "neutro" },
+  negative: { variant: "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300", label: "sensível" },
+  mixed: { variant: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300", label: "misto" },
 };
 
 const CATEGORY_MAP: Record<string, { emoji: string; label: string }> = {
@@ -182,45 +182,51 @@ function AnalysisCard({ entry, isDiaryIOEnabled }: { entry: DiaryEntry; isDiaryI
   const depthLabel = analysis.depth_level === "superficial" ? "breve" : depth?.label;
 
   return (
-    <div className="mt-4 rounded-lg border border-border/50 bg-muted/30 p-4">
-      <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        Sobre esta reflexão
-      </h3>
-      <div className="flex flex-wrap items-center gap-2">
-        {tone && (
-          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${tone.variant}`}>
-            {tone.label}
-          </span>
+    <>
+      <div className="mt-6 mb-4 border-t border-border/40" />
+      <div className="rounded-xl border border-border/40 bg-muted/20 p-5">
+        <h3 className="mb-3 flex items-center gap-1.5 text-xs font-medium uppercase tracking-widest text-muted-foreground">
+          <Sparkles className="h-3 w-3" />
+          Sobre esta reflexão
+        </h3>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {tone && (
+            <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${tone.variant}`}>
+              {tone.label}
+            </span>
+          )}
+          {depthLabel && (
+            <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${depth?.variant || "bg-muted text-muted-foreground"}`}>
+              {depthLabel}
+            </span>
+          )}
+        </div>
+
+        {analysis.key_themes && analysis.key_themes.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {analysis.key_themes.map((theme, i) => (
+              <span key={i} className="rounded-full border border-border/60 bg-background px-2.5 py-0.5 text-xs text-muted-foreground">
+                {theme}
+              </span>
+            ))}
+          </div>
         )}
-        {depthLabel && (
-          <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-            {depthLabel}
-          </span>
+
+        {entry.io_phase_at_entry != null && (
+          <p className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Bookmark className="h-3 w-3" />
+            Escrito na Fase {entry.io_phase_at_entry} — {PHASE_NAMES[entry.io_phase_at_entry] || ""}
+          </p>
+        )}
+
+        {analysis.analysis_summary && (
+          <p className="mt-3 text-sm italic leading-relaxed text-muted-foreground/80">
+            {analysis.analysis_summary}
+          </p>
         )}
       </div>
-
-      {analysis.key_themes && analysis.key_themes.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {analysis.key_themes.map((theme, i) => (
-            <span key={i} className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-              {theme}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {entry.io_phase_at_entry != null && (
-        <p className="mt-3 text-xs text-muted-foreground">
-          Escrito na Fase {entry.io_phase_at_entry} — {PHASE_NAMES[entry.io_phase_at_entry] || ""}
-        </p>
-      )}
-
-      {analysis.analysis_summary && (
-        <p className="mt-2 text-sm italic text-muted-foreground">
-          {analysis.analysis_summary}
-        </p>
-      )}
-    </div>
+    </>
   );
 }
 
