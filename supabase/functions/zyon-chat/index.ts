@@ -3254,11 +3254,16 @@ O objetivo é que O PRÓPRIO USUÁRIO chegue à conexão.`;
           session_id: sessionId || null,
           event_data: {
             prompt_path: isPromptAdapterEnabled ? 'io_adapter' : 'legacy',
+            rag_plan_type: ragPlanType,
+            rag_domains: ragPlan.filters.domains || [],
             io_phase: ioPhaseContext?.current_phase || null,
             io_phase_name: ioPhaseContext?.phase_name || null,
             prompt_length: systemPrompt.length,
           },
-          flags_active: { io_prompt_adapter_enabled: isPromptAdapterEnabled },
+          flags_active: {
+            io_prompt_adapter_enabled: isPromptAdapterEnabled,
+            io_rag_domains_enabled: useSemanticEmbedding,
+          },
           latency_ms: Date.now() - startTime,
         });
       } catch (obsErr) {
