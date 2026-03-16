@@ -543,11 +543,24 @@ const Chat = () => {
   }, [messages]);
 
   const updateSessionTitle = async (sessionId: string, userMessage: string) => {
+    // Fallback imediato: título truncado (aparece na sidebar instantaneamente)
     const title = userMessage.substring(0, 50) + (userMessage.length > 50 ? "..." : "");
     await supabase
       .from("chat_sessions")
       .update({ title, updated_at: new Date().toISOString() })
       .eq("id", sessionId);
+
+    // Fire-and-forget: gerar título inteligente via IA
+    if (userMessage.length > 10) {
+      supabase.functions.invoke('generate-chat-title', {
+        body: { session_id: sessionId, first_message: userMessage }
+      }).catch(err => console.warn("Title generation failed:", err));
+
+      // Refresh sidebar após delay para mostrar título gerado pela IA
+      setTimeout(() => {
+        refreshSidebarRef.current?.();
+      }, 3000);
+    }
   };
 
   // Handle skipping onboarding
