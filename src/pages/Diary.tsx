@@ -542,20 +542,25 @@ const Diary = () => {
           <>
             <div className="flex items-center justify-between border-b border-border p-4">
               <div>
-                <h2 className="font-medium text-foreground">
-                  {isCreating
-                    ? "Nova Entrada"
-                    : format(new Date(selectedEntry!.created_at), "EEEE, d 'de' MMMM 'de' yyyy", {
+                {isCreating ? (
+                  <h2 className="font-medium text-foreground">Nova Entrada</h2>
+                ) : (
+                  <>
+                    {selectedEntry?.title && (
+                      <h2 className="text-lg font-semibold text-foreground">{selectedEntry.title}</h2>
+                    )}
+                    <p className={`text-sm text-muted-foreground ${selectedEntry?.title ? '' : 'font-medium text-foreground'}`}>
+                      {format(new Date(selectedEntry!.created_at), "EEEE, d 'de' MMMM 'de' yyyy", {
                         locale: ptBR,
                       })}
-                </h2>
-                {!isCreating && (
-                  <p className="text-xs text-muted-foreground">
-                    Última edição:{" "}
-                    {format(new Date(selectedEntry!.updated_at), "HH:mm", {
-                      locale: ptBR,
-                    })}
-                  </p>
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Última edição:{" "}
+                      {format(new Date(selectedEntry!.updated_at), "HH:mm", {
+                        locale: ptBR,
+                      })}
+                    </p>
+                  </>
                 )}
               </div>
               <Button onClick={handleSave} disabled={!content.trim() || isSaving} className="bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all duration-300">
