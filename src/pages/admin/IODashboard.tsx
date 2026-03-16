@@ -13,8 +13,9 @@ import {
 import {
   Users, CalendarCheck, Percent, TrendingUp, Flame, GitCompareArrows,
   AlertTriangle, AlertCircle, ArrowUpRight, ArrowDownRight, Minus,
-  ExternalLink, BarChart3, Info,
+  ExternalLink, BarChart3, Info, ShieldCheck, Activity,
 } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Link } from "react-router-dom";
 
 type PeriodDays = 7 | 30 | 90 | null;
