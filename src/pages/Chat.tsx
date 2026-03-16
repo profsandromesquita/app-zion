@@ -44,6 +44,50 @@ const PHASE_HEADER_SUBTITLES: Record<number, string> = {
   7: 'Vivendo com inteireza',
 };
 
+function getPhaseTouch(phase: number): string {
+  const touches: Record<number, string> = {
+    1: 'Estamos num momento de perceber o que sente. ',
+    2: 'Estamos separando o que é seu do que é do outro. ',
+    3: 'Estamos olhando para padrões que se repetem. ',
+  };
+  return touches[phase] || '';
+}
+
+function getContextualGreeting(params: {
+  nome: string;
+  totalSessions: number;
+  hasConversations: boolean;
+  didSessionToday: boolean;
+  streakCurrent: number;
+  currentPhase: number;
+}): string {
+  const { nome, totalSessions, hasConversations, didSessionToday, streakCurrent, currentPhase } = params;
+
+  // Cenário 1: Primeira vez
+  if (totalSessions === 0 && !hasConversations) {
+    return `Oi${nome ? `, ${nome}` : ''}. Que bom ter você aqui. Este é um espaço seguro para você — sem pressa, sem julgamento. Pode começar contando o que está no seu coração agora, ou escolher uma das opções abaixo.`;
+  }
+
+  // Cenário 2: Fez sessão hoje
+  if (didSessionToday) {
+    return `Oi${nome ? `, ${nome}` : ''}. Vi que você completou sua sessão de hoje. Se algo ficou ecoando ou se surgiu algo novo, esse espaço é para isso. O que está com você agora?`;
+  }
+
+  // Cenário 3: Streak alto (constância)
+  if (streakCurrent >= 5) {
+    return `Oi${nome ? `, ${nome}` : ''}. ${streakCurrent} dias seguidos de prática — isso mostra dedicação. Como está se sentindo nesse ritmo? O que quer explorar hoje?`;
+  }
+
+  // Cenário 4: Reencontro (teve sessões mas streak zerou)
+  if (totalSessions > 0 && streakCurrent === 0) {
+    return `Oi${nome ? `, ${nome}` : ''}. Que bom que voltou. Não importa quanto tempo passou — esse espaço continua aqui para você. O que traz você hoje?`;
+  }
+
+  // Cenário 5: Retorno normal (streak 1-4)
+  const phaseTouch = currentPhase <= 3 ? getPhaseTouch(currentPhase) : '';
+  return `Oi${nome ? `, ${nome}` : ''}. Bom ter você de volta. ${phaseTouch}O que está no seu coração hoje?`;
+}
+
 type SoldadoApplicationStatus = Database["public"]["Enums"]["soldado_application_status"];
 
 interface Message {
