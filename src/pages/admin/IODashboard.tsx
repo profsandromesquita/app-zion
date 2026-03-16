@@ -683,4 +683,235 @@ function CohortComparisonSection({ cutoff, periodDays }: { cutoff: string | null
   );
 }
 
+// ─── Validator Monitor ─────────────────────────────────
+
+type ValidatorLog = {
+  validator: string;
+  io_phase: number | null;
+  issues: { code: string; severity?: string }[];
+  needs_rewrite: boolean;
+  did_rewrite: boolean;
+};
+
+function ValidatorMonitorSection({ cutoff, periodDays }: { cutoff: string | null; periodDays: PeriodDays }) {
+  const { data: rawLogs, isLoading } = useQuery({
+    queryKey: ["io-dash-validator-monitor", cutoff],
+    queryFn: async () => {
+      let q = supabase
+        .from("observability_logs")
+        .select("event_data, created_at")
+        .eq("event_type", "validation_result");
+      if (cutoff) q = q.gte("created_at", new Date(cutoff).toISOString());
+      const { data, error } = await q;
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
+  const analysis = useMemo(() => {
+    if (!rawLogs) return null;
+
+    const logs: ValidatorLog[] = rawLogs.map((r) => {
+      const d = r.event_data as any;
+      return {
+        validator: d?.validator || "unknown",
+        io_phase: d?.io_phase ?? null,
+        issues: Array.isArray(d?.issues) ? d.issues : [],
+        needs_rewrite: !!d?.needs_rewrite,
+        did_rewrite: !!d?.did_rewrite,
+      };
+    });
+
+    const total = logs.length;
+    const ioLogs = logs.filter((l) => l.validator === "io");
+    const legacyLogs = logs.filter((l) => l.validator !== "io");
+
+    const ioRewrite = ioLogs.filter((l) => l.did_rewrite).length;
+    const legacyRewrite = legacyLogs.filter((l) => l.did_rewrite).length;
+    const totalRewrite = logs.filter((l) => l.did_rewrite).length;
+
+    const ioRewriteRate = ioLogs.length > 0 ? (ioRewrite / ioLogs.length) * 100 : 0;
+    const legacyRewriteRate = legacyLogs.length > 0 ? (legacyRewrite / legacyLogs.length) * 100 : 0;
+    const globalRewriteRate = total > 0 ? (totalRewrite / total) * 100 : 0;
+
+    const ioTooRestrictive = ioLogs.length > 0 && legacyLogs.length > 0 && (ioRewriteRate - legacyRewriteRate) > 20;
+
+    // Issues frequency
+    const issueCounts: Record<string, { count: number; severity: string }> = {};
+    let totalIssues = 0;
+    logs.forEach((l) => {
+      l.issues.forEach((iss) => {
+        const code = typeof iss === "string" ? iss : iss.code || "UNKNOWN";
+        const sev = typeof iss === "string" ? "MEDIUM" : iss.severity || "MEDIUM";
+        if (!issueCounts[code]) issueCounts[code] = { count: 0, severity: sev };
+        issueCounts[code].count++;
+        totalIssues++;
+      });
+    });
+    const issueList = Object.entries(issueCounts)
+      .map(([code, { count, severity }]) => ({ code, count, severity, pct: totalIssues > 0 ? (count / totalIssues) * 100 : 0 }))
+      .sort((a, b) => b.count - a.count);
+
+    // Issues by phase
+    const phaseIssueMap: Record<number, Record<string, number>> = {};
+    logs.forEach((l) => {
+      if (l.io_phase == null) return;
+      if (!phaseIssueMap[l.io_phase]) phaseIssueMap[l.io_phase] = {};
+      l.issues.forEach((iss) => {
+        const code = typeof iss === "string" ? iss : iss.code || "UNKNOWN";
+        phaseIssueMap[l.io_phase!][code] = (phaseIssueMap[l.io_phase!][code] || 0) + 1;
+      });
+    });
+
+    const topIssueCodes = issueList.slice(0, 8).map((i) => i.code);
+
+    return {
+      total,
+      ioCount: ioLogs.length,
+      legacyCount: legacyLogs.length,
+      globalRewriteRate,
+      ioRewriteRate,
+      legacyRewriteRate,
+      ioTooRestrictive,
+      issueList,
+      topIssueCodes,
+      phaseIssueMap,
+    };
+  }, [rawLogs]);
+
+  const sevColor = (sev: string) => {
+    switch (sev.toUpperCase()) {
+      case "CRITICAL": return "destructive" as const;
+      case "HIGH": return "destructive" as const;
+      case "MEDIUM": return "secondary" as const;
+      default: return "outline" as const;
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <ShieldCheck className="h-4 w-4" /> Validator Monitor
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <Skeleton className="h-48 w-full" />
+        ) : analysis && analysis.total > 0 ? (
+          <div className="space-y-6">
+            {/* KPI grid */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="rounded-lg border border-border p-3 text-center">
+                <p className="text-xs text-muted-foreground">Total validações</p>
+                <p className="text-xl font-bold text-foreground">{analysis.total}</p>
+              </div>
+              <div className="rounded-lg border border-border p-3 text-center">
+                <p className="text-xs text-muted-foreground">IO / Legacy</p>
+                <p className="text-xl font-bold text-foreground">{analysis.ioCount} / {analysis.legacyCount}</p>
+                <p className="text-[10px] text-muted-foreground">
+                  {analysis.total > 0 ? `${((analysis.ioCount / analysis.total) * 100).toFixed(0)}%` : "0%"} IO
+                </p>
+              </div>
+              <div className="rounded-lg border border-border p-3 text-center">
+                <p className="text-xs text-muted-foreground">Rewrite global</p>
+                <p className="text-xl font-bold text-foreground">{analysis.globalRewriteRate.toFixed(1)}%</p>
+              </div>
+              <div className="rounded-lg border border-border p-3 text-center">
+                <p className="text-xs text-muted-foreground">Rewrite IO / Legacy</p>
+                <p className="text-xl font-bold text-foreground">
+                  {analysis.ioRewriteRate.toFixed(1)}% / {analysis.legacyRewriteRate.toFixed(1)}%
+                </p>
+              </div>
+            </div>
+
+            {/* Alert if IO too restrictive */}
+            {analysis.ioTooRestrictive && (
+              <Alert variant="destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <AlertTitle>Validator IO pode estar muito restritivo</AlertTitle>
+                <AlertDescription>
+                  A taxa de rewrite do IO ({analysis.ioRewriteRate.toFixed(1)}%) está {(analysis.ioRewriteRate - analysis.legacyRewriteRate).toFixed(0)}pp acima do Legacy ({analysis.legacyRewriteRate.toFixed(1)}%).
+                </AlertDescription>
+              </Alert>
+            )}
+
+            {/* Issues frequency table */}
+            {analysis.issueList.length > 0 && (
+              <div>
+                <h4 className="text-sm font-semibold text-foreground mb-2 flex items-center gap-1">
+                  <Activity className="h-3.5 w-3.5" /> Issues mais frequentes
+                </h4>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Code</TableHead>
+                      <TableHead>Severidade</TableHead>
+                      <TableHead className="text-right">Contagem</TableHead>
+                      <TableHead className="text-right">% do total</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {analysis.issueList.slice(0, 15).map((iss) => (
+                      <TableRow key={iss.code}>
+                        <TableCell className="font-mono text-xs">{iss.code}</TableCell>
+                        <TableCell><Badge variant={sevColor(iss.severity)} className="text-[10px]">{iss.severity}</Badge></TableCell>
+                        <TableCell className="text-right font-mono">{iss.count}</TableCell>
+                        <TableCell className="text-right font-mono">{iss.pct.toFixed(1)}%</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+
+            {/* Issues by phase cross-table */}
+            {analysis.topIssueCodes.length > 0 && Object.keys(analysis.phaseIssueMap).length > 0 && (
+              <div>
+                <h4 className="text-sm font-semibold text-foreground mb-2">Issues por fase IO</h4>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Fase</TableHead>
+                        {analysis.topIssueCodes.map((code) => (
+                          <TableHead key={code} className="text-center text-[10px] font-mono">{code}</TableHead>
+                        ))}
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {Array.from({ length: 7 }, (_, i) => i + 1).map((phase) => {
+                        const row = analysis.phaseIssueMap[phase] || {};
+                        const hasData = analysis.topIssueCodes.some((c) => (row[c] || 0) > 0);
+                        if (!hasData) return null;
+                        return (
+                          <TableRow key={phase}>
+                            <TableCell className="font-medium text-sm">
+                              {phase} — {PHASE_NAMES[phase]}
+                            </TableCell>
+                            {analysis.topIssueCodes.map((code) => (
+                              <TableCell key={code} className="text-center font-mono text-sm">
+                                {row[code] || <span className="text-muted-foreground">—</span>}
+                              </TableCell>
+                            ))}
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex items-start gap-2 rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+            <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+            <span>Nenhum log de validação encontrado no período selecionado.</span>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default IODashboard;
