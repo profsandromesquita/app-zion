@@ -77,6 +77,21 @@ const Chat = () => {
   const { user, loading: authLoading, signOut } = useAuth();
   const { sessionId: anonSessionId, loading: anonLoading } = useAnonymousSession();
   const { isAdmin, loading: rolesLoading } = useUserRole();
+  const { enabled: isIOEnabled } = useFeatureFlag("io_prompt_adapter_enabled");
+
+  const { data: ioPhase } = useQuery({
+    queryKey: ['io-phase-header', user?.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('io_user_phase')
+        .select('current_phase')
+        .eq('user_id', user!.id)
+        .maybeSingle();
+      return data?.current_phase || null;
+    },
+    staleTime: 5 * 60 * 1000,
+    enabled: isIOEnabled && !!user?.id,
+  });
   
   // Debug log para diagnóstico mobile - header icons
   useEffect(() => {
