@@ -169,6 +169,58 @@ function generatePersonalizedStarters(insights: TurnInsightData[]): StarterItem[
   return [...personalized.slice(0, 3), ...GENERIC_STARTERS];
 }
 
+export const PHASE_ICEBREAKERS: Record<number, StarterItem[]> = {
+  1: [
+    { emoji: "😰", text: "Estou me sentindo ansioso(a)" },
+    { emoji: "💭", text: "Algo está me incomodando e não sei o quê" },
+    { emoji: "🔄", text: "Uma situação que se repete na minha vida" },
+    { emoji: "🤔", text: "Não sei por onde começar" },
+    { emoji: "💬", text: "Quero falar sobre outra coisa" },
+  ],
+  2: [
+    { emoji: "😤", text: "Reagi de um jeito que não queria" },
+    { emoji: "🪞", text: "Quero entender por que algo me incomodou" },
+    { emoji: "⚖️", text: "Preciso separar o que é meu do que é do outro" },
+    { emoji: "😶", text: "Estou engolindo o que deveria falar" },
+    { emoji: "💬", text: "Quero falar sobre outra coisa" },
+  ],
+  3: [
+    { emoji: "🔁", text: "Percebi um padrão que se repete em mim" },
+    { emoji: "🗣️", text: "Uma frase que repito sobre mim mesmo" },
+    { emoji: "😔", text: "Algo que acredito sobre mim e dói" },
+    { emoji: "🧩", text: "Quero entender por que faço o que faço" },
+    { emoji: "💬", text: "Quero falar sobre outra coisa" },
+  ],
+  4: [
+    { emoji: "💪", text: "Quero manter o ritmo que comecei" },
+    { emoji: "⚡", text: "Algo me desafiou hoje" },
+    { emoji: "🛑", text: "Quase voltei a um hábito antigo" },
+    { emoji: "🌱", text: "Um pequeno avanço que percebi" },
+    { emoji: "💬", text: "Quero falar sobre outra coisa" },
+  ],
+  5: [
+    { emoji: "🤝", text: "Quero falar sobre um relacionamento" },
+    { emoji: "💔", text: "Preciso processar uma mágoa" },
+    { emoji: "🕊️", text: "Estou pensando em pedir perdão" },
+    { emoji: "😊", text: "Algo bom aconteceu com alguém" },
+    { emoji: "💬", text: "Quero falar sobre outra coisa" },
+  ],
+  6: [
+    { emoji: "📋", text: "Quero organizar uma área da minha vida" },
+    { emoji: "🎯", text: "Defini uma meta e quero falar sobre" },
+    { emoji: "⚠️", text: "Estou procrastinando algo importante" },
+    { emoji: "✅", text: "Completei uma ação que planejei" },
+    { emoji: "💬", text: "Quero falar sobre outra coisa" },
+  ],
+  7: [
+    { emoji: "🙏", text: "Quero refletir sobre minha jornada" },
+    { emoji: "🌟", text: "Algo que aprendi sobre mim" },
+    { emoji: "🤲", text: "Como compartilhar o que vivi" },
+    { emoji: "📖", text: "Quero voltar a um tema antigo" },
+    { emoji: "💬", text: "Quero falar sobre outra coisa" },
+  ],
+};
+
 export function usePersonalizedStarters(userId: string | null, isReturningUser: boolean) {
   const [starters, setStarters] = useState<StarterItem[] | null>(null);
   const [loading, setLoading] = useState(false);

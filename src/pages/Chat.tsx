@@ -1227,7 +1227,11 @@ const Chat = () => {
                 <ConversationStarters
                   onSelect={handleStarterSelect}
                   disabled={isLoading}
-                  starters={isReturningUser ? personalizedStarters ?? undefined : undefined}
+                  starters={
+                    isIOEnabled && ioPhaseNumber
+                      ? (PHASE_ICEBREAKERS[ioPhaseNumber] || undefined)
+                      : (isReturningUser ? personalizedStarters ?? undefined : undefined)
+                  }
                 />
               )}
 
