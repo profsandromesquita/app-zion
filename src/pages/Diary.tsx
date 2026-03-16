@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, ArrowLeft, Trash2, Calendar, Save, X } from "lucide-react";
+import { Plus, ArrowLeft, Trash2, Calendar, Save, X, Sparkles, Bookmark } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
