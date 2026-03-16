@@ -63,6 +63,7 @@ const DocumentChunks = () => {
   const [loading, setLoading] = useState(true);
   const [editingChunk, setEditingChunk] = useState<Chunk | null>(null);
   const [editedTags, setEditedTags] = useState("");
+  const [reprocessing, setReprocessing] = useState(false);
 
   useEffect(() => {
     if (docId) {
@@ -153,39 +154,35 @@ const DocumentChunks = () => {
   };
 
   const reprocessEmbeddings = async () => {
-    if (!docId || !document) return;
+    setReprocessing(true);
+    let totalSuccess = 0;
+    let totalFailed = 0;
+    let continued = true;
 
     try {
-      const { data: doc } = await supabase
-        .from("documents")
-        .select("current_version_id")
-        .eq("id", docId)
-        .single();
+      while (continued) {
+        const { data, error } = await supabase.functions.invoke("ingest-document", {
+          body: { action: "reprocess_all_embeddings" },
+        });
 
-      if (!doc?.current_version_id) {
-        toast.error("Nenhuma versão encontrada");
-        return;
+        if (error) throw error;
+
+        totalSuccess += data?.success_count || 0;
+        totalFailed += data?.failed_count || 0;
+        continued = data?.continued === true;
+
+        if (continued) {
+          toast.info(`Progresso: ${totalSuccess} OK, ${totalFailed} falhas — processando mais...`);
+        }
       }
 
-      // Reset embedding status
-      await supabase
-        .from("chunks")
-        .update({ embedding_status: "pending" })
-        .eq("version_id", doc.current_version_id);
-
-      const { error } = await supabase.functions.invoke("ingest-document", {
-        body: {
-          doc_id: docId,
-          version_id: doc.current_version_id,
-          action: "generate_embeddings",
-        },
-      });
-
-      if (error) throw error;
-      toast.success("Embeddings sendo reprocessados");
+      toast.success(`Reprocessamento concluído: ${totalSuccess} OK, ${totalFailed} falhas`);
       fetchData();
     } catch (err) {
+      console.error("Erro ao reprocessar embeddings:", err);
       toast.error("Erro ao reprocessar embeddings");
+    } finally {
+      setReprocessing(false);
     }
   };
 
@@ -253,9 +250,9 @@ const DocumentChunks = () => {
 
           {/* Actions */}
           <div className="flex justify-end">
-            <Button onClick={reprocessEmbeddings}>
-              <RefreshCw className="h-4 w-4 mr-2" />
-              Reprocessar Embeddings
+            <Button onClick={reprocessEmbeddings} disabled={reprocessing}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${reprocessing ? "animate-spin" : ""}`} />
+              {reprocessing ? "Reprocessando..." : "Reprocessar Embeddings"}
             </Button>
           </div>
 
