@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import IOJourneySection from "@/components/profile/IOJourneySection";
 import { Plus, Search, LogOut, BookOpen, Shield, User, Star, Settings, ChevronDown, Download, ChevronRight, Sun, Flame } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import zionLogo from "@/assets/zion-logo.png";
@@ -132,6 +134,7 @@ export function ChatSidebar({
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [isJourneyOpen, setIsJourneyOpen] = useState(false);
   const [openGroups, setOpenGroups] = useState({
     today: true,
     lastWeek: true,
@@ -543,7 +546,7 @@ export function ChatSidebar({
         {!collapsed && isIOEnabled && ioPhaseData && (
           <div
             className="bg-muted/30 border border-border/50 rounded-lg p-3 mx-1 mb-2 cursor-pointer hover:bg-muted/50 transition-colors"
-            onClick={() => navigate('/profile')}
+            onClick={() => setIsJourneyOpen(true)}
           >
             <p className="text-xs font-medium text-foreground">
               Fase {ioPhaseData.current_phase} — {IO_PHASE_NAMES[ioPhaseData.current_phase] || 'Jornada'}
@@ -568,6 +571,26 @@ export function ChatSidebar({
             )}
           </div>
         )}
+
+        <Dialog open={isJourneyOpen} onOpenChange={setIsJourneyOpen}>
+          <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto p-0">
+            <DialogHeader className="p-6 pb-0">
+              <DialogTitle>Minha Jornada IO</DialogTitle>
+            </DialogHeader>
+            <div className="px-2">
+              <IOJourneySection userId={user!.id} />
+            </div>
+            <div className="p-4 pt-0">
+              <button
+                onClick={() => { setIsJourneyOpen(false); navigate('/profile'); }}
+                className="text-xs text-muted-foreground hover:underline w-full text-center"
+              >
+                Ver perfil completo →
+              </button>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         <Separator className="mb-2" />
         
         {!collapsed && (
