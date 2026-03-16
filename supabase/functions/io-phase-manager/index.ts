@@ -782,6 +782,13 @@ async function handleManualOverride(
 // ============================================================
 
 async function handleEvaluate(supabase: any, userId: string) {
+  // STEP 1.5: Observer signals feature flag check
+  const { data: observerFlagResult } = await supabase.rpc("get_feature_flag", {
+    p_flag_name: "io_pm_observer_signals_enabled",
+    p_user_id: userId,
+  });
+  const isObserverSignalsEnabled = observerFlagResult === true;
+
   // STEP 2: Fetch current state
   let { data: userPhase } = await supabase
     .from("io_user_phase")
@@ -874,6 +881,17 @@ async function handleEvaluate(supabase: any, userId: string) {
 
   const allUserSessions: Session[] = allSessions || [];
 
+  // STEP 3.5: Fetch observer signals (if enabled)
+  let observerSignals: ObserverSignals | null = null;
+  if (isObserverSignalsEnabled) {
+    try {
+      observerSignals = await fetchObserverSignals(supabase, userId, 14);
+    } catch (err) {
+      console.error("Error fetching observer signals:", err);
+      // Non-blocking: continue without observer signals
+    }
+  }
+
   // STEP 4: Apply hard rules for current phase
   let criteriaResult: CriteriaResult;
 
@@ -908,6 +926,32 @@ async function handleEvaluate(supabase: any, userId: string) {
       break;
     default:
       criteriaResult = { met: false, details: `Fase desconhecida: ${currentPhase}` };
+  }
+
+  // STEP 4.5: Observer blocking check
+  let blockedByObserver = false;
+  if (criteriaResult.met && observerSignals?.hasSevereBlock) {
+    const auxiliaryNote =
+      `Observer: ${observerSignals.shiftsDetected} shifts, ` +
+      `score médio ${observerSignals.avgOverallScore.toFixed(1)}, ` +
+      `${observerSignals.severeIssuesCount} issue(s) severa(s)`;
+    criteriaResult = {
+      met: false,
+      details:
+        criteriaResult.details +
+        ` | BLOQUEIO: observer detectou instabilidade severa. ${auxiliaryNote}`,
+    };
+    blockedByObserver = true;
+  } else if (observerSignals) {
+    // Append auxiliary info to details (informational only)
+    const auxiliaryNote =
+      `Observer: ${observerSignals.shiftsDetected} shifts, ` +
+      `score médio ${observerSignals.avgOverallScore.toFixed(1)}, ` +
+      `sem bloqueio`;
+    criteriaResult = {
+      met: criteriaResult.met,
+      details: criteriaResult.details + ` | ${auxiliaryNote}`,
+    };
   }
 
   // STEP 5: Evaluate regression
@@ -954,8 +998,6 @@ async function handleEvaluate(supabase: any, userId: string) {
     currentPhase > 1 &&
     !criteriaResult.met
   ) {
-    // Shadow mode: register but don't auto-execute regression
-    // For now we log it as a suggestion only
     decision = "regression";
     newPhase = currentPhase - 1;
   }
@@ -970,7 +1012,6 @@ async function handleEvaluate(supabase: any, userId: string) {
       date: new Date().toISOString().split("T")[0],
       phase: currentPhase,
     });
-    // Keep last 100 entries
     if (igiHistory.length > 100) igiHistory.splice(0, igiHistory.length - 100);
   }
 
@@ -1020,12 +1061,13 @@ async function handleEvaluate(supabase: any, userId: string) {
         streak_current,
         total_sessions_in_phase: sessions.length,
         shadow_mode: true,
+        observer_signals: observerSignals || null,
+        blocked_by_observer: blockedByObserver,
       },
     });
   }
 
   // STEP 9: Observability log
-  // Fetch active IO flags for snapshot
   const { data: activeFlags } = await supabase
     .from("feature_flags")
     .select("flag_name, flag_value")
@@ -1037,6 +1079,14 @@ async function handleEvaluate(supabase: any, userId: string) {
       flagsSnapshot[f.flag_name] = f.flag_value;
     }
   );
+
+  const observerRecommendation = observerSignals
+    ? observerSignals.hasSevereBlock
+      ? "blocked"
+      : observerSignals.shiftsDetected > 0
+        ? "positive"
+        : "neutral"
+    : null;
 
   await supabase.from("observability_logs").insert({
     user_id: userId,
@@ -1050,14 +1100,19 @@ async function handleEvaluate(supabase: any, userId: string) {
       igi_before: previousIgi,
       igi_after: newIgi,
       streak: streak_current,
-      observer_phase: null, // Will be filled in Phase 3
+      observer_phase: observerSignals?.observerPhase || null,
+      observer_signals_consulted: isObserverSignalsEnabled,
+      observer_shifts: observerSignals?.shiftsDetected || 0,
+      observer_severe_block: observerSignals?.hasSevereBlock || false,
+      observer_recommendation: observerRecommendation,
+      blocked_by_observer: blockedByObserver,
       shadow_mode: true,
     },
     flags_active: flagsSnapshot,
   });
 
   // STEP 10: Return response
-  const response = {
+  const response: Record<string, unknown> = {
     success: true,
     user_id: userId,
     previous_phase: currentPhase,
@@ -1082,6 +1137,19 @@ async function handleEvaluate(supabase: any, userId: string) {
         ? NEXT_CRITERIA[newPhase] || ""
         : NEXT_CRITERIA[currentPhase] || "",
   };
+
+  if (observerSignals) {
+    response.observer_signals = {
+      consulted: true,
+      total_conversations: observerSignals.totalConversations,
+      shifts_detected: observerSignals.shiftsDetected,
+      avg_overall_score: Math.round(observerSignals.avgOverallScore * 100) / 100,
+      severe_block: observerSignals.hasSevereBlock,
+      blocked_by_observer: blockedByObserver,
+      recommendation: observerRecommendation,
+      observer_phase: observerSignals.observerPhase,
+    };
+  }
 
   return new Response(JSON.stringify(response), {
     headers: { ...corsHeaders, "Content-Type": "application/json" },
