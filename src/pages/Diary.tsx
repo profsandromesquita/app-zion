@@ -327,6 +327,8 @@ const Diary = () => {
             e.id === selectedEntry.id ? { ...e, content: content.trim() } : e
           )
         );
+        setSelectedEntry(null);
+        setContent('');
 
         toast({
           title: "Entrada atualizada",
