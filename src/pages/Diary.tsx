@@ -305,6 +305,13 @@ const Diary = () => {
           description: "Sua reflexão foi registrada com sucesso.",
         });
 
+        // Always generate title (independent of IO flag)
+        supabase.functions.invoke("generate-diary-title", {
+          body: { diary_entry_id: data.id, content: content.trim() },
+        }).catch((err) => console.warn("Diary title gen failed:", err));
+
+        setTimeout(() => loadEntries(), 3000);
+
         triggerIOAnalysis(data.id, content.trim());
       } else if (selectedEntry) {
         const { error } = await supabase
