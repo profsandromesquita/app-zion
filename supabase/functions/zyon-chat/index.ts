@@ -850,7 +850,8 @@ function validateResponseIO(
   lowConfidenceRAG: boolean,
   isSessionDaily: boolean,
   crisisRiskLevel: string, // 'none' | 'low' | 'medium' | 'high'
-  isRagFoundationRequired: boolean = false
+  isRagFoundationRequired: boolean = false,
+  userMessage: string = ''
 ): ValidationResult {
   const issues: ValidationIssue[] = [];
   const rewriteInstructions: string[] = [];
@@ -1190,6 +1191,35 @@ function validateResponseIO(
         'Substitua o conteúdo profundo por: "Esse assunto é importante. Vamos explorar isso no chat com mais calma?"'
       );
     }
+  }
+
+  // ==========================================
+  // QUALIDADE CONVERSACIONAL (universais)
+  // ==========================================
+
+  // REPETITIVE_OPENING — início mecânico repetitivo
+  const repetitiveOpeningRegex = /^Você (sente|percebe|está sentindo|nota|observa) que/i;
+  if (repetitiveOpeningRegex.test(response.trim()) && turnCount > 2) {
+    issues.push({
+      code: 'REPETITIVE_OPENING', severity: 'MEDIUM',
+      message: 'Início repetitivo com "Você sente/percebe que..."'
+    });
+    rewriteInstructions.push(
+      'VARIE o início da resposta. NÃO comece com "Você sente", "Você percebe" ou "Você está sentindo". Use uma das alternativas: (a) comece com uma observação usando as palavras do usuário como ponte ("Essa irritação com..."), (b) vá direto para a pergunta sem preâmbulo, ou (c) use reconhecimento breve ("Entendo." + pergunta).'
+    );
+  }
+
+  // UNNECESSARY_MIRRORING — espelhamento em pedido operacional
+  const operationalRequestRegex = /reformul|explica melhor|não entendi|muda de assunto|outra pergunta|pode repetir|não sei responder/i;
+  const mirroringOperationalRegex = /^Você (sente|está dizendo|está sentindo|percebe) que (não|n[aã]o)/i;
+  if (operationalRequestRegex.test(userMessage) && mirroringOperationalRegex.test(response.trim())) {
+    issues.push({
+      code: 'UNNECESSARY_MIRRORING', severity: 'MEDIUM',
+      message: 'Espelhamento desnecessário em pedido operacional'
+    });
+    rewriteInstructions.push(
+      'O usuário fez um PEDIDO OPERACIONAL. NÃO espelhe o pedido. Atenda diretamente: reformule a pergunta, explique de outra forma, ou mude de assunto conforme solicitado.'
+    );
   }
 
   // ==========================================
@@ -3135,7 +3165,8 @@ O objetivo é que O PRÓPRIO USUÁRIO chegue à conexão.`;
         lowConfidence,
         false, // isSessionDaily — será true quando Fase 5 implementar
         crisisResult?.risk_level || 'none',
-        isRagFoundationRequired
+        isRagFoundationRequired,
+        message
       );
       usedIOValidator = true;
       console.log("Validation via IO validator (phase:", 
