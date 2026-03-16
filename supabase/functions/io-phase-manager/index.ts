@@ -1324,6 +1324,14 @@ async function handleEvaluate(supabase: any, userId: string) {
     };
   }
 
+  if (diarySignals) {
+    response.diary_signals = {
+      consulted: true,
+      ...diarySignals,
+      blocking: false,
+    };
+  }
+
   return new Response(JSON.stringify(response), {
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
