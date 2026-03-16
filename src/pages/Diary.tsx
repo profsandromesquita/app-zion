@@ -68,9 +68,9 @@ const DEPTH_MAP: Record<string, { color: string; label: string; variant: string 
 
 const TONE_MAP: Record<string, { variant: string; label: string }> = {
   positive: { variant: "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300", label: "positivo" },
-  neutral: { variant: "bg-muted text-muted-foreground", label: "neutro" },
-  negative: { variant: "bg-red-100 text-red-600 dark:bg-red-900/30 dark:text-red-300", label: "sensível" },
-  mixed: { variant: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300", label: "misto" },
+  neutral: { variant: "bg-slate-100 text-slate-600 dark:bg-slate-800/40 dark:text-slate-300", label: "neutro" },
+  negative: { variant: "bg-rose-100 text-rose-700 dark:bg-rose-900/40 dark:text-rose-300", label: "sensível" },
+  mixed: { variant: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300", label: "misto" },
 };
 
 const CATEGORY_MAP: Record<string, { emoji: string; label: string }> = {
