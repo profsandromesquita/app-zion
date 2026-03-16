@@ -849,7 +849,8 @@ function validateResponseIO(
   hasRAGChunks: boolean,
   lowConfidenceRAG: boolean,
   isSessionDaily: boolean,
-  crisisRiskLevel: string // 'none' | 'low' | 'medium' | 'high'
+  crisisRiskLevel: string, // 'none' | 'low' | 'medium' | 'high'
+  isRagFoundationRequired: boolean = false
 ): ValidationResult {
   const issues: ValidationIssue[] = [];
   const rewriteInstructions: string[] = [];
