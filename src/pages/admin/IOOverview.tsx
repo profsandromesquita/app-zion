@@ -167,6 +167,64 @@ const IOOverview = () => {
     },
   });
 
+  // Observer signals for selected user (last 14 days)
+  const { data: observerSignals } = useQuery({
+    queryKey: ["observer-signals", selectedUser?.user_id],
+    enabled: !!selectedUser,
+    queryFn: async () => {
+      const since = new Date(Date.now() - 14 * 86400000).toISOString();
+
+      // Step 1: get chat session IDs for user
+      const { data: chatSessions } = await supabase
+        .from("chat_sessions")
+        .select("id")
+        .eq("user_id", selectedUser.user_id);
+      if (!chatSessions || chatSessions.length === 0) return null;
+
+      const sessionIds = chatSessions.map((cs: any) => cs.id);
+
+      // Step 2: get turn_insights for those sessions
+      const { data: insights } = await supabase
+        .from("turn_insights")
+        .select("shift_detected, shift_description, emotion_intensity, emotion_stability, overall_score, phase, created_at")
+        .in("chat_session_id", sessionIds)
+        .gte("created_at", since)
+        .order("created_at", { ascending: false });
+
+      const rows = insights || [];
+      if (rows.length === 0) return null;
+
+      const shiftsDetected = rows.filter((r: any) => r.shift_detected).length;
+      const emotionVals = rows.filter((r: any) => r.emotion_intensity != null).map((r: any) => Number(r.emotion_intensity));
+      const scoreVals = rows.filter((r: any) => r.overall_score != null).map((r: any) => Number(r.overall_score));
+      const unstableCount = rows.filter((r: any) => r.emotion_stability === "unstable").length;
+      const severeIssuesCount = rows.filter((r: any) =>
+        (Number(r.emotion_intensity) === 3 && r.emotion_stability === "unstable") ||
+        (r.overall_score != null && Number(r.overall_score) <= 1)
+      ).length;
+
+      const recentShiftDescriptions = rows
+        .filter((r: any) => r.shift_detected && r.shift_description)
+        .slice(0, 3)
+        .map((r: any) => r.shift_description);
+
+      const observerPhase = rows.find((r: any) => r.phase)?.phase || null;
+
+      return {
+        totalConversations: rows.length,
+        shiftsDetected,
+        avgEmotionIntensity: emotionVals.length > 0 ? emotionVals.reduce((a: number, b: number) => a + b, 0) / emotionVals.length : 0,
+        unstableCount,
+        avgOverallScore: scoreVals.length > 0 ? scoreVals.reduce((a: number, b: number) => a + b, 0) / scoreVals.length : 0,
+        severeIssuesCount,
+        hasSevereBlock: severeIssuesCount > 0,
+        observerPhase,
+        recentShiftDescriptions,
+      };
+    },
+    staleTime: 30 * 1000,
+  });
+
   // PM handlers
   const callPhaseManager = async (body: Record<string, any>) => {
     setPmLoading(true);
