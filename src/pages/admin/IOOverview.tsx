@@ -15,7 +15,7 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import { Loader2, Activity, Users, TrendingUp, Flame, Play, Eye, Settings2, AlertTriangle, GitCompareArrows } from "lucide-react";
+import { Loader2, Activity, Users, TrendingUp, Flame, Play, Eye, Settings2, AlertTriangle, GitCompareArrows, Brain } from "lucide-react";
 
 const OBSERVER_TO_IO_RANGE: Record<string, number[]> = {
   ACOLHIMENTO: [1],
@@ -165,6 +165,64 @@ const IOOverview = () => {
       if (error) throw error;
       return data || [];
     },
+  });
+
+  // Observer signals for selected user (last 14 days)
+  const { data: observerSignals } = useQuery({
+    queryKey: ["observer-signals", selectedUser?.user_id],
+    enabled: !!selectedUser,
+    queryFn: async () => {
+      const since = new Date(Date.now() - 14 * 86400000).toISOString();
+
+      // Step 1: get chat session IDs for user
+      const { data: chatSessions } = await supabase
+        .from("chat_sessions")
+        .select("id")
+        .eq("user_id", selectedUser.user_id);
+      if (!chatSessions || chatSessions.length === 0) return null;
+
+      const sessionIds = chatSessions.map((cs: any) => cs.id);
+
+      // Step 2: get turn_insights for those sessions
+      const { data: insights } = await supabase
+        .from("turn_insights")
+        .select("shift_detected, shift_description, emotion_intensity, emotion_stability, overall_score, phase, created_at")
+        .in("chat_session_id", sessionIds)
+        .gte("created_at", since)
+        .order("created_at", { ascending: false });
+
+      const rows = insights || [];
+      if (rows.length === 0) return null;
+
+      const shiftsDetected = rows.filter((r: any) => r.shift_detected).length;
+      const emotionVals = rows.filter((r: any) => r.emotion_intensity != null).map((r: any) => Number(r.emotion_intensity));
+      const scoreVals = rows.filter((r: any) => r.overall_score != null).map((r: any) => Number(r.overall_score));
+      const unstableCount = rows.filter((r: any) => r.emotion_stability === "unstable").length;
+      const severeIssuesCount = rows.filter((r: any) =>
+        (Number(r.emotion_intensity) === 3 && r.emotion_stability === "unstable") ||
+        (r.overall_score != null && Number(r.overall_score) <= 1)
+      ).length;
+
+      const recentShiftDescriptions = rows
+        .filter((r: any) => r.shift_detected && r.shift_description)
+        .slice(0, 3)
+        .map((r: any) => r.shift_description);
+
+      const observerPhase = rows.find((r: any) => r.phase)?.phase || null;
+
+      return {
+        totalConversations: rows.length,
+        shiftsDetected,
+        avgEmotionIntensity: emotionVals.length > 0 ? emotionVals.reduce((a: number, b: number) => a + b, 0) / emotionVals.length : 0,
+        unstableCount,
+        avgOverallScore: scoreVals.length > 0 ? scoreVals.reduce((a: number, b: number) => a + b, 0) / scoreVals.length : 0,
+        severeIssuesCount,
+        hasSevereBlock: severeIssuesCount > 0,
+        observerPhase,
+        recentShiftDescriptions,
+      };
+    },
+    staleTime: 30 * 1000,
   });
 
   // PM handlers
@@ -684,12 +742,112 @@ const IOOverview = () => {
                             </AlertDescription>
                           </Alert>
                         )}
+
+                        {/* Observer Signals from PM Result */}
+                        {pmResult.observer_signals !== undefined && (
+                          <div className="rounded-lg border border-border p-3 space-y-2">
+                            <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
+                              <Brain className="h-3 w-3" />
+                              Observer no Phase Manager
+                            </h4>
+                            <div className="flex flex-wrap gap-2 text-xs">
+                              <Badge variant="outline">
+                                Consultado: {pmResult.observer_signals ? "Sim" : "Não"}
+                              </Badge>
+                              {pmResult.observer_signals && (
+                                <>
+                                  <Badge variant={pmResult.observer_signals.hasSevereBlock ? "destructive" : "outline"}>
+                                    Bloqueio: {pmResult.observer_signals.hasSevereBlock ? "Sim" : "Não"}
+                                  </Badge>
+                                  {(() => {
+                                    const rec = pmResult.observer_signals.hasSevereBlock
+                                      ? "blocked"
+                                      : (pmResult.observer_signals.shiftsDetected > 0 ? "positive" : "neutral");
+                                    const recColors: Record<string, string> = {
+                                      positive: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400 border-transparent",
+                                      neutral: "",
+                                      blocked: "bg-destructive text-destructive-foreground",
+                                    };
+                                    return (
+                                      <Badge className={recColors[rec] || ""} variant={rec === "neutral" ? "secondary" : undefined}>
+                                        Rec: {rec}
+                                      </Badge>
+                                    );
+                                  })()}
+                                </>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
                         <pre className="rounded-lg border border-border bg-muted/30 p-3 text-xs font-mono overflow-x-auto max-h-64 overflow-y-auto text-foreground">
                           {JSON.stringify(pmResult, null, 2)}
                         </pre>
                       </div>
                     )}
                   </div>
+                </div>
+
+                {/* Observer Signals Section */}
+                <Separator />
+                <div>
+                  <h3 className="text-sm font-medium text-foreground mb-3 flex items-center gap-2">
+                    <Brain className="h-4 w-4" />
+                    Sinais do Observer
+                    <span className="text-xs text-muted-foreground font-normal">(últimas 2 semanas)</span>
+                  </h3>
+
+                  {observerSignals ? (
+                    <div className="space-y-3">
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="rounded-lg border border-border p-3 text-center">
+                          <p className="text-lg font-bold text-foreground">{observerSignals.shiftsDetected}</p>
+                          <p className="text-[10px] text-muted-foreground">Shifts detectados</p>
+                        </div>
+                        <div className="rounded-lg border border-border p-3 text-center">
+                          <p className="text-lg font-bold text-foreground">{observerSignals.avgOverallScore.toFixed(1)}</p>
+                          <p className="text-[10px] text-muted-foreground">Score médio / 5.0</p>
+                        </div>
+                        <div className="rounded-lg border border-border p-3 text-center">
+                          <p className="text-lg font-bold text-foreground">{observerSignals.avgEmotionIntensity.toFixed(1)}</p>
+                          <p className="text-[10px] text-muted-foreground">Intensidade / 3.0</p>
+                        </div>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2 text-xs">
+                        <Badge variant="outline">
+                          Turnos instáveis: {observerSignals.unstableCount}
+                        </Badge>
+                        <Badge variant={observerSignals.hasSevereBlock ? "destructive" : "outline"}
+                          className={!observerSignals.hasSevereBlock ? "bg-emerald-100 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400 border-transparent" : ""}>
+                          Bloqueio severo: {observerSignals.hasSevereBlock ? "Sim" : "Não"}
+                        </Badge>
+                        {observerSignals.observerPhase && (
+                          <Badge variant="secondary">
+                            Fase observer: {observerSignals.observerPhase}
+                          </Badge>
+                        )}
+                        <Badge variant="outline">
+                          Turnos analisados: {observerSignals.totalConversations}
+                        </Badge>
+                      </div>
+
+                      {observerSignals.recentShiftDescriptions.length > 0 && (
+                        <div>
+                          <p className="text-xs font-medium text-muted-foreground mb-1">Últimos shifts:</p>
+                          <ul className="space-y-1">
+                            {observerSignals.recentShiftDescriptions.map((desc: string, i: number) => (
+                              <li key={i} className="text-xs text-foreground rounded border border-border p-2 bg-muted/20">
+                                {desc}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Nenhum dado do observer nas últimas 2 semanas.</p>
+                  )}
                 </div>
               </div>
             </DialogContent>
