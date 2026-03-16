@@ -1,65 +1,119 @@
 
 
-# Geração Automática de Títulos para Conversas
+# Plano de Correcao: Fluxo de Testemunho e Aprovacao de Soldados
 
-## Resumo
-Substituir a lógica atual de truncar a primeira mensagem como título por uma chamada a um edge function que usa IA (gemini-2.5-flash-lite) para gerar títulos curtos de 3-5 palavras descrevendo o tema emocional.
+## Diagnostico Confirmado
 
-## O que existe hoje
-- `updateSessionTitle` em `Chat.tsx` (linha 545) simplesmente faz `userMessage.substring(0, 50)` e salva como título
-- A sidebar já exibe `session.title` com fallback para "Nova Conversa" — não precisa de alteração
-- A tabela `chat_sessions` já tem coluna `title`
+Dados reais do banco confirmam os problemas:
+- **1 candidatura travada** em `under_review` com testemunho em `processing` (nunca processado, sem transcrição nem analise)
+- **0 usuarios com role `pastor`** no sistema -- aprovacao tripla e impossivel
+- A pagina de curadoria (`TestimonyCuration`) exige role `admin` via `AdminRoute`, bloqueando `profissional` e `pastor`
+- O envio de testemunho NAO dispara `process-testimony` automaticamente
+- O card de aprovacao (`ApplicationApprovalCard`) nao mostra feedback sobre quais aprovacoes faltam quando o usuario ja aprovou
 
-## Alterações
+---
 
-### 1. Criar edge function `generate-chat-title`
-**Arquivo:** `supabase/functions/generate-chat-title/index.ts`
+## Ordem de Deploy (5 etapas)
 
-- Recebe `{ session_id, first_message }`
-- Verifica se sessão já tem título diferente do padrão (se o título atual parece truncado/default, prossegue)
-- Chama Lovable AI Gateway (`gemini-2.5-flash-lite`, temperature 0.3, max_tokens 20) com system prompt para gerar título de 3-5 palavras em português sobre o tema emocional
-- Limpa resposta (trim, remove aspas, limita 50 chars)
-- UPDATE `chat_sessions SET title = :titulo WHERE id = :session_id`
-- Se LLM falhar, retorna sem alterar (título truncado permanece como fallback)
+### Etapa 1: Migration -- Flexibilizar aprovacao tripla
 
-**Config:** Adicionar `[functions.generate-chat-title] verify_jwt = false` ao config.toml
+**Problema:** Sem pastor no sistema, nenhuma candidatura pode ser aprovada.
 
-### 2. Modificar `updateSessionTitle` em `Chat.tsx` (linha 545-551)
-Manter o comportamento atual (título truncado salvo imediatamente como fallback), e adicionar chamada fire-and-forget ao edge function:
+**Solucao:** Criar uma funcao que verifica aprovacao com logica flexivel: se nao existe usuario com role `pastor` no sistema, a aprovacao de pastor e dispensada. O trigger `check_soldado_approval_complete` sera atualizado.
 
-```typescript
-const updateSessionTitle = async (sessionId: string, userMessage: string) => {
-  // Fallback imediato: título truncado (aparece na sidebar instantaneamente)
-  const title = userMessage.substring(0, 50) + (userMessage.length > 50 ? "..." : "");
-  await supabase
-    .from("chat_sessions")
-    .update({ title, updated_at: new Date().toISOString() })
-    .eq("id", sessionId);
-
-  // Fire-and-forget: gerar título inteligente via IA
-  if (userMessage.length > 10) {
-    supabase.functions.invoke('generate-chat-title', {
-      body: { session_id: sessionId, first_message: userMessage }
-    }).catch(err => console.warn("Title generation failed:", err));
-
-    // Refresh sidebar após delay para mostrar título gerado
-    setTimeout(() => {
-      refreshSidebarRef.current?.();
-    }, 3000);
-  }
-};
+```text
+Logica da nova funcao check_soldado_approval_complete:
+  - admin_approved = obrigatorio
+  - profissional_approved = obrigatorio
+  - pastor_approved = obrigatorio SE existir pelo menos 1 usuario com role 'pastor'
+  - Se nao existir pastor, aprovacao completa com admin + profissional
 ```
 
-### 3. Sidebar — sem alterações
-A sidebar já renderiza `session.title || "Nova Conversa"` com truncate CSS. O título gerado pela IA substituirá o truncado automaticamente.
+**SQL (migration):**
+- Recriar a funcao `check_soldado_approval_complete` com a logica condicional
+- Atualizar a funcao `get_application_approval_status` para refletir o campo `pastor_required`
 
-## Comportamento
-- Usuário envia primeira mensagem → título truncado aparece imediatamente na sidebar
-- 2-3 segundos depois → edge function atualiza com título inteligente → sidebar refresha
-- Se IA falhar → título truncado permanece (zero impacto)
-- Conversas existentes não são afetadas
+---
 
-## Arquivos alterados
-- `supabase/functions/generate-chat-title/index.ts` (novo)
-- `src/pages/Chat.tsx` (modificar `updateSessionTitle`)
+### Etapa 2: Edge Function -- Auto-processar testemunho apos envio
+
+**Problema:** O testemunho e inserido com status `processing` mas a Edge Function `process-testimony` nunca e chamada automaticamente.
+
+**Solucao:** Adicionar chamada a `process-testimony` no frontend imediatamente apos o INSERT do testemunho em `SoldadoTestimony.tsx`.
+
+**Arquivo:** `src/pages/SoldadoTestimony.tsx`
+- Apos o INSERT bem-sucedido na tabela `testimonies` (linha ~213), invocar:
+  ```typescript
+  supabase.functions.invoke("process-testimony", {
+    body: { testimony_id: insertedId }
+  });
+  ```
+- Sera fire-and-forget (nao bloqueia a UX de sucesso)
+- Requer retornar o `id` do INSERT (usar `.select('id').single()`)
+
+---
+
+### Etapa 3: UI -- Abrir curadoria para profissional e pastor
+
+**Problema:** `TestimonyCuration.tsx` usa `AdminRoute` que bloqueia profissional e pastor.
+
+**Solucao:** Trocar `AdminRoute` por `RoleRoute` com roles permitidas.
+
+**Arquivo:** `src/pages/admin/TestimonyCuration.tsx`
+- Substituir `<AdminRoute>` por `<RoleRoute allowedRoles={["admin", "desenvolvedor", "profissional", "pastor"]}>`
+- Importar `RoleRoute` no lugar de `AdminRoute`
+
+---
+
+### Etapa 4: UI -- Feedback de aprovacoes pendentes no card
+
+**Problema:** Apos o admin aprovar, o card some os botoes sem explicar o que falta.
+
+**Solucao:** Adicionar mensagem contextual em `ApplicationApprovalCard.tsx`.
+
+**Arquivo:** `src/components/soldado/ApplicationApprovalCard.tsx`
+- Quando `canApprove === false` e `status === "under_review"`:
+  - Mostrar banner informativo: "Sua aprovacao foi registrada. Aguardando: [lista de roles pendentes]"
+  - Calcular roles pendentes a partir de `application.approvals`
+
+---
+
+### Etapa 5: UI -- Guardar curadoria antes de aprovacao
+
+**Problema:** O curador pode aprovar a candidatura ANTES do testemunho ser processado pela IA (status `processing`).
+
+**Solucao:** No `TestimonyCurationCard.tsx`, ja existe logica parcial (`canTakeAction` verifica `analyzed || processing`). Ajustar para:
+- Botoes de "Aprovar"/"Rejeitar" so aparecem quando `testimony.status === "analyzed"`
+- Quando `processing`, mostrar apenas botao "Processar" e mensagem de aguardo
+- Remover `processing` da condicao `canTakeAction` para acoes de curadoria
+
+**Arquivo:** `src/components/soldado/TestimonyCurationCard.tsx` (linha 331-333)
+```typescript
+// ANTES:
+const canTakeAction = approverRole !== null && 
+  (testimony.status === "analyzed" || testimony.status === "processing");
+
+// DEPOIS:
+const canTakeAction = approverRole !== null && testimony.status === "analyzed";
+```
+
+---
+
+## Resumo de Arquivos Impactados
+
+| Arquivo | Tipo de Mudanca |
+|---|---|
+| Nova migration SQL | Recriar trigger de aprovacao flexivel |
+| `src/pages/SoldadoTestimony.tsx` | Chamar process-testimony apos envio |
+| `src/pages/admin/TestimonyCuration.tsx` | Trocar AdminRoute por RoleRoute |
+| `src/components/soldado/ApplicationApprovalCard.tsx` | Feedback de aprovacoes pendentes |
+| `src/components/soldado/TestimonyCurationCard.tsx` | Bloquear curadoria antes da analise |
+
+## Riscos e Mitigacoes
+
+- **Risco:** Flexibilizar pastor pode permitir aprovacao prematura.
+  **Mitigacao:** A logica so dispensa pastor se literalmente nao existe nenhum usuario com essa role no sistema. Quando um pastor for cadastrado, a exigencia volta automaticamente.
+
+- **Risco:** Chamada fire-and-forget do process-testimony pode falhar silenciosamente.
+  **Mitigacao:** O botao "Processar" na tela de curadoria ja existe como fallback manual.
 
