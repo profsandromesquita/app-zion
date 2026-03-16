@@ -15,7 +15,8 @@ import {
   Sparkles,
   ToggleLeft,
   FlaskConical,
-  Activity
+  Activity,
+  BarChart3
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import zionLogo from "@/assets/zion-logo.png";
@@ -40,6 +41,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
     { to: "/admin/instructions", icon: Settings, label: "System Instructions" },
     { to: "/admin/feature-flags", icon: ToggleLeft, label: "Feature Flags" },
     { to: "/admin/cohorts", icon: FlaskConical, label: "Cohorts" },
+    { to: "/admin/io-dashboard", icon: BarChart3, label: "IO Dashboard" },
     { to: "/admin/io-overview", icon: Activity, label: "IO Overview" },
   ];
 
