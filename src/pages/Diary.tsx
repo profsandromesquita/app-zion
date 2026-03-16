@@ -182,45 +182,51 @@ function AnalysisCard({ entry, isDiaryIOEnabled }: { entry: DiaryEntry; isDiaryI
   const depthLabel = analysis.depth_level === "superficial" ? "breve" : depth?.label;
 
   return (
-    <div className="mt-4 rounded-lg border border-border/50 bg-muted/30 p-4">
-      <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-        Sobre esta reflexão
-      </h3>
-      <div className="flex flex-wrap items-center gap-2">
-        {tone && (
-          <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${tone.variant}`}>
-            {tone.label}
-          </span>
+    <>
+      <div className="mt-6 mb-4 border-t border-border/40" />
+      <div className="rounded-xl border border-border/40 bg-muted/20 p-5">
+        <h3 className="mb-3 flex items-center gap-1.5 text-xs font-medium uppercase tracking-widest text-muted-foreground">
+          <Sparkles className="h-3 w-3" />
+          Sobre esta reflexão
+        </h3>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {tone && (
+            <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${tone.variant}`}>
+              {tone.label}
+            </span>
+          )}
+          {depthLabel && (
+            <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${depth?.variant || "bg-muted text-muted-foreground"}`}>
+              {depthLabel}
+            </span>
+          )}
+        </div>
+
+        {analysis.key_themes && analysis.key_themes.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {analysis.key_themes.map((theme, i) => (
+              <span key={i} className="rounded-full border border-border/60 bg-background px-2.5 py-0.5 text-xs text-muted-foreground">
+                {theme}
+              </span>
+            ))}
+          </div>
         )}
-        {depthLabel && (
-          <span className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-xs font-medium text-muted-foreground">
-            {depthLabel}
-          </span>
+
+        {entry.io_phase_at_entry != null && (
+          <p className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Bookmark className="h-3 w-3" />
+            Escrito na Fase {entry.io_phase_at_entry} — {PHASE_NAMES[entry.io_phase_at_entry] || ""}
+          </p>
+        )}
+
+        {analysis.analysis_summary && (
+          <p className="mt-3 text-sm italic leading-relaxed text-muted-foreground/80">
+            {analysis.analysis_summary}
+          </p>
         )}
       </div>
-
-      {analysis.key_themes && analysis.key_themes.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-1.5">
-          {analysis.key_themes.map((theme, i) => (
-            <span key={i} className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-              {theme}
-            </span>
-          ))}
-        </div>
-      )}
-
-      {entry.io_phase_at_entry != null && (
-        <p className="mt-3 text-xs text-muted-foreground">
-          Escrito na Fase {entry.io_phase_at_entry} — {PHASE_NAMES[entry.io_phase_at_entry] || ""}
-        </p>
-      )}
-
-      {analysis.analysis_summary && (
-        <p className="mt-2 text-sm italic text-muted-foreground">
-          {analysis.analysis_summary}
-        </p>
-      )}
-    </div>
+    </>
   );
 }
 
