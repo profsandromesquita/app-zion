@@ -423,6 +423,76 @@ async function fetchObserverSignals(
 }
 
 // ============================================================
+// DIARY SIGNALS (informational only — never blocks)
+// ============================================================
+
+async function fetchDiarySignals(
+  supabase: any,
+  userId: string,
+  days: number
+): Promise<Record<string, unknown> | null> {
+  const since = new Date();
+  since.setDate(since.getDate() - days);
+
+  const { data: entries } = await supabase
+    .from("diary_entries")
+    .select("io_analysis, created_at")
+    .eq("user_id", userId)
+    .not("io_analysis", "is", null)
+    .gte("created_at", since.toISOString())
+    .order("created_at", { ascending: false });
+
+  const valid = (entries || []).filter(
+    (e: any) => e.io_analysis && !e.io_analysis.skipped
+  );
+  if (valid.length === 0) return null;
+
+  const avgGenuineness =
+    valid.reduce(
+      (s: number, e: any) => s + (e.io_analysis.genuineness_score || 0),
+      0
+    ) / valid.length;
+
+  const depthCounts: Record<string, number> = {
+    superficial: 0,
+    moderate: 0,
+    deep: 0,
+  };
+  const toneCounts: Record<string, number> = {};
+  const themeCounts: Record<string, number> = {};
+
+  for (const e of valid) {
+    const a = e.io_analysis;
+    if (a.depth_level)
+      depthCounts[a.depth_level] = (depthCounts[a.depth_level] || 0) + 1;
+    if (a.emotional_tone)
+      toneCounts[a.emotional_tone] =
+        (toneCounts[a.emotional_tone] || 0) + 1;
+    if (Array.isArray(a.key_themes)) {
+      for (const t of a.key_themes)
+        themeCounts[t] = (themeCounts[t] || 0) + 1;
+    }
+  }
+
+  const dominantTone =
+    Object.entries(toneCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ||
+    "unknown";
+  const keyThemes = Object.entries(themeCounts)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([t]) => t);
+
+  return {
+    total_entries: valid.length,
+    avg_genuineness: Math.round(avgGenuineness * 1000) / 1000,
+    depth_distribution: depthCounts,
+    dominant_tone: dominantTone,
+    key_themes: keyThemes,
+    diary_engagement: Math.round((valid.length / days) * 1000) / 1000,
+  };
+}
+
+// ============================================================
 // PHASE NAMES & NEXT CRITERIA DESCRIPTIONS
 // ============================================================
 
