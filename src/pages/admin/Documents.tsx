@@ -88,6 +88,7 @@ const Documents = () => {
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [processing, setProcessing] = useState<string | null>(null);
+  const [reprocessing, setReprocessing] = useState(false);
   
   // Form state
   const [formData, setFormData] = useState({
