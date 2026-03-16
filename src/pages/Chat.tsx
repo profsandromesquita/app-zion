@@ -44,6 +44,50 @@ const PHASE_HEADER_SUBTITLES: Record<number, string> = {
   7: 'Vivendo com inteireza',
 };
 
+function getPhaseTouch(phase: number): string {
+  const touches: Record<number, string> = {
+    1: 'Estamos num momento de perceber o que sente. ',
+    2: 'Estamos separando o que é seu do que é do outro. ',
+    3: 'Estamos olhando para padrões que se repetem. ',
+  };
+  return touches[phase] || '';
+}
+
+function getContextualGreeting(params: {
+  nome: string;
+  totalSessions: number;
+  hasConversations: boolean;
+  didSessionToday: boolean;
+  streakCurrent: number;
+  currentPhase: number;
+}): string {
+  const { nome, totalSessions, hasConversations, didSessionToday, streakCurrent, currentPhase } = params;
+
+  // Cenário 1: Primeira vez
+  if (totalSessions === 0 && !hasConversations) {
+    return `Oi${nome ? `, ${nome}` : ''}. Que bom ter você aqui. Este é um espaço seguro para você — sem pressa, sem julgamento. Pode começar contando o que está no seu coração agora, ou escolher uma das opções abaixo.`;
+  }
+
+  // Cenário 2: Fez sessão hoje
+  if (didSessionToday) {
+    return `Oi${nome ? `, ${nome}` : ''}. Vi que você completou sua sessão de hoje. Se algo ficou ecoando ou se surgiu algo novo, esse espaço é para isso. O que está com você agora?`;
+  }
+
+  // Cenário 3: Streak alto (constância)
+  if (streakCurrent >= 5) {
+    return `Oi${nome ? `, ${nome}` : ''}. ${streakCurrent} dias seguidos de prática — isso mostra dedicação. Como está se sentindo nesse ritmo? O que quer explorar hoje?`;
+  }
+
+  // Cenário 4: Reencontro (teve sessões mas streak zerou)
+  if (totalSessions > 0 && streakCurrent === 0) {
+    return `Oi${nome ? `, ${nome}` : ''}. Que bom que voltou. Não importa quanto tempo passou — esse espaço continua aqui para você. O que traz você hoje?`;
+  }
+
+  // Cenário 5: Retorno normal (streak 1-4)
+  const phaseTouch = currentPhase <= 3 ? getPhaseTouch(currentPhase) : '';
+  return `Oi${nome ? `, ${nome}` : ''}. Bom ter você de volta. ${phaseTouch}O que está no seu coração hoje?`;
+}
+
 type SoldadoApplicationStatus = Database["public"]["Enums"]["soldado_application_status"];
 
 interface Message {
@@ -79,15 +123,34 @@ const Chat = () => {
   const { isAdmin, loading: rolesLoading } = useUserRole();
   const { enabled: isIOEnabled } = useFeatureFlag("io_prompt_adapter_enabled");
 
-  const { data: ioPhase } = useQuery({
+  const { data: ioPhaseData } = useQuery({
     queryKey: ['io-phase-header', user?.id],
     queryFn: async () => {
       const { data } = await supabase
         .from('io_user_phase')
-        .select('current_phase')
+        .select('current_phase, streak_current, total_sessions, last_session_date')
         .eq('user_id', user!.id)
         .maybeSingle();
-      return data?.current_phase || null;
+      return data || null;
+    },
+    staleTime: 5 * 60 * 1000,
+    enabled: isIOEnabled && !!user?.id,
+  });
+
+  const ioPhaseNumber = ioPhaseData?.current_phase || null;
+
+  const { data: didSessionToday } = useQuery({
+    queryKey: ['io-today-session', user?.id],
+    queryFn: async () => {
+      const today = new Date().toISOString().split('T')[0];
+      const { data } = await supabase
+        .from('io_daily_sessions')
+        .select('id')
+        .eq('user_id', user!.id)
+        .eq('session_date', today)
+        .eq('completed', true)
+        .maybeSingle();
+      return !!data;
     },
     staleTime: 5 * 60 * 1000,
     enabled: isIOEnabled && !!user?.id,
@@ -324,7 +387,16 @@ const Chat = () => {
     const name = profile?.name || userName || "";
     let welcomeText: string;
 
-    if (isFirstTime && profile?.initial_pain_focus && profile.initial_pain_focus.length > 0) {
+    if (isIOEnabled && ioPhaseData) {
+      welcomeText = getContextualGreeting({
+        nome: name,
+        totalSessions: ioPhaseData.total_sessions || 0,
+        hasConversations: !isFirstTime,
+        didSessionToday: didSessionToday || false,
+        streakCurrent: ioPhaseData.streak_current || 0,
+        currentPhase: ioPhaseData.current_phase || 1,
+      });
+    } else if (isFirstTime && profile?.initial_pain_focus && profile.initial_pain_focus.length > 0) {
       // First time user with pain focus from onboarding
       const painFocus = profile.initial_pain_focus[0].toLowerCase();
       welcomeText = `Olá${name ? `, ${name}` : ""}! Fico feliz que você esteja aqui.\n\nVocê mencionou que ${painFocus} tem pesado. Quer me contar um pouco sobre como isso tem aparecido no seu dia?`;
@@ -1103,7 +1175,7 @@ const Chat = () => {
                 <div>
                   <h1 className="font-medium text-foreground">Zion</h1>
                   <p className="text-xs text-muted-foreground">
-                    {isIOEnabled && ioPhase ? PHASE_HEADER_SUBTITLES[ioPhase] || 'Acolhimento' : 'Acolhimento'}
+                    {isIOEnabled && ioPhaseNumber ? PHASE_HEADER_SUBTITLES[ioPhaseNumber] || 'Acolhimento' : 'Acolhimento'}
                   </p>
                 </div>
               </div>
