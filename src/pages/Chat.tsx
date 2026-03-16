@@ -387,7 +387,16 @@ const Chat = () => {
     const name = profile?.name || userName || "";
     let welcomeText: string;
 
-    if (isFirstTime && profile?.initial_pain_focus && profile.initial_pain_focus.length > 0) {
+    if (isIOEnabled && ioPhaseData) {
+      welcomeText = getContextualGreeting({
+        nome: name,
+        totalSessions: ioPhaseData.total_sessions || 0,
+        hasConversations: !isFirstTime,
+        didSessionToday: didSessionToday || false,
+        streakCurrent: ioPhaseData.streak_current || 0,
+        currentPhase: ioPhaseData.current_phase || 1,
+      });
+    } else if (isFirstTime && profile?.initial_pain_focus && profile.initial_pain_focus.length > 0) {
       // First time user with pain focus from onboarding
       const painFocus = profile.initial_pain_focus[0].toLowerCase();
       welcomeText = `Olá${name ? `, ${name}` : ""}! Fico feliz que você esteja aqui.\n\nVocê mencionou que ${painFocus} tem pesado. Quer me contar um pouco sobre como isso tem aparecido no seu dia?`;
