@@ -1130,6 +1130,8 @@ async function handleEvaluate(supabase: any, userId: string) {
         shadow_mode: true,
         observer_signals: observerSignals || null,
         blocked_by_observer: blockedByObserver,
+        registro_analysis_summary: registroSummary || null,
+        blocked_by_registro: registroBlock,
       },
     });
   }
