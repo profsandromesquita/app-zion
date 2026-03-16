@@ -275,8 +275,8 @@ const IODashboard = () => {
                   value={metrics.totalTransitions}
                   subtitle={
                     <div className="flex gap-2 text-xs">
-                      <span className="text-green-500">↑{metrics.advances}</span>
-                      <span className="text-red-500">↓{metrics.regressions}</span>
+                      <span className="text-primary">↑{metrics.advances}</span>
+                      <span className="text-destructive">↓{metrics.regressions}</span>
                       <span className="text-muted-foreground">⚙{metrics.overrides}</span>
                     </div>
                   }
