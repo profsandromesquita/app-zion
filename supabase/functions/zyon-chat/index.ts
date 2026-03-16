@@ -2471,7 +2471,7 @@ serve(async (req) => {
     // ========================================
     console.log("Step 2: Intent Routing + User Context + Observer Insights");
     const { intent, confidence } = classifyIntent(message);
-    const ragPlan = buildRAGPlan(intent);
+    // ragPlan will be built after ioPhaseContext is loaded (Step 2.5)
     const userContext = detectUserContext(message, history);
     const turnCount = history.filter((h: { role: string }) => h.role === 'user').length + 1;
     
