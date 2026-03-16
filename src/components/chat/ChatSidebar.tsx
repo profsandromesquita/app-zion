@@ -1,4 +1,6 @@
 import { useState, useEffect } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import IOJourneySection from "@/components/profile/IOJourneySection";
 import { Plus, Search, LogOut, BookOpen, Shield, User, Star, Settings, ChevronDown, Download, ChevronRight, Sun, Flame } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import zionLogo from "@/assets/zion-logo.png";
