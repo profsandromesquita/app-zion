@@ -849,7 +849,8 @@ function validateResponseIO(
   hasRAGChunks: boolean,
   lowConfidenceRAG: boolean,
   isSessionDaily: boolean,
-  crisisRiskLevel: string // 'none' | 'low' | 'medium' | 'high'
+  crisisRiskLevel: string, // 'none' | 'low' | 'medium' | 'high'
+  isRagFoundationRequired: boolean = false
 ): ValidationResult {
   const issues: ValidationIssue[] = [];
   const rewriteInstructions: string[] = [];
@@ -1099,10 +1100,16 @@ function validateResponseIO(
   if (!hasRAGChunks || lowConfidenceRAG) {
     const substantiveRegex = /\b(seu medo (de|é)|sua cren[cç]a|seu padr[aã]o|sua virtude|o ciclo (que|de)|a mentira (que|é)|a verdade (é|que)|seu mecanismo|sua defesa|sua inseguran[cç]a|seu ídolo)\b/i;
     if (substantiveRegex.test(response)) {
+      const unfoundedSeverity = isRagFoundationRequired ? 'HIGH' : 'MEDIUM';
       issues.push({ 
-        code: 'UNFOUNDED_SUBSTANTIVE', severity: 'MEDIUM',
-        message: 'Afirmação substantiva sem fundamentação RAG (Premissa 15)' 
+        code: 'UNFOUNDED_SUBSTANTIVE', severity: unfoundedSeverity,
+        message: `Afirmação substantiva sem fundamentação RAG (Premissa 15 — ${unfoundedSeverity})` 
       });
+      if (unfoundedSeverity === 'HIGH') {
+        rewriteInstructions.push(
+          'REMOVA afirmações sobre medo, crença, padrão ou virtude que não estejam fundamentadas na Base de Conhecimento. Permaneça no MODO ACOLHIMENTO: espelhe e pergunte.'
+        );
+      }
     }
   }
   
@@ -3107,11 +3114,18 @@ O objetivo é que O PRÓPRIO USUÁRIO chegue à conexão.`;
     let validationResult: ValidationResult;
     let usedIOValidator = false;
     
-    const { data: safetyFlag } = await supabase.rpc('get_feature_flag', {
-      p_flag_name: 'io_safety_expanded_enabled',
-      p_user_id: userId
-    });
+    const [{ data: safetyFlag }, { data: ragFoundationFlag }] = await Promise.all([
+      supabase.rpc('get_feature_flag', {
+        p_flag_name: 'io_safety_expanded_enabled',
+        p_user_id: userId
+      }),
+      supabase.rpc('get_feature_flag', {
+        p_flag_name: 'io_rag_foundation_required',
+        p_user_id: userId
+      })
+    ]);
     const isSafetyExpanded = safetyFlag === true;
+    const isRagFoundationRequired = ragFoundationFlag === true;
     
     if (isSafetyExpanded) {
       validationResult = validateResponseIO(
@@ -3120,7 +3134,8 @@ O objetivo é que O PRÓPRIO USUÁRIO chegue à conexão.`;
         chunks.length > 0,
         lowConfidence,
         false, // isSessionDaily — será true quando Fase 5 implementar
-        crisisResult?.risk_level || 'none'
+        crisisResult?.risk_level || 'none',
+        isRagFoundationRequired
       );
       usedIOValidator = true;
       console.log("Validation via IO validator (phase:", 
