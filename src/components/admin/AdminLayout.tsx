@@ -17,7 +17,8 @@ import {
   FlaskConical,
   Activity,
   BarChart3,
-  Target
+  Target,
+  ClipboardList
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import zionLogo from "@/assets/zion-logo.png";
