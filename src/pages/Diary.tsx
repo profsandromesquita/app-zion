@@ -1,11 +1,12 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, ArrowLeft, Trash2, Calendar, Save } from "lucide-react";
+import { Plus, ArrowLeft, Trash2, Calendar, Save, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardHeader, CardTitle } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -72,6 +73,27 @@ const TONE_MAP: Record<string, { variant: string; label: string }> = {
   mixed: { variant: "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-300", label: "misto" },
 };
 
+const CATEGORY_MAP: Record<string, { emoji: string; label: string }> = {
+  familia: { emoji: "🏠", label: "Família" },
+  carreira: { emoji: "💼", label: "Trabalho" },
+  relacionamento: { emoji: "❤️", label: "Relacionamento" },
+  autoestima: { emoji: "🪞", label: "Autoestima" },
+  saude: { emoji: "💚", label: "Saúde" },
+  financas: { emoji: "💰", label: "Finanças" },
+  fe_espiritualidade: { emoji: "🙏", label: "Fé" },
+  autoconhecimento: { emoji: "🧠", label: "Autoconhecimento" },
+  outro: { emoji: "📝", label: "Outros" },
+};
+
+const THEME_PROMPTS: { category: string; emoji: string; label: string; prompt: string }[] = [
+  { category: "familia", emoji: "🏠", label: "Família", prompt: "Como está sua relação com quem mora com você?" },
+  { category: "carreira", emoji: "💼", label: "Trabalho", prompt: "O que te desafia mais no trabalho hoje?" },
+  { category: "relacionamento", emoji: "❤️", label: "Relacionamento", prompt: "Tem alguém que te vem à mente com frequência?" },
+  { category: "fe_espiritualidade", emoji: "🙏", label: "Fé", prompt: "Como está sua conexão com Deus hoje?" },
+  { category: "autoconhecimento", emoji: "🧠", label: "Autoconhecimento", prompt: "O que você descobriu sobre si mesmo recentemente?" },
+  { category: "livre", emoji: "✍️", label: "Livre", prompt: "Escreva o que quiser, sem tema definido" },
+];
+
 // --- Types ---
 
 interface IOAnalysis {
@@ -80,6 +102,7 @@ interface IOAnalysis {
   key_themes?: string[];
   emotional_tone?: string;
   analysis_summary?: string;
+  primary_category?: string;
 }
 
 interface DiaryEntry {
@@ -94,7 +117,15 @@ interface DiaryEntry {
 
 // --- Sub-components ---
 
-function SidebarCounter({ entries }: { entries: DiaryEntry[] }) {
+function SidebarCounter({
+  entries,
+  filteredCount,
+  activeFilter,
+}: {
+  entries: DiaryEntry[];
+  filteredCount?: number;
+  activeFilter?: string | null;
+}) {
   if (entries.length === 0) {
     return (
       <div className="px-4 py-2 text-xs text-muted-foreground">
@@ -104,6 +135,16 @@ function SidebarCounter({ entries }: { entries: DiaryEntry[] }) {
   }
   const daysSince = differenceInDays(new Date(), new Date(entries[0].created_at));
   const daysText = daysSince === 0 ? "hoje" : daysSince === 1 ? "há 1 dia" : `há ${daysSince} dias`;
+
+  if (activeFilter && filteredCount != null) {
+    const cat = CATEGORY_MAP[activeFilter];
+    return (
+      <div className="px-4 py-2 text-xs text-muted-foreground">
+        📖 {filteredCount} de {entries.length} reflexões · {cat?.label || activeFilter}
+      </div>
+    );
+  }
+
   return (
     <div className="px-4 py-2 text-xs text-muted-foreground">
       📖 {entries.length} reflexões · última {daysText}
@@ -183,6 +224,53 @@ function AnalysisCard({ entry, isDiaryIOEnabled }: { entry: DiaryEntry; isDiaryI
   );
 }
 
+// --- Theme Map Component ---
+
+function ThemeMap({
+  categoryCounts,
+  maxCount,
+  onFilterClick,
+  activeFilter,
+}: {
+  categoryCounts: { category: string; count: number }[];
+  maxCount: number;
+  onFilterClick: (category: string) => void;
+  activeFilter: string | null;
+}) {
+  return (
+    <div className="w-full max-w-md space-y-3">
+      {categoryCounts.map(({ category, count }) => {
+        const cat = CATEGORY_MAP[category];
+        if (!cat) return null;
+        const percentage = maxCount > 0 ? (count / maxCount) * 100 : 0;
+        const isActive = activeFilter === category;
+        return (
+          <button
+            key={category}
+            onClick={() => onFilterClick(category)}
+            className={`flex w-full items-center gap-3 rounded-lg border p-3 text-left transition-colors cursor-pointer ${
+              isActive
+                ? "border-emerald-500 bg-emerald-50/50 dark:bg-emerald-950/30"
+                : "border-border/50 bg-card hover:bg-muted/50"
+            }`}
+          >
+            <span className="text-lg">{cat.emoji}</span>
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium text-foreground">{cat.label}</span>
+                <span className="text-xs text-muted-foreground">
+                  {count} {count === 1 ? "reflexão" : "reflexões"}
+                </span>
+              </div>
+              <Progress value={percentage} className="mt-1.5 h-2" />
+            </div>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 // --- Main Component ---
 
 const Diary = () => {
@@ -196,6 +284,8 @@ const Diary = () => {
   const [content, setContent] = useState("");
   const [isCreating, setIsCreating] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [activeFilter, setActiveFilter] = useState<string | null>(null);
+  const [themePlaceholder, setThemePlaceholder] = useState<string | null>(null);
 
   // IO phase query (only when enabled)
   const { data: ioPhaseData } = useQuery({
@@ -214,6 +304,36 @@ const Diary = () => {
   });
 
   const currentPhase = ioPhaseData?.current_phase ?? null;
+
+  // Compute category stats
+  const categorizedEntries = useMemo(
+    () => entries.filter((e) => e.io_analysis?.primary_category),
+    [entries]
+  );
+
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const e of categorizedEntries) {
+      const cat = (e.io_analysis as IOAnalysis).primary_category!;
+      counts[cat] = (counts[cat] || 0) + 1;
+    }
+    return Object.entries(counts)
+      .map(([category, count]) => ({ category, count }))
+      .sort((a, b) => b.count - a.count);
+  }, [categorizedEntries]);
+
+  const maxCategoryCount = categoryCounts.length > 0 ? categoryCounts[0].count : 0;
+  const hasEnoughCategories = categorizedEntries.length >= 3;
+  const uniqueThemeCount = categoryCounts.length;
+
+  // Filtered entries for sidebar
+  const filteredEntries = useMemo(
+    () =>
+      activeFilter
+        ? entries.filter((e) => (e.io_analysis as IOAnalysis | null)?.primary_category === activeFilter)
+        : entries,
+    [entries, activeFilter]
+  );
 
   useEffect(() => {
     if (!loading && !user) {
@@ -245,12 +365,25 @@ const Diary = () => {
     setSelectedEntry(null);
     setContent("");
     setIsCreating(true);
+    setThemePlaceholder(null);
   };
 
   const handleSelectEntry = (entry: DiaryEntry) => {
     setSelectedEntry(entry);
     setContent(entry.content);
     setIsCreating(false);
+    setThemePlaceholder(null);
+  };
+
+  const handlePromptClick = (prompt: string) => {
+    setIsCreating(true);
+    setSelectedEntry(null);
+    setContent("");
+    setThemePlaceholder(prompt);
+  };
+
+  const handleFilterClick = (category: string) => {
+    setActiveFilter((prev) => (prev === category ? null : category));
   };
 
   const triggerIOAnalysis = async (entryId: string, entryContent: string) => {
@@ -300,6 +433,7 @@ const Diary = () => {
         setSelectedEntry(null);
         setContent('');
         setIsCreating(false);
+        setThemePlaceholder(null);
 
         toast({
           title: "Entrada salva",
@@ -329,6 +463,7 @@ const Diary = () => {
         );
         setSelectedEntry(null);
         setContent('');
+        setThemePlaceholder(null);
 
         toast({
           title: "Entrada atualizada",
@@ -389,6 +524,7 @@ const Diary = () => {
 
   // Placeholder contextual
   const getPlaceholder = () => {
+    if (themePlaceholder) return themePlaceholder;
     if (isDiaryIOEnabled && currentPhase && PHASE_PLACEHOLDERS[currentPhase]) {
       return PHASE_PLACEHOLDERS[currentPhase];
     }
@@ -440,27 +576,56 @@ const Diary = () => {
         </div>
 
         {/* Mini counter */}
-        <SidebarCounter entries={entries} />
+        <SidebarCounter
+          entries={entries}
+          filteredCount={activeFilter ? filteredEntries.length : undefined}
+          activeFilter={activeFilter}
+        />
+
+        {/* Active filter badge */}
+        {activeFilter && CATEGORY_MAP[activeFilter] && (
+          <div className="px-4 pb-2">
+            <button
+              onClick={() => setActiveFilter(null)}
+              className="inline-flex items-center gap-1.5 rounded-full border border-emerald-500/50 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700 transition-colors hover:bg-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-300 dark:hover:bg-emerald-950/50"
+            >
+              {CATEGORY_MAP[activeFilter].emoji} {CATEGORY_MAP[activeFilter].label} ({filteredEntries.length})
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        )}
 
         <ScrollArea className="h-40 md:h-[calc(100vh-105px)]">
           <div className="p-2">
-            {entries.length === 0 ? (
+            {filteredEntries.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-8 text-center">
                 <Calendar className="mb-2 h-8 w-8 text-muted-foreground/50" />
                 <p className="text-sm text-muted-foreground">
-                  Nenhuma entrada ainda
+                  {activeFilter ? "Nenhuma entrada nesta categoria" : "Nenhuma entrada ainda"}
                 </p>
-                <Button
-                  variant="link"
-                  size="sm"
-                  className="mt-2"
-                  onClick={handleNewEntry}
-                >
-                  Criar primeira entrada
-                </Button>
+                {!activeFilter && (
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="mt-2"
+                    onClick={handleNewEntry}
+                  >
+                    Criar primeira entrada
+                  </Button>
+                )}
+                {activeFilter && (
+                  <Button
+                    variant="link"
+                    size="sm"
+                    className="mt-2"
+                    onClick={() => setActiveFilter(null)}
+                  >
+                    Limpar filtro
+                  </Button>
+                )}
               </div>
             ) : (
-              entries.map((entry) => (
+              filteredEntries.map((entry) => (
                 <Card
                   key={entry.id}
                   className={`mb-2 cursor-pointer transition-colors hover:bg-muted/50 ${
@@ -480,6 +645,11 @@ const Diary = () => {
                           {isDiaryIOEnabled && entry.io_phase_at_entry != null && (
                             <span className="rounded-full bg-muted px-1.5 text-[10px] text-muted-foreground">
                               Fase {entry.io_phase_at_entry}
+                            </span>
+                          )}
+                          {isDiaryIOEnabled && (entry.io_analysis as IOAnalysis | null)?.primary_category && CATEGORY_MAP[(entry.io_analysis as IOAnalysis).primary_category!] && (
+                            <span className="text-xs" title={CATEGORY_MAP[(entry.io_analysis as IOAnalysis).primary_category!].label}>
+                              {CATEGORY_MAP[(entry.io_analysis as IOAnalysis).primary_category!].emoji}
                             </span>
                           )}
                         </div>
@@ -587,19 +757,75 @@ const Diary = () => {
           </>
         ) : (
           <div className="flex flex-1 flex-col items-center justify-center p-8 text-center">
-            <div className="mb-4">
-              <img src={zionLogo} alt="Zion" className="mx-auto h-12 w-12" />
-            </div>
-            <p className="mb-4 max-w-md text-lg italic text-muted-foreground">
-              {getInspiration()}
-            </p>
-            <p className="mb-6 text-sm text-muted-foreground">
-              {getStatsText()}
-            </p>
-            <Button onClick={handleNewEntry} className="bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all duration-300">
-              <Plus className="mr-2 h-4 w-4" />
-              Nova Entrada
-            </Button>
+            {isDiaryIOEnabled && hasEnoughCategories ? (
+              /* Theme Map */
+              <>
+                <h2 className="mb-1 text-lg font-semibold text-foreground">Suas reflexões por tema</h2>
+                <p className="mb-6 text-sm text-muted-foreground">
+                  {entries.length} reflexões · {uniqueThemeCount} {uniqueThemeCount === 1 ? "tema" : "temas"}
+                </p>
+
+                <ThemeMap
+                  categoryCounts={categoryCounts}
+                  maxCount={maxCategoryCount}
+                  onFilterClick={handleFilterClick}
+                  activeFilter={activeFilter}
+                />
+
+                <Button
+                  onClick={handleNewEntry}
+                  className="mt-6 bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all duration-300"
+                >
+                  <Plus className="mr-2 h-4 w-4" />
+                  Nova Entrada
+                </Button>
+
+                <p className="mt-4 max-w-sm text-xs italic text-muted-foreground">
+                  {getInspiration()}
+                </p>
+              </>
+            ) : isDiaryIOEnabled ? (
+              /* Thematic Prompts */
+              <>
+                <h2 className="mb-1 text-lg font-semibold text-foreground">Sobre o que quer refletir?</h2>
+                <p className="mb-6 text-sm text-muted-foreground">{getStatsText()}</p>
+
+                <div className="grid w-full max-w-md grid-cols-2 gap-3">
+                  {THEME_PROMPTS.map((tp) => (
+                    <button
+                      key={tp.category}
+                      onClick={() => handlePromptClick(tp.prompt)}
+                      className="flex flex-col items-start rounded-lg border border-border bg-card p-4 text-left transition-colors hover:bg-muted/50 cursor-pointer"
+                    >
+                      <span className="mb-2 text-2xl">{tp.emoji}</span>
+                      <span className="text-sm font-medium text-foreground">{tp.label}</span>
+                      <span className="mt-1 text-xs text-muted-foreground line-clamp-2">{tp.prompt}</span>
+                    </button>
+                  ))}
+                </div>
+
+                <p className="mt-6 max-w-sm text-xs italic text-muted-foreground">
+                  {getInspiration()}
+                </p>
+              </>
+            ) : (
+              /* Original empty state */
+              <>
+                <div className="mb-4">
+                  <img src={zionLogo} alt="Zion" className="mx-auto h-12 w-12" />
+                </div>
+                <p className="mb-4 max-w-md text-lg italic text-muted-foreground">
+                  {getInspiration()}
+                </p>
+                <p className="mb-6 text-sm text-muted-foreground">
+                  {getStatsText()}
+                </p>
+                <Button onClick={handleNewEntry} className="bg-gradient-to-r from-emerald-500 to-lime-500 text-white shadow-lg shadow-emerald-500/30 hover:shadow-xl hover:shadow-emerald-500/40 transition-all duration-300">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Nova Entrada
+                </Button>
+              </>
+            )}
           </div>
         )}
       </main>
