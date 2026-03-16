@@ -440,7 +440,7 @@ const IOOverview = () => {
                         </TableHeader>
                         <TableBody>
                           {displayed.map((d) => (
-                            <TableRow key={d.id}>
+                            <TableRow key={d.id} className="cursor-pointer hover:bg-muted/50" onClick={() => { setSelectedUser(d); setPmResult(null); setOverridePhase(d.current_phase || 1); }}>
                               <TableCell className="font-medium text-sm">
                                 {d.profile?.nome || d.user_id.slice(0, 8)}
                               </TableCell>
