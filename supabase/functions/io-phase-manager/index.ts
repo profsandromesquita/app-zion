@@ -789,6 +789,13 @@ async function handleEvaluate(supabase: any, userId: string) {
   });
   const isObserverSignalsEnabled = observerFlagResult === true;
 
+  // STEP 1.6: Registro analysis feature flag check
+  const { data: registroFlagResult } = await supabase.rpc("get_feature_flag", {
+    p_flag_name: "io_pm_registro_analysis_enabled",
+    p_user_id: userId,
+  });
+  const isRegistroAnalysisEnabled = registroFlagResult === true;
+
   // STEP 2: Fetch current state
   let { data: userPhase } = await supabase
     .from("io_user_phase")
@@ -954,6 +961,66 @@ async function handleEvaluate(supabase: any, userId: string) {
     };
   }
 
+  // STEP 4.6: Registro analysis blocking check
+  let registroBlock = false;
+  let registroSummary: Record<string, unknown> | null = null;
+
+  if (isRegistroAnalysisEnabled) {
+    try {
+      const withAnalysis = sessions.filter(
+        (s: any) => s.registro_analysis && !s.registro_analysis.skipped
+      );
+
+      if (withAnalysis.length > 0) {
+        const avgGenuineness = withAnalysis.reduce(
+          (sum: number, s: any) => sum + (s.registro_analysis.genuineness_score || 0), 0
+        ) / withAnalysis.length;
+        const avgCoherence = withAnalysis.reduce(
+          (sum: number, s: any) => sum + (s.registro_analysis.coherence_with_scales || 0), 0
+        ) / withAnalysis.length;
+        const superficialCount = withAnalysis.filter(
+          (s: any) => s.registro_analysis.depth_level === "superficial"
+        ).length;
+        const repetitionCount = withAnalysis.filter(
+          (s: any) => s.registro_analysis.repetition_detected
+        ).length;
+
+        registroSummary = {
+          sessions_analyzed: withAnalysis.length,
+          avg_genuineness: Math.round(avgGenuineness * 1000) / 1000,
+          avg_coherence: Math.round(avgCoherence * 1000) / 1000,
+          superficial_count: superficialCount,
+          repetition_count: repetitionCount,
+        };
+
+        // Bloqueio: últimas 3 sessões com avgCoherence < 0.3 E avgGenuineness < 0.3
+        const recent3 = withAnalysis
+          .sort((a: any, b: any) => b.session_date.localeCompare(a.session_date))
+          .slice(0, 3);
+        if (recent3.length >= 3) {
+          const r3Genuineness = recent3.reduce(
+            (sum: number, s: any) => sum + (s.registro_analysis.genuineness_score || 0), 0
+          ) / 3;
+          const r3Coherence = recent3.reduce(
+            (sum: number, s: any) => sum + (s.registro_analysis.coherence_with_scales || 0), 0
+          ) / 3;
+          if (r3Coherence < 0.3 && r3Genuineness < 0.3 && criteriaResult.met) {
+            criteriaResult = {
+              met: false,
+              details: criteriaResult.details +
+                " | BLOQUEIO REGISTRO: Registros indicam incoerência grave entre escalas e reflexão textual" +
+                ` (genuineness: ${r3Genuineness.toFixed(2)}, coherence: ${r3Coherence.toFixed(2)})`,
+            };
+            registroBlock = true;
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Error processing registro analysis:", err);
+      // Non-blocking: continue without registro analysis
+    }
+  }
+
   // STEP 5: Evaluate regression
   const regressionResult = evaluateRegression(sessions);
 
@@ -1063,6 +1130,8 @@ async function handleEvaluate(supabase: any, userId: string) {
         shadow_mode: true,
         observer_signals: observerSignals || null,
         blocked_by_observer: blockedByObserver,
+        registro_analysis_summary: registroSummary || null,
+        blocked_by_registro: registroBlock,
       },
     });
   }
@@ -1106,6 +1175,10 @@ async function handleEvaluate(supabase: any, userId: string) {
       observer_severe_block: observerSignals?.hasSevereBlock || false,
       observer_recommendation: observerRecommendation,
       blocked_by_observer: blockedByObserver,
+      registro_analysis_consulted: isRegistroAnalysisEnabled,
+      registro_avg_genuineness: (registroSummary as any)?.avg_genuineness ?? null,
+      registro_avg_coherence: (registroSummary as any)?.avg_coherence ?? null,
+      registro_block: registroBlock,
       shadow_mode: true,
     },
     flags_active: flagsSnapshot,
@@ -1148,6 +1221,14 @@ async function handleEvaluate(supabase: any, userId: string) {
       blocked_by_observer: blockedByObserver,
       recommendation: observerRecommendation,
       observer_phase: observerSignals.observerPhase,
+    };
+  }
+
+  if (registroSummary) {
+    response.registro_analysis = {
+      consulted: true,
+      ...registroSummary,
+      blocked: registroBlock,
     };
   }
 
