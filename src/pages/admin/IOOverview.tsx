@@ -15,7 +15,9 @@ import {
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
-import { Loader2, Activity, Users, TrendingUp, Flame, Play, Eye, Settings2, AlertTriangle, GitCompareArrows, Brain } from "lucide-react";
+import { Loader2, Activity, Users, TrendingUp, Flame, Play, Eye, Settings2, AlertTriangle, GitCompareArrows, Brain, RefreshCw } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
+import { toast } from "@/hooks/use-toast";
 
 const OBSERVER_TO_IO_RANGE: Record<string, number[]> = {
   ACOLHIMENTO: [1],
@@ -42,6 +44,8 @@ const IOOverview = () => {
   const [pmLoading, setPmLoading] = useState(false);
   const [overridePhase, setOverridePhase] = useState(1);
   const [showOnlyDivergent, setShowOnlyDivergent] = useState(false);
+  const [reprocessing, setReprocessing] = useState(false);
+  const [reprocessProgress, setReprocessProgress] = useState<{ current: number; total: number } | null>(null);
 
   // Main query: io_user_phase + profiles + cohorts
   const { data: users, isLoading } = useQuery({
@@ -345,6 +349,77 @@ const IOOverview = () => {
                   </CardContent>
                 </Card>
               </div>
+
+              {/* Ferramentas de Manutenção */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Settings2 className="h-4 w-4" />
+                    Ferramentas de Manutenção
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">Reprocessar Diários</p>
+                      <p className="text-xs text-muted-foreground">
+                        Reanalisar entradas sem primary_category (classifica temas automaticamente)
+                      </p>
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={reprocessing}
+                      onClick={async () => {
+                        setReprocessing(true);
+                        setReprocessProgress({ current: 0, total: 0 });
+                        let totalProcessed = 0;
+                        let totalEntries = 0;
+                        try {
+                          let hasMore = true;
+                          while (hasMore) {
+                            const { data, error } = await supabase.functions.invoke("reprocess-diaries", {
+                              body: { batch_size: 20 },
+                            });
+                            if (error) {
+                              toast({ title: "Erro", description: error.message, variant: "destructive" });
+                              break;
+                            }
+                            totalProcessed += data.processed || 0;
+                            totalEntries = totalProcessed + (data.remaining || 0);
+                            setReprocessProgress({ current: totalProcessed, total: totalEntries });
+                            hasMore = (data.remaining || 0) > 0;
+                          }
+                          toast({
+                            title: "Reprocessamento concluído",
+                            description: `${totalProcessed} entradas reprocessadas.`,
+                          });
+                        } catch (e: any) {
+                          toast({ title: "Erro", description: e.message, variant: "destructive" });
+                        } finally {
+                          setReprocessing(false);
+                          setReprocessProgress(null);
+                        }
+                      }}
+                    >
+                      {reprocessing ? (
+                        <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                      ) : (
+                        <RefreshCw className="h-4 w-4 mr-2" />
+                      )}
+                      {reprocessing ? "Processando..." : "Reprocessar"}
+                    </Button>
+                  </div>
+                  {reprocessProgress && reprocessProgress.total > 0 && (
+                    <div className="space-y-2">
+                      <Progress value={(reprocessProgress.current / reprocessProgress.total) * 100} className="h-2" />
+                      <p className="text-xs text-muted-foreground text-center">
+                        Reprocessando {reprocessProgress.current} de {reprocessProgress.total}...
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
 
               {/* Phase Distribution */}
               <Card>
