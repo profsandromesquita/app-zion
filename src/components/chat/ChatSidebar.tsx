@@ -545,7 +545,7 @@ export function ChatSidebar({
         {!collapsed && isIOEnabled && ioPhaseData && (
           <div
             className="bg-muted/30 border border-border/50 rounded-lg p-3 mx-1 mb-2 cursor-pointer hover:bg-muted/50 transition-colors"
-            onClick={() => navigate('/profile')}
+            onClick={() => setIsJourneyOpen(true)}
           >
             <p className="text-xs font-medium text-foreground">
               Fase {ioPhaseData.current_phase} — {IO_PHASE_NAMES[ioPhaseData.current_phase] || 'Jornada'}
