@@ -1100,10 +1100,16 @@ function validateResponseIO(
   if (!hasRAGChunks || lowConfidenceRAG) {
     const substantiveRegex = /\b(seu medo (de|é)|sua cren[cç]a|seu padr[aã]o|sua virtude|o ciclo (que|de)|a mentira (que|é)|a verdade (é|que)|seu mecanismo|sua defesa|sua inseguran[cç]a|seu ídolo)\b/i;
     if (substantiveRegex.test(response)) {
+      const unfoundedSeverity = isRagFoundationRequired ? 'HIGH' : 'MEDIUM';
       issues.push({ 
-        code: 'UNFOUNDED_SUBSTANTIVE', severity: 'MEDIUM',
-        message: 'Afirmação substantiva sem fundamentação RAG (Premissa 15)' 
+        code: 'UNFOUNDED_SUBSTANTIVE', severity: unfoundedSeverity,
+        message: `Afirmação substantiva sem fundamentação RAG (Premissa 15 — ${unfoundedSeverity})` 
       });
+      if (unfoundedSeverity === 'HIGH') {
+        rewriteInstructions.push(
+          'REMOVA afirmações sobre medo, crença, padrão ou virtude que não estejam fundamentadas na Base de Conhecimento. Permaneça no MODO ACOLHIMENTO: espelhe e pergunte.'
+        );
+      }
     }
   }
   
