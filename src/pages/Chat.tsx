@@ -128,7 +128,7 @@ const Chat = () => {
     queryFn: async () => {
       const { data } = await supabase
         .from('io_user_phase')
-        .select('current_phase, streak_current, total_sessions, last_session_date')
+        .select('current_phase, streak_current, total_sessions, last_session_date, igi_current')
         .eq('user_id', user!.id)
         .maybeSingle();
       return data || null;
