@@ -961,6 +961,66 @@ async function handleEvaluate(supabase: any, userId: string) {
     };
   }
 
+  // STEP 4.6: Registro analysis blocking check
+  let registroBlock = false;
+  let registroSummary: Record<string, unknown> | null = null;
+
+  if (isRegistroAnalysisEnabled) {
+    try {
+      const withAnalysis = sessions.filter(
+        (s: any) => s.registro_analysis && !s.registro_analysis.skipped
+      );
+
+      if (withAnalysis.length > 0) {
+        const avgGenuineness = withAnalysis.reduce(
+          (sum: number, s: any) => sum + (s.registro_analysis.genuineness_score || 0), 0
+        ) / withAnalysis.length;
+        const avgCoherence = withAnalysis.reduce(
+          (sum: number, s: any) => sum + (s.registro_analysis.coherence_with_scales || 0), 0
+        ) / withAnalysis.length;
+        const superficialCount = withAnalysis.filter(
+          (s: any) => s.registro_analysis.depth_level === "superficial"
+        ).length;
+        const repetitionCount = withAnalysis.filter(
+          (s: any) => s.registro_analysis.repetition_detected
+        ).length;
+
+        registroSummary = {
+          sessions_analyzed: withAnalysis.length,
+          avg_genuineness: Math.round(avgGenuineness * 1000) / 1000,
+          avg_coherence: Math.round(avgCoherence * 1000) / 1000,
+          superficial_count: superficialCount,
+          repetition_count: repetitionCount,
+        };
+
+        // Bloqueio: últimas 3 sessões com avgCoherence < 0.3 E avgGenuineness < 0.3
+        const recent3 = withAnalysis
+          .sort((a: any, b: any) => b.session_date.localeCompare(a.session_date))
+          .slice(0, 3);
+        if (recent3.length >= 3) {
+          const r3Genuineness = recent3.reduce(
+            (sum: number, s: any) => sum + (s.registro_analysis.genuineness_score || 0), 0
+          ) / 3;
+          const r3Coherence = recent3.reduce(
+            (sum: number, s: any) => sum + (s.registro_analysis.coherence_with_scales || 0), 0
+          ) / 3;
+          if (r3Coherence < 0.3 && r3Genuineness < 0.3 && criteriaResult.met) {
+            criteriaResult = {
+              met: false,
+              details: criteriaResult.details +
+                " | BLOQUEIO REGISTRO: Registros indicam incoerência grave entre escalas e reflexão textual" +
+                ` (genuineness: ${r3Genuineness.toFixed(2)}, coherence: ${r3Coherence.toFixed(2)})`,
+            };
+            registroBlock = true;
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Error processing registro analysis:", err);
+      // Non-blocking: continue without registro analysis
+    }
+  }
+
   // STEP 5: Evaluate regression
   const regressionResult = evaluateRegression(sessions);
 
