@@ -464,4 +464,219 @@ function AlertItem({ level, children }: { level: "critical" | "warning"; childre
   );
 }
 
+// ─── Cohort Comparison ─────────────────────────────────
+
+type CohortMetrics = {
+  users: number;
+  sessionsCompleted: number;
+  sessionsTotal: number;
+  completionRate: number;
+  avgIgi: number;
+  avgStreak: number;
+  advances: number;
+  regressions: number;
+  rewriteRate: number;
+};
+
+const COHORT_NAMES = ["control", "io_shadow", "io_active"] as const;
+const COHORT_LABELS: Record<string, string> = {
+  control: "Controle",
+  io_shadow: "IO Shadow",
+  io_active: "IO Ativo",
+};
+
+const POSITIVE_METRICS = new Set([
+  "sessionsCompleted", "completionRate", "avgIgi", "avgStreak", "advances",
+]);
+const NEGATIVE_METRICS = new Set(["regressions", "rewriteRate"]);
+
+function CohortComparisonSection({ cutoff, periodDays }: { cutoff: string | null; periodDays: PeriodDays }) {
+  // Fetch all cohort assignments
+  const { data: cohorts, isLoading: loadingCohorts } = useQuery({
+    queryKey: ["io-dash-cohorts"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("user_cohorts").select("user_id, cohort_name");
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
+  const cohortGroups = useMemo(() => {
+    const groups: Record<string, string[]> = { control: [], io_shadow: [], io_active: [] };
+    cohorts?.forEach((c) => {
+      if (groups[c.cohort_name]) groups[c.cohort_name].push(c.user_id);
+    });
+    return groups;
+  }, [cohorts]);
+
+  // Fetch data for metrics (all at once, then filter per cohort)
+  const allUserIds = useMemo(() => Object.values(cohortGroups).flat(), [cohortGroups]);
+
+  const { data: cohortSessions, isLoading: loadingSessions } = useQuery({
+    queryKey: ["io-dash-cohort-sessions", cutoff],
+    enabled: allUserIds.length > 0,
+    queryFn: async () => {
+      let q = supabase.from("io_daily_sessions").select("user_id, completed, session_date");
+      if (cutoff) q = q.gte("session_date", cutoff);
+      const { data, error } = await q;
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
+  const { data: cohortPhases, isLoading: loadingPhases } = useQuery({
+    queryKey: ["io-dash-cohort-phases"],
+    enabled: allUserIds.length > 0,
+    queryFn: async () => {
+      const { data, error } = await supabase.from("io_user_phase").select("user_id, igi_current, streak_current");
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
+  const { data: cohortTransitions, isLoading: loadingTransitions } = useQuery({
+    queryKey: ["io-dash-cohort-transitions", cutoff],
+    enabled: allUserIds.length > 0,
+    queryFn: async () => {
+      let q = supabase.from("io_phase_transitions").select("user_id, transition_type, created_at");
+      if (cutoff) q = q.gte("created_at", new Date(cutoff).toISOString());
+      const { data, error } = await q;
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
+  const { data: cohortObsLogs, isLoading: loadingObs } = useQuery({
+    queryKey: ["io-dash-cohort-obs", cutoff],
+    enabled: allUserIds.length > 0,
+    queryFn: async () => {
+      let q = supabase.from("observability_logs").select("user_id, event_type, event_data").eq("event_type", "validation_result");
+      if (cutoff) q = q.gte("created_at", new Date(cutoff).toISOString());
+      const { data, error } = await q;
+      if (error) throw error;
+      return data || [];
+    },
+  });
+
+  const isLoading = loadingCohorts || loadingSessions || loadingPhases || loadingTransitions || loadingObs;
+
+  const metricsPerCohort = useMemo(() => {
+    if (!cohortSessions || !cohortPhases || !cohortTransitions) return null;
+
+    const result: Record<string, CohortMetrics> = {};
+
+    for (const name of COHORT_NAMES) {
+      const userSet = new Set(cohortGroups[name] || []);
+      const sessions = cohortSessions.filter((s) => userSet.has(s.user_id));
+      const completed = sessions.filter((s) => s.completed);
+      const phases = cohortPhases.filter((p) => userSet.has(p.user_id));
+      const trans = cohortTransitions.filter((t) => userSet.has(t.user_id));
+      const obs = (cohortObsLogs || []).filter((o) => o.user_id && userSet.has(o.user_id));
+
+      const igiVals = phases.map((p) => Number(p.igi_current));
+      const streakVals = phases.map((p) => p.streak_current);
+
+      const rewriteTotal = obs.length;
+      const rewriteCount = obs.filter((o) => {
+        const d = o.event_data as any;
+        return d?.was_rewritten === true || d?.rewritten === true;
+      }).length;
+
+      result[name] = {
+        users: userSet.size,
+        sessionsCompleted: completed.length,
+        sessionsTotal: sessions.length,
+        completionRate: sessions.length > 0 ? (completed.length / sessions.length) * 100 : 0,
+        avgIgi: igiVals.length > 0 ? igiVals.reduce((a, b) => a + b, 0) / igiVals.length : 0,
+        avgStreak: streakVals.length > 0 ? streakVals.reduce((a, b) => a + b, 0) / streakVals.length : 0,
+        advances: trans.filter((t) => t.transition_type === "advance").length,
+        regressions: trans.filter((t) => t.transition_type === "regression").length,
+        rewriteRate: rewriteTotal > 0 ? (rewriteCount / rewriteTotal) * 100 : 0,
+      };
+    }
+
+    return result;
+  }, [cohortGroups, cohortSessions, cohortPhases, cohortTransitions, cohortObsLogs]);
+
+  const ComparisonBadge = ({ metricKey, value, controlValue }: { metricKey: string; value: number; controlValue: number }) => {
+    if (controlValue === 0 && value === 0) return null;
+    const isPositive = POSITIVE_METRICS.has(metricKey);
+    const isNegative = NEGATIVE_METRICS.has(metricKey);
+    if (!isPositive && !isNegative) return null;
+
+    const better = isPositive ? value > controlValue : value < controlValue;
+    const worse = isPositive ? value < controlValue : value > controlValue;
+
+    if (better) return <Badge className="ml-1 bg-primary/20 text-primary border-primary/30 text-[10px]">↑ melhor</Badge>;
+    if (worse) return <Badge variant="destructive" className="ml-1 text-[10px]">↓ pior</Badge>;
+    return null;
+  };
+
+  type MetricRow = { label: string; key: keyof CohortMetrics; format: (v: number) => string };
+  const METRIC_ROWS: MetricRow[] = [
+    { label: "Usuários", key: "users", format: (v) => String(v) },
+    { label: "Sessões completadas", key: "sessionsCompleted", format: (v) => String(v) },
+    { label: "Taxa de completude", key: "completionRate", format: (v) => `${v.toFixed(1)}%` },
+    { label: "IGI médio", key: "avgIgi", format: (v) => v.toFixed(2) },
+    { label: "Streak médio", key: "avgStreak", format: (v) => v.toFixed(1) },
+    { label: "Avanços de fase", key: "advances", format: (v) => String(v) },
+    { label: "Regressões", key: "regressions", format: (v) => String(v) },
+    { label: "Taxa de rewrite", key: "rewriteRate", format: (v) => `${v.toFixed(1)}%` },
+  ];
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <BarChart3 className="h-4 w-4" /> Comparação de Cohorts
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <Skeleton className="h-48 w-full" />
+        ) : metricsPerCohort ? (
+          <div className="space-y-3">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Métrica</TableHead>
+                  {COHORT_NAMES.map((c) => (
+                    <TableHead key={c} className="text-center">{COHORT_LABELS[c]}</TableHead>
+                  ))}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {METRIC_ROWS.map((row) => (
+                  <TableRow key={row.key}>
+                    <TableCell className="font-medium text-sm">{row.label}</TableCell>
+                    {COHORT_NAMES.map((c) => {
+                      const val = metricsPerCohort[c][row.key];
+                      return (
+                        <TableCell key={c} className="text-center">
+                          <span className="font-mono text-sm">{row.format(val)}</span>
+                          {c === "io_active" && (
+                            <ComparisonBadge metricKey={row.key} value={val} controlValue={metricsPerCohort.control[row.key]} />
+                          )}
+                        </TableCell>
+                      );
+                    })}
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+
+            <div className="flex items-start gap-2 rounded-md bg-muted px-3 py-2 text-xs text-muted-foreground">
+              <Info className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+              <span>
+                Dados zerados para cohorts IO Shadow e IO Ativo são esperados até o rollout (Fase 8).
+                A infraestrutura de comparação está pronta para quando a migração começar.
+              </span>
+            </div>
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
 export default IODashboard;
