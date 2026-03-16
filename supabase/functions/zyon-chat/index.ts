@@ -1223,9 +1223,36 @@ O que você está sentindo neste momento?
 Como isso tem afetado seu dia a dia?`;
 
 // ============================================
-// EMBEDDING GENERATION (Simple hash-based)
+// EMBEDDING GENERATION
 // ============================================
 
+// Semantic embedding via OpenAI (with hash fallback)
+async function generateSemanticEmbedding(text: string): Promise<{ embedding: number[], model: string }> {
+  const apiKey = Deno.env.get("OPENAI_API_KEY");
+  if (!apiKey) {
+    console.warn("[Embedding] OPENAI_API_KEY not found, falling back to hash");
+    return { embedding: await generateSimpleEmbedding(text), model: "simple-hash-v1" };
+  }
+  try {
+    const res = await fetch("https://api.openai.com/v1/embeddings", {
+      method: "POST",
+      headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model: "text-embedding-3-small", input: text }),
+    });
+    if (!res.ok) {
+      const errBody = await res.text();
+      throw new Error(`OpenAI API error ${res.status}: ${errBody}`);
+    }
+    const data = await res.json();
+    console.log("[Embedding] Semantic embedding generated (text-embedding-3-small)");
+    return { embedding: data.data[0].embedding, model: "text-embedding-3-small" };
+  } catch (err) {
+    console.error("[Embedding] OpenAI API failed, falling back to hash:", err);
+    return { embedding: await generateSimpleEmbedding(text), model: "simple-hash-v1" };
+  }
+}
+
+// Hash-based embedding (FALLBACK)
 async function generateSimpleEmbedding(text: string): Promise<number[]> {
   const embedding: number[] = [];
   const encoder = new TextEncoder();
