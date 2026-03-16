@@ -666,7 +666,7 @@ const IOAudit = () => {
         </Dialog>
       </div>
     </AdminLayout>
-  </FullAdminRoute>
+    </FullAdminRoute>
   );
 };
 
