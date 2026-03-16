@@ -1,61 +1,119 @@
 
 
-# Chat Header: Fase IO como subtítulo contextual
+# Plano de Correcao: Fluxo de Testemunho e Aprovacao de Soldados
 
-## Resumo
-Substituir o subtítulo estático "Acolhimento" no header do chat pela fase IO oficial do usuário, quando a feature flag `io_prompt_adapter_enabled` estiver ativa.
+## Diagnostico Confirmado
 
-## Alterações em `src/pages/Chat.tsx`
+Dados reais do banco confirmam os problemas:
+- **1 candidatura travada** em `under_review` com testemunho em `processing` (nunca processado, sem transcrição nem analise)
+- **0 usuarios com role `pastor`** no sistema -- aprovacao tripla e impossivel
+- A pagina de curadoria (`TestimonyCuration`) exige role `admin` via `AdminRoute`, bloqueando `profissional` e `pastor`
+- O envio de testemunho NAO dispara `process-testimony` automaticamente
+- O card de aprovacao (`ApplicationApprovalCard`) nao mostra feedback sobre quais aprovacoes faltam quando o usuario ja aprovou
 
-### 1. Imports (topo do arquivo)
-- Adicionar `useFeatureFlag` de `@/hooks/useFeatureFlag`
-- Adicionar `useQuery` de `@tanstack/react-query` (verificar se já está importado)
+---
 
-### 2. Constante de mapeamento (antes do componente)
+## Ordem de Deploy (5 etapas)
+
+### Etapa 1: Migration -- Flexibilizar aprovacao tripla
+
+**Problema:** Sem pastor no sistema, nenhuma candidatura pode ser aprovada.
+
+**Solucao:** Criar uma funcao que verifica aprovacao com logica flexivel: se nao existe usuario com role `pastor` no sistema, a aprovacao de pastor e dispensada. O trigger `check_soldado_approval_complete` sera atualizado.
+
+```text
+Logica da nova funcao check_soldado_approval_complete:
+  - admin_approved = obrigatorio
+  - profissional_approved = obrigatorio
+  - pastor_approved = obrigatorio SE existir pelo menos 1 usuario com role 'pastor'
+  - Se nao existir pastor, aprovacao completa com admin + profissional
+```
+
+**SQL (migration):**
+- Recriar a funcao `check_soldado_approval_complete` com a logica condicional
+- Atualizar a funcao `get_application_approval_status` para refletir o campo `pastor_required`
+
+---
+
+### Etapa 2: Edge Function -- Auto-processar testemunho apos envio
+
+**Problema:** O testemunho e inserido com status `processing` mas a Edge Function `process-testimony` nunca e chamada automaticamente.
+
+**Solucao:** Adicionar chamada a `process-testimony` no frontend imediatamente apos o INSERT do testemunho em `SoldadoTestimony.tsx`.
+
+**Arquivo:** `src/pages/SoldadoTestimony.tsx`
+- Apos o INSERT bem-sucedido na tabela `testimonies` (linha ~213), invocar:
+  ```typescript
+  supabase.functions.invoke("process-testimony", {
+    body: { testimony_id: insertedId }
+  });
+  ```
+- Sera fire-and-forget (nao bloqueia a UX de sucesso)
+- Requer retornar o `id` do INSERT (usar `.select('id').single()`)
+
+---
+
+### Etapa 3: UI -- Abrir curadoria para profissional e pastor
+
+**Problema:** `TestimonyCuration.tsx` usa `AdminRoute` que bloqueia profissional e pastor.
+
+**Solucao:** Trocar `AdminRoute` por `RoleRoute` com roles permitidas.
+
+**Arquivo:** `src/pages/admin/TestimonyCuration.tsx`
+- Substituir `<AdminRoute>` por `<RoleRoute allowedRoles={["admin", "desenvolvedor", "profissional", "pastor"]}>`
+- Importar `RoleRoute` no lugar de `AdminRoute`
+
+---
+
+### Etapa 4: UI -- Feedback de aprovacoes pendentes no card
+
+**Problema:** Apos o admin aprovar, o card some os botoes sem explicar o que falta.
+
+**Solucao:** Adicionar mensagem contextual em `ApplicationApprovalCard.tsx`.
+
+**Arquivo:** `src/components/soldado/ApplicationApprovalCard.tsx`
+- Quando `canApprove === false` e `status === "under_review"`:
+  - Mostrar banner informativo: "Sua aprovacao foi registrada. Aguardando: [lista de roles pendentes]"
+  - Calcular roles pendentes a partir de `application.approvals`
+
+---
+
+### Etapa 5: UI -- Guardar curadoria antes de aprovacao
+
+**Problema:** O curador pode aprovar a candidatura ANTES do testemunho ser processado pela IA (status `processing`).
+
+**Solucao:** No `TestimonyCurationCard.tsx`, ja existe logica parcial (`canTakeAction` verifica `analyzed || processing`). Ajustar para:
+- Botoes de "Aprovar"/"Rejeitar" so aparecem quando `testimony.status === "analyzed"`
+- Quando `processing`, mostrar apenas botao "Processar" e mensagem de aguardo
+- Remover `processing` da condicao `canTakeAction` para acoes de curadoria
+
+**Arquivo:** `src/components/soldado/TestimonyCurationCard.tsx` (linha 331-333)
 ```typescript
-const PHASE_HEADER_SUBTITLES: Record<number, string> = {
-  1: 'Percebendo o que sente',
-  2: 'Separando o que é seu',
-  3: 'Descobrindo seus padrões',
-  4: 'Construindo constância',
-  5: 'Restaurando vínculos',
-  6: 'Assumindo sua vida',
-  7: 'Vivendo com inteireza',
-};
+// ANTES:
+const canTakeAction = approverRole !== null && 
+  (testimony.status === "analyzed" || testimony.status === "processing");
+
+// DEPOIS:
+const canTakeAction = approverRole !== null && testimony.status === "analyzed";
 ```
 
-### 3. Hooks (dentro do componente)
-```typescript
-const { enabled: isIOEnabled } = useFeatureFlag("io_prompt_adapter_enabled");
+---
 
-const { data: ioPhase } = useQuery({
-  queryKey: ['io-phase-header', user?.id],
-  queryFn: async () => {
-    const { data } = await supabase
-      .from('io_user_phase')
-      .select('current_phase')
-      .eq('user_id', user!.id)
-      .maybeSingle();
-    return data?.current_phase || null;
-  },
-  staleTime: 5 * 60 * 1000,
-  enabled: isIOEnabled && !!user?.id,
-});
-```
+## Resumo de Arquivos Impactados
 
-### 4. Renderização (linha 1078)
-Substituir `<p className="text-xs text-muted-foreground">Acolhimento</p>` por:
-```tsx
-<p className="text-xs text-muted-foreground">
-  {isIOEnabled && ioPhase ? PHASE_HEADER_SUBTITLES[ioPhase] || 'Acolhimento' : 'Acolhimento'}
-</p>
-```
+| Arquivo | Tipo de Mudanca |
+|---|---|
+| Nova migration SQL | Recriar trigger de aprovacao flexivel |
+| `src/pages/SoldadoTestimony.tsx` | Chamar process-testimony apos envio |
+| `src/pages/admin/TestimonyCuration.tsx` | Trocar AdminRoute por RoleRoute |
+| `src/components/soldado/ApplicationApprovalCard.tsx` | Feedback de aprovacoes pendentes |
+| `src/components/soldado/TestimonyCurationCard.tsx` | Bloquear curadoria antes da analise |
 
-### Comportamento
-- Flag ON + fase encontrada: mostra subtítulo IO (ex: "Separando o que é seu")
-- Flag OFF ou fase null ou erro: mostra "Acolhimento" (comportamento atual)
-- Query com staleTime de 5 min para performance
+## Riscos e Mitigacoes
 
-## Arquivo alterado
-- `src/pages/Chat.tsx` (imports, constante, hooks, linha 1078)
+- **Risco:** Flexibilizar pastor pode permitir aprovacao prematura.
+  **Mitigacao:** A logica so dispensa pastor se literalmente nao existe nenhum usuario com essa role no sistema. Quando um pastor for cadastrado, a exigencia volta automaticamente.
+
+- **Risco:** Chamada fire-and-forget do process-testimony pode falhar silenciosamente.
+  **Mitigacao:** O botao "Processar" na tela de curadoria ja existe como fallback manual.
 

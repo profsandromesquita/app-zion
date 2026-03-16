@@ -31,6 +31,18 @@ import { OnboardingFlow, OnboardingData } from "@/components/onboarding/Onboardi
 import { calculateNextOccurrence, formatDateTimePtBr } from "@/lib/icalendar";
 import zionLogo from "@/assets/zion-logo.png";
 import type { Database } from "@/integrations/supabase/types";
+import { useQuery } from "@tanstack/react-query";
+import { useFeatureFlag } from "@/hooks/useFeatureFlag";
+
+const PHASE_HEADER_SUBTITLES: Record<number, string> = {
+  1: 'Percebendo o que sente',
+  2: 'Separando o que é seu',
+  3: 'Descobrindo seus padrões',
+  4: 'Construindo constância',
+  5: 'Restaurando vínculos',
+  6: 'Assumindo sua vida',
+  7: 'Vivendo com inteireza',
+};
 
 type SoldadoApplicationStatus = Database["public"]["Enums"]["soldado_application_status"];
 
@@ -65,6 +77,21 @@ const Chat = () => {
   const { user, loading: authLoading, signOut } = useAuth();
   const { sessionId: anonSessionId, loading: anonLoading } = useAnonymousSession();
   const { isAdmin, loading: rolesLoading } = useUserRole();
+  const { enabled: isIOEnabled } = useFeatureFlag("io_prompt_adapter_enabled");
+
+  const { data: ioPhase } = useQuery({
+    queryKey: ['io-phase-header', user?.id],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from('io_user_phase')
+        .select('current_phase')
+        .eq('user_id', user!.id)
+        .maybeSingle();
+      return data?.current_phase || null;
+    },
+    staleTime: 5 * 60 * 1000,
+    enabled: isIOEnabled && !!user?.id,
+  });
   
   // Debug log para diagnóstico mobile - header icons
   useEffect(() => {
@@ -1075,7 +1102,9 @@ const Chat = () => {
                 <img src={zionLogo} alt="Zion" className="h-10 w-10" />
                 <div>
                   <h1 className="font-medium text-foreground">Zion</h1>
-                  <p className="text-xs text-muted-foreground">Acolhimento</p>
+                  <p className="text-xs text-muted-foreground">
+                    {isIOEnabled && ioPhase ? PHASE_HEADER_SUBTITLES[ioPhase] || 'Acolhimento' : 'Acolhimento'}
+                  </p>
                 </div>
               </div>
             </div>
