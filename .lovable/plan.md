@@ -1,119 +1,115 @@
 
 
-# Plano de Correcao: Fluxo de Testemunho e Aprovacao de Soldados
+# Plano: Diary Signals no Phase Manager (Informativo)
 
-## Diagnostico Confirmado
+## Resumo
 
-Dados reais do banco confirmam os problemas:
-- **1 candidatura travada** em `under_review` com testemunho em `processing` (nunca processado, sem transcrição nem analise)
-- **0 usuarios com role `pastor`** no sistema -- aprovacao tripla e impossivel
-- A pagina de curadoria (`TestimonyCuration`) exige role `admin` via `AdminRoute`, bloqueando `profissional` e `pastor`
-- O envio de testemunho NAO dispara `process-testimony` automaticamente
-- O card de aprovacao (`ApplicationApprovalCard`) nao mostra feedback sobre quais aprovacoes faltam quando o usuario ja aprovou
+Adicionar consulta às `diary_entries` com `io_analysis` como sinal informativo (nunca bloqueante) no Phase Manager, controlado pela flag `io_diary_integration_enabled`.
 
----
+## Alterações em `supabase/functions/io-phase-manager/index.ts`
 
-## Ordem de Deploy (5 etapas)
+### 1. Flag check (~linha 798, após registro flag)
 
-### Etapa 1: Migration -- Flexibilizar aprovacao tripla
-
-**Problema:** Sem pastor no sistema, nenhuma candidatura pode ser aprovada.
-
-**Solucao:** Criar uma funcao que verifica aprovacao com logica flexivel: se nao existe usuario com role `pastor` no sistema, a aprovacao de pastor e dispensada. O trigger `check_soldado_approval_complete` sera atualizado.
-
-```text
-Logica da nova funcao check_soldado_approval_complete:
-  - admin_approved = obrigatorio
-  - profissional_approved = obrigatorio
-  - pastor_approved = obrigatorio SE existir pelo menos 1 usuario com role 'pastor'
-  - Se nao existir pastor, aprovacao completa com admin + profissional
-```
-
-**SQL (migration):**
-- Recriar a funcao `check_soldado_approval_complete` com a logica condicional
-- Atualizar a funcao `get_application_approval_status` para refletir o campo `pastor_required`
-
----
-
-### Etapa 2: Edge Function -- Auto-processar testemunho apos envio
-
-**Problema:** O testemunho e inserido com status `processing` mas a Edge Function `process-testimony` nunca e chamada automaticamente.
-
-**Solucao:** Adicionar chamada a `process-testimony` no frontend imediatamente apos o INSERT do testemunho em `SoldadoTestimony.tsx`.
-
-**Arquivo:** `src/pages/SoldadoTestimony.tsx`
-- Apos o INSERT bem-sucedido na tabela `testimonies` (linha ~213), invocar:
-  ```typescript
-  supabase.functions.invoke("process-testimony", {
-    body: { testimony_id: insertedId }
-  });
-  ```
-- Sera fire-and-forget (nao bloqueia a UX de sucesso)
-- Requer retornar o `id` do INSERT (usar `.select('id').single()`)
-
----
-
-### Etapa 3: UI -- Abrir curadoria para profissional e pastor
-
-**Problema:** `TestimonyCuration.tsx` usa `AdminRoute` que bloqueia profissional e pastor.
-
-**Solucao:** Trocar `AdminRoute` por `RoleRoute` com roles permitidas.
-
-**Arquivo:** `src/pages/admin/TestimonyCuration.tsx`
-- Substituir `<AdminRoute>` por `<RoleRoute allowedRoles={["admin", "desenvolvedor", "profissional", "pastor"]}>`
-- Importar `RoleRoute` no lugar de `AdminRoute`
-
----
-
-### Etapa 4: UI -- Feedback de aprovacoes pendentes no card
-
-**Problema:** Apos o admin aprovar, o card some os botoes sem explicar o que falta.
-
-**Solucao:** Adicionar mensagem contextual em `ApplicationApprovalCard.tsx`.
-
-**Arquivo:** `src/components/soldado/ApplicationApprovalCard.tsx`
-- Quando `canApprove === false` e `status === "under_review"`:
-  - Mostrar banner informativo: "Sua aprovacao foi registrada. Aguardando: [lista de roles pendentes]"
-  - Calcular roles pendentes a partir de `application.approvals`
-
----
-
-### Etapa 5: UI -- Guardar curadoria antes de aprovacao
-
-**Problema:** O curador pode aprovar a candidatura ANTES do testemunho ser processado pela IA (status `processing`).
-
-**Solucao:** No `TestimonyCurationCard.tsx`, ja existe logica parcial (`canTakeAction` verifica `analyzed || processing`). Ajustar para:
-- Botoes de "Aprovar"/"Rejeitar" so aparecem quando `testimony.status === "analyzed"`
-- Quando `processing`, mostrar apenas botao "Processar" e mensagem de aguardo
-- Remover `processing` da condicao `canTakeAction` para acoes de curadoria
-
-**Arquivo:** `src/components/soldado/TestimonyCurationCard.tsx` (linha 331-333)
 ```typescript
-// ANTES:
-const canTakeAction = approverRole !== null && 
-  (testimony.status === "analyzed" || testimony.status === "processing");
-
-// DEPOIS:
-const canTakeAction = approverRole !== null && testimony.status === "analyzed";
+const { data: diaryFlagResult } = await supabase.rpc("get_feature_flag", {
+  p_flag_name: "io_diary_integration_enabled",
+  p_user_id: userId,
+});
+const isDiaryIntegrationEnabled = diaryFlagResult === true;
 ```
 
----
+### 2. Função `fetchDiarySignals` (antes de `handleEvaluate`)
 
-## Resumo de Arquivos Impactados
+```typescript
+async function fetchDiarySignals(supabase: any, userId: string, days: number) {
+  const since = new Date();
+  since.setDate(since.getDate() - days);
 
-| Arquivo | Tipo de Mudanca |
-|---|---|
-| Nova migration SQL | Recriar trigger de aprovacao flexivel |
-| `src/pages/SoldadoTestimony.tsx` | Chamar process-testimony apos envio |
-| `src/pages/admin/TestimonyCuration.tsx` | Trocar AdminRoute por RoleRoute |
-| `src/components/soldado/ApplicationApprovalCard.tsx` | Feedback de aprovacoes pendentes |
-| `src/components/soldado/TestimonyCurationCard.tsx` | Bloquear curadoria antes da analise |
+  const { data: entries } = await supabase
+    .from("diary_entries")
+    .select("io_analysis, created_at")
+    .eq("user_id", userId)
+    .not("io_analysis", "is", null)
+    .gte("created_at", since.toISOString())
+    .order("created_at", { ascending: false });
 
-## Riscos e Mitigacoes
+  const valid = (entries || []).filter((e: any) => e.io_analysis && !e.io_analysis.skipped);
+  if (valid.length === 0) return null;
 
-- **Risco:** Flexibilizar pastor pode permitir aprovacao prematura.
-  **Mitigacao:** A logica so dispensa pastor se literalmente nao existe nenhum usuario com essa role no sistema. Quando um pastor for cadastrado, a exigencia volta automaticamente.
+  const avgGenuineness = valid.reduce((s: number, e: any) => s + (e.io_analysis.genuineness_score || 0), 0) / valid.length;
 
-- **Risco:** Chamada fire-and-forget do process-testimony pode falhar silenciosamente.
-  **Mitigacao:** O botao "Processar" na tela de curadoria ja existe como fallback manual.
+  const depthCounts = { superficial: 0, moderate: 0, deep: 0 };
+  const toneCounts: Record<string, number> = {};
+  const themeCounts: Record<string, number> = {};
+
+  for (const e of valid) {
+    const a = e.io_analysis;
+    if (a.depth_level) depthCounts[a.depth_level] = (depthCounts[a.depth_level] || 0) + 1;
+    if (a.emotional_tone) toneCounts[a.emotional_tone] = (toneCounts[a.emotional_tone] || 0) + 1;
+    if (Array.isArray(a.key_themes)) {
+      for (const t of a.key_themes) themeCounts[t] = (themeCounts[t] || 0) + 1;
+    }
+  }
+
+  const dominantTone = Object.entries(toneCounts).sort((a, b) => b[1] - a[1])[0]?.[0] || "unknown";
+  const keyThemes = Object.entries(themeCounts).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([t]) => t);
+
+  return {
+    total_entries: valid.length,
+    avg_genuineness: Math.round(avgGenuineness * 1000) / 1000,
+    depth_distribution: depthCounts,
+    dominant_tone: dominantTone,
+    key_themes: keyThemes,
+    diary_engagement: Math.round((valid.length / days) * 1000) / 1000,
+  };
+}
+```
+
+### 3. Chamar no evaluate (~após Step 4.6 registro block, ~linha 1025)
+
+```typescript
+let diarySignals: Record<string, unknown> | null = null;
+if (isDiaryIntegrationEnabled) {
+  try {
+    diarySignals = await fetchDiarySignals(supabase, userId, 30);
+  } catch (err) {
+    console.warn("Diary signals fetch failed:", err);
+  }
+}
+```
+
+Sem bloqueio. Sem modificar `criteriaResult`.
+
+### 4. Enrichment do criteria_snapshot (~linha 1133)
+
+Adicionar: `diary_signals: diarySignals || null`
+
+### 5. Enrichment do observability_logs (~linha 1182)
+
+Adicionar ao `event_data`:
+- `diary_integration_consulted: isDiaryIntegrationEnabled`
+- `diary_entries_analyzed: diarySignals?.total_entries ?? null`
+- `diary_avg_genuineness: diarySignals?.avg_genuineness ?? null`
+- `diary_engagement: diarySignals?.diary_engagement ?? null`
+- `diary_dominant_tone: diarySignals?.dominant_tone ?? null`
+
+### 6. Enrichment da response (~linha 1233)
+
+```typescript
+if (diarySignals) {
+  response.diary_signals = {
+    consulted: true,
+    ...diarySignals,
+    blocking: false, // always informational
+  };
+}
+```
+
+## Arquivo alterado
+- `supabase/functions/io-phase-manager/index.ts`
+
+## Segurança
+- Flag OFF = zero consulta ao diário
+- Nunca bloqueia avanço — puramente informativo
+- Try/catch isolado — falha não afeta avaliação
 
