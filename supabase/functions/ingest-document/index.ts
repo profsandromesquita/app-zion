@@ -254,6 +254,126 @@ serve(async (req) => {
 
   try {
     const { doc_id, version_id, action } = await req.json();
+
+    // ===== REPROCESS ALL EMBEDDINGS (batch action) =====
+    if (action === "reprocess_all_embeddings") {
+      console.log("[Reprocess] Starting batch reprocessing of hash embeddings...");
+      
+      const supabaseUrl = Deno.env.get("SUPABASE_URL");
+      const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+      if (!supabaseUrl || !supabaseServiceKey) {
+        throw new Error("Supabase credentials not configured");
+      }
+      const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+      // Fetch chunks still on hash embedding (limit 50 per invocation to avoid timeout)
+      const { data: hashChunks, error: fetchErr } = await supabase
+        .from("chunks")
+        .select("id, text")
+        .eq("embedding_model_id", "simple-hash-v1")
+        .eq("embedding_status", "ok")
+        .limit(50);
+
+      if (fetchErr) throw new Error(`Failed to fetch chunks: ${fetchErr.message}`);
+
+      const total = hashChunks?.length || 0;
+      if (total === 0) {
+        console.log("[Reprocess] No chunks with simple-hash-v1 found.");
+        return new Response(
+          JSON.stringify({ success: true, total: 0, success_count: 0, failed: 0, remaining: 0 }),
+          { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+
+      console.log(`[Reprocess] Found ${total} chunks to reprocess in this batch`);
+
+      let successCount = 0;
+      let failedCount = 0;
+      const batchSize = 10;
+
+      for (let i = 0; i < total; i += batchSize) {
+        const batch = hashChunks!.slice(i, i + batchSize);
+        
+        for (const chunk of batch) {
+          try {
+            const { embedding, model: embeddingModel } = await generateSemanticEmbedding(chunk.text);
+            
+            // Only update if we got a real semantic embedding
+            if (embeddingModel === "simple-hash-v1") {
+              console.warn(`[Reprocess] Chunk ${chunk.id}: fallback to hash (API issue), skipping update`);
+              failedCount++;
+              continue;
+            }
+
+            const { error: updateErr } = await supabase
+              .from("chunks")
+              .update({
+                embedding,
+                embedding_model_id: embeddingModel,
+                embedding_status: "ok",
+              })
+              .eq("id", chunk.id);
+
+            if (updateErr) {
+              console.error(`[Reprocess] Update failed for chunk ${chunk.id}:`, updateErr.message);
+              failedCount++;
+            } else {
+              successCount++;
+            }
+          } catch (err) {
+            console.error(`[Reprocess] Error processing chunk ${chunk.id}:`, err);
+            await supabase
+              .from("chunks")
+              .update({ embedding_status: "failed" })
+              .eq("id", chunk.id);
+            failedCount++;
+          }
+        }
+
+        // Rate limiting delay between batches
+        if (i + batchSize < total) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        console.log(`[Reprocess] Progress: ${Math.min(i + batchSize, total)}/${total}`);
+      }
+
+      // Check if more remain
+      const { count: remainingCount } = await supabase
+        .from("chunks")
+        .select("id", { count: "exact", head: true })
+        .eq("embedding_model_id", "simple-hash-v1")
+        .eq("embedding_status", "ok");
+
+      const remaining = remainingCount || 0;
+
+      // Log to observability
+      await supabase.from("observability_logs").insert({
+        event_type: "rag_retrieval",
+        event_data: {
+          action: "reprocess_embeddings",
+          batch_total: total,
+          success: successCount,
+          failed: failedCount,
+          remaining,
+        },
+        flags_active: {},
+      });
+
+      console.log(`[Reprocess] Batch complete: ${successCount} success, ${failedCount} failed, ${remaining} remaining`);
+
+      return new Response(
+        JSON.stringify({
+          success: true,
+          total,
+          success_count: successCount,
+          failed: failedCount,
+          remaining,
+          continued: remaining > 0,
+        }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+    // ===== END REPROCESS =====
     
     if (!doc_id || !version_id) {
       return new Response(
