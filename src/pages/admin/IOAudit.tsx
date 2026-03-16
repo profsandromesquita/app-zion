@@ -175,6 +175,7 @@ const IOAudit = () => {
   const userName = (uid: string) => profileMap[uid]?.nome || profileMap[uid]?.email || uid.slice(0, 8);
 
   return (
+    <FullAdminRoute>
     <AdminLayout>
       <div className="space-y-6">
         <div>
