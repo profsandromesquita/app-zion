@@ -475,6 +475,41 @@ function buildRAGPlan(intent: string): RouterResult["rag_plan"] {
   };
 }
 
+// Phase-aware RAG plan: merges IO phase domains with intent domains
+function buildIORAGPlan(
+  intent: string,
+  ioPhase: number | null
+): RouterResult["rag_plan"] {
+  if (!ioPhase) return buildRAGPlan(intent);
+
+  const phaseDomains: Record<number, string[]> = {
+    1: ['metodologia', 'modelo_humano'],
+    2: ['diagnostico', 'teologia_antropologia'],
+    3: ['diagnostico_identidade', 'perfis', 'metodologia'],
+    4: ['metodologia', 'intervencao'],
+    5: ['intervencao', 'exegese_aplicada'],
+    6: ['intervencao', 'metodologia'],
+    7: ['exegese_aplicada', 'teologia_antropologia'],
+  };
+
+  const intentPlan = buildRAGPlan(intent);
+  const phaseDomainsForUser = phaseDomains[ioPhase] || [];
+
+  const mergedDomains = [...new Set([
+    ...phaseDomainsForUser,
+    ...(intentPlan.filters.domains || []),
+  ])];
+
+  return {
+    ...intentPlan,
+    topK: Math.min(intentPlan.topK + 2, 12),
+    filters: {
+      ...intentPlan.filters,
+      domains: mergedDomains,
+    },
+  };
+}
+
 // ============================================
 // GUARDRAILS
 // ============================================
