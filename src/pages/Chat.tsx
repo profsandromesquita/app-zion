@@ -1102,7 +1102,9 @@ const Chat = () => {
                 <img src={zionLogo} alt="Zion" className="h-10 w-10" />
                 <div>
                   <h1 className="font-medium text-foreground">Zion</h1>
-                  <p className="text-xs text-muted-foreground">Acolhimento</p>
+                  <p className="text-xs text-muted-foreground">
+                    {isIOEnabled && ioPhase ? PHASE_HEADER_SUBTITLES[ioPhase] || 'Acolhimento' : 'Acolhimento'}
+                  </p>
                 </div>
               </div>
             </div>
