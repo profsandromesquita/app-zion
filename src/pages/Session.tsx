@@ -781,24 +781,30 @@ const Session = () => {
               </div>
 
               {feedbackLoading ? (
-                <div className="flex justify-center py-12">
+                <div className="flex flex-col items-center gap-3 py-12">
                   <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                  <p className="text-xs text-muted-foreground">Gerando reflexão personalizada…</p>
                 </div>
               ) : (
                 <Card className="bg-primary/5 border-primary/20">
                   <CardContent className="p-6">
-                    <p className="text-foreground leading-relaxed">{feedback}</p>
+                    <p className="text-foreground leading-relaxed">{feedback || FALLBACK_FEEDBACK}</p>
                   </CardContent>
                 </Card>
               )}
 
               <Button
-                onClick={() => setCurrentStep(6)}
-                disabled={feedbackLoading}
+                onClick={async () => {
+                  if (feedbackLoading) {
+                    setFeedbackLoading(false);
+                    await saveFallbackFeedback(FALLBACK_FEEDBACK);
+                  }
+                  setCurrentStep(6);
+                }}
                 className="w-full"
                 size="lg"
               >
-                Continuar
+                {feedbackLoading ? "Continuar sem feedback" : "Continuar"}
               </Button>
             </div>
           )}
