@@ -209,8 +209,8 @@ const IODashboard = () => {
   // ─── Helpers ───────────────────────────────────────────
   const Variation = ({ current, previous, suffix = "" }: { current: number; previous: number; suffix?: string }) => {
     const diff = current - previous;
-    if (diff > 0) return <span className="text-green-500 flex items-center gap-0.5 text-xs"><ArrowUpRight className="h-3 w-3" />+{diff.toFixed(suffix === "%" ? 1 : 0)}{suffix}</span>;
-    if (diff < 0) return <span className="text-red-500 flex items-center gap-0.5 text-xs"><ArrowDownRight className="h-3 w-3" />{diff.toFixed(suffix === "%" ? 1 : 0)}{suffix}</span>;
+    if (diff > 0) return <span className="text-primary flex items-center gap-0.5 text-xs"><ArrowUpRight className="h-3 w-3" />+{diff.toFixed(suffix === "%" ? 1 : 0)}{suffix}</span>;
+    if (diff < 0) return <span className="text-destructive flex items-center gap-0.5 text-xs"><ArrowDownRight className="h-3 w-3" />{diff.toFixed(suffix === "%" ? 1 : 0)}{suffix}</span>;
     return <span className="text-muted-foreground flex items-center gap-0.5 text-xs"><Minus className="h-3 w-3" />0{suffix}</span>;
   };
 
