@@ -1,49 +1,119 @@
 
 
-# Ajuste de Tom no Prompt — io-session-feedback
+# Plano de Correcao: Fluxo de Testemunho e Aprovacao de Soldados
 
-## Arquivo
-`supabase/functions/io-session-feedback/index.ts`
+## Diagnostico Confirmado
 
-## Mudanças no prompt (linhas 76-122)
+Dados reais do banco confirmam os problemas:
+- **1 candidatura travada** em `under_review` com testemunho em `processing` (nunca processado, sem transcrição nem analise)
+- **0 usuarios com role `pastor`** no sistema -- aprovacao tripla e impossivel
+- A pagina de curadoria (`TestimonyCuration`) exige role `admin` via `AdminRoute`, bloqueando `profissional` e `pastor`
+- O envio de testemunho NAO dispara `process-testimony` automaticamente
+- O card de aprovacao (`ApplicationApprovalCard`) nao mostra feedback sobre quais aprovacoes faltam quando o usuario ja aprovou
 
-### 1. Corrigir exemplos que citam escalas numericamente
-- Linha 101: trocar `"Clareza 1 diz que está difícil enxergar agora..."` por exemplo sem número
-- Linhas 109/113: trocar exemplos de escalas caindo/subindo para versões sem números explícitos
+---
 
-### 2. Adicionar bloco "REGRAS DE TOM" ao prompt (antes das REGRAS GERAIS)
+## Ordem de Deploy (5 etapas)
 
-Novo bloco:
-```
-REGRAS DE TOM:
+### Etapa 1: Migration -- Flexibilizar aprovacao tripla
 
-- NUNCA cite escalas pelo número no texto do feedback.
-  PROIBIDO: "Clareza em 1", "Com identidade em 3", "Suas escalas mostram"
-  As escalas informam o TOM internamente, mas o texto NÃO as menciona.
+**Problema:** Sem pastor no sistema, nenhuma candidatura pode ser aprovada.
 
-- NUNCA use linguagem formal ou clínica.
-  PROIBIDO: "Acolho sua presença", "Valido seu sentimento", "momento desafiador"
-  USE linguagem humana: "Está pesado, né.", "Faz sentido.", "Você veio mesmo assim."
+**Solucao:** Criar uma funcao que verifica aprovacao com logica flexivel: se nao existe usuario com role `pastor` no sistema, a aprovacao de pastor e dispensada. O trigger `check_soldado_approval_complete` sera atualizado.
 
-- USE as palavras do usuário como gancho.
-  Se registro diz "Raiva": "Raiva. Você nomeou. Isso já é o começo."
-  Se mood é "pesado": "Dia pesado. Mas você está aqui."
-
-- Se a missão pedia nomear algo e o usuário nomeou, reconheça que CUMPRIU.
-  "A missão era nomear. Você nomeou. Feito."
-
-- O feedback deve soar como um amigo presente, não como um sistema analisando dados.
+```text
+Logica da nova funcao check_soldado_approval_complete:
+  - admin_approved = obrigatorio
+  - profissional_approved = obrigatorio
+  - pastor_approved = obrigatorio SE existir pelo menos 1 usuario com role 'pastor'
+  - Se nao existir pastor, aprovacao completa com admin + profissional
 ```
 
-### 3. Atualizar exemplos existentes
+**SQL (migration):**
+- Recriar a funcao `check_soldado_approval_complete` com a logica condicional
+- Atualizar a funcao `get_application_approval_status` para refletir o campo `pastor_required`
 
-| Seção | Antes | Depois |
-|-------|-------|--------|
-| Escalas baixas (101) | "Clareza 1 diz que está difícil enxergar agora..." | "Está difícil enxergar agora. Tudo bem. Você não precisa ter clareza pra estar aqui." |
-| Escalas caindo (109) | "Ontem clareza estava em 6, hoje em 3..." | "Ontem estava mais leve, hoje nem tanto. Dias assim existem. O importante é que você está aqui." |
-| Escalas subindo (113) | "Regulação subiu de 3 para 6. Algo mudou." | "Algo mudou hoje, né? O que será?" |
+---
 
-### 4. Nada mais muda
-- Mesma estrutura, modelo, temperature, max_tokens
-- Nenhuma tabela alterada
+### Etapa 2: Edge Function -- Auto-processar testemunho apos envio
+
+**Problema:** O testemunho e inserido com status `processing` mas a Edge Function `process-testimony` nunca e chamada automaticamente.
+
+**Solucao:** Adicionar chamada a `process-testimony` no frontend imediatamente apos o INSERT do testemunho em `SoldadoTestimony.tsx`.
+
+**Arquivo:** `src/pages/SoldadoTestimony.tsx`
+- Apos o INSERT bem-sucedido na tabela `testimonies` (linha ~213), invocar:
+  ```typescript
+  supabase.functions.invoke("process-testimony", {
+    body: { testimony_id: insertedId }
+  });
+  ```
+- Sera fire-and-forget (nao bloqueia a UX de sucesso)
+- Requer retornar o `id` do INSERT (usar `.select('id').single()`)
+
+---
+
+### Etapa 3: UI -- Abrir curadoria para profissional e pastor
+
+**Problema:** `TestimonyCuration.tsx` usa `AdminRoute` que bloqueia profissional e pastor.
+
+**Solucao:** Trocar `AdminRoute` por `RoleRoute` com roles permitidas.
+
+**Arquivo:** `src/pages/admin/TestimonyCuration.tsx`
+- Substituir `<AdminRoute>` por `<RoleRoute allowedRoles={["admin", "desenvolvedor", "profissional", "pastor"]}>`
+- Importar `RoleRoute` no lugar de `AdminRoute`
+
+---
+
+### Etapa 4: UI -- Feedback de aprovacoes pendentes no card
+
+**Problema:** Apos o admin aprovar, o card some os botoes sem explicar o que falta.
+
+**Solucao:** Adicionar mensagem contextual em `ApplicationApprovalCard.tsx`.
+
+**Arquivo:** `src/components/soldado/ApplicationApprovalCard.tsx`
+- Quando `canApprove === false` e `status === "under_review"`:
+  - Mostrar banner informativo: "Sua aprovacao foi registrada. Aguardando: [lista de roles pendentes]"
+  - Calcular roles pendentes a partir de `application.approvals`
+
+---
+
+### Etapa 5: UI -- Guardar curadoria antes de aprovacao
+
+**Problema:** O curador pode aprovar a candidatura ANTES do testemunho ser processado pela IA (status `processing`).
+
+**Solucao:** No `TestimonyCurationCard.tsx`, ja existe logica parcial (`canTakeAction` verifica `analyzed || processing`). Ajustar para:
+- Botoes de "Aprovar"/"Rejeitar" so aparecem quando `testimony.status === "analyzed"`
+- Quando `processing`, mostrar apenas botao "Processar" e mensagem de aguardo
+- Remover `processing` da condicao `canTakeAction` para acoes de curadoria
+
+**Arquivo:** `src/components/soldado/TestimonyCurationCard.tsx` (linha 331-333)
+```typescript
+// ANTES:
+const canTakeAction = approverRole !== null && 
+  (testimony.status === "analyzed" || testimony.status === "processing");
+
+// DEPOIS:
+const canTakeAction = approverRole !== null && testimony.status === "analyzed";
+```
+
+---
+
+## Resumo de Arquivos Impactados
+
+| Arquivo | Tipo de Mudanca |
+|---|---|
+| Nova migration SQL | Recriar trigger de aprovacao flexivel |
+| `src/pages/SoldadoTestimony.tsx` | Chamar process-testimony apos envio |
+| `src/pages/admin/TestimonyCuration.tsx` | Trocar AdminRoute por RoleRoute |
+| `src/components/soldado/ApplicationApprovalCard.tsx` | Feedback de aprovacoes pendentes |
+| `src/components/soldado/TestimonyCurationCard.tsx` | Bloquear curadoria antes da analise |
+
+## Riscos e Mitigacoes
+
+- **Risco:** Flexibilizar pastor pode permitir aprovacao prematura.
+  **Mitigacao:** A logica so dispensa pastor se literalmente nao existe nenhum usuario com essa role no sistema. Quando um pastor for cadastrado, a exigencia volta automaticamente.
+
+- **Risco:** Chamada fire-and-forget do process-testimony pode falhar silenciosamente.
+  **Mitigacao:** O botao "Processar" na tela de curadoria ja existe como fallback manual.
 
