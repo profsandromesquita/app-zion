@@ -46,6 +46,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
     { to: "/admin/io-dashboard", icon: BarChart3, label: "IO Dashboard" },
     { to: "/admin/io-missions", icon: Target, label: "Missões IO" },
     { to: "/admin/io-overview", icon: Activity, label: "IO Overview" },
+    { to: "/admin/io-audit", icon: ClipboardList, label: "Auditoria IO" },
   ];
 
   return (

@@ -67,6 +67,7 @@ const App = () => (
           <Route path="/admin/io-dashboard" element={<IODashboard />} />
           <Route path="/admin/io-missions" element={<IOMissions />} />
           <Route path="/admin/io-overview" element={<IOOverview />} />
+          <Route path="/admin/io-audit" element={<IOAudit />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>
