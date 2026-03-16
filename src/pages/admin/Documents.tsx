@@ -369,6 +369,40 @@ const Documents = () => {
     }
   };
 
+  const handleReprocessAllEmbeddings = async () => {
+    setReprocessing(true);
+    let totalSuccess = 0;
+    let totalFailed = 0;
+    let batchNum = 0;
+
+    try {
+      toast.info("Iniciando reprocessamento de embeddings...");
+
+      let continued = true;
+      while (continued) {
+        batchNum++;
+        const { data, error } = await supabase.functions.invoke("ingest-document", {
+          body: { action: "reprocess_all_embeddings" },
+        });
+
+        if (error) throw error;
+
+        totalSuccess += data.success_count || 0;
+        totalFailed += data.failed || 0;
+        continued = data.continued || false;
+
+        toast.info(`Batch ${batchNum}: ${data.success_count} ok, ${data.failed} falhas. Restam: ${data.remaining}`);
+      }
+
+      toast.success(`Reprocessamento completo! ${totalSuccess} atualizados, ${totalFailed} falhas.`);
+    } catch (err) {
+      console.error("Reprocess error:", err);
+      toast.error(`Erro no batch ${batchNum}. ${totalSuccess} já processados.`);
+    } finally {
+      setReprocessing(false);
+    }
+  };
+
   const resetForm = () => {
     setFormData({ title: "", layer: "BIBLIOTECA", domain: "geral", rawText: "" });
     setEditingId(null);
