@@ -1096,6 +1096,16 @@ async function handleEvaluate(supabase: any, userId: string) {
     }
   }
 
+  // STEP 4.7: Diary signals (informational only — never blocks)
+  let diarySignals: Record<string, unknown> | null = null;
+  if (isDiaryIntegrationEnabled) {
+    try {
+      diarySignals = await fetchDiarySignals(supabase, userId, 30);
+    } catch (err) {
+      console.warn("Diary signals fetch failed:", err);
+    }
+  }
+
   // STEP 5: Evaluate regression
   const regressionResult = evaluateRegression(sessions);
 
