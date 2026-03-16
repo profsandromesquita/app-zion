@@ -1136,6 +1136,8 @@ const Chat = () => {
           onNewChat={handleNewChat}
           onSignOut={handleSignOut}
           onSidebarReady={handleSidebarReady}
+          ioPhaseData={ioPhaseData}
+          isIOEnabled={isIOEnabled}
         />
 
         <div className="relative z-0 flex flex-1 flex-col">

@@ -538,6 +538,34 @@ export function ChatSidebar({
       </SidebarContent>
 
       <SidebarFooter className="p-2">
+        {!collapsed && isIOEnabled && ioPhaseData && (
+          <div
+            className="bg-muted/30 border border-border/50 rounded-lg p-3 mx-1 mb-2 cursor-pointer hover:bg-muted/50 transition-colors"
+            onClick={() => navigate('/profile')}
+          >
+            <p className="text-xs font-medium text-foreground">
+              Fase {ioPhaseData.current_phase} — {IO_PHASE_NAMES[ioPhaseData.current_phase] || 'Jornada'}
+            </p>
+            {ioPhaseData.igi_current === 0 && ioPhaseData.total_sessions === 0 ? (
+              <p className="text-xs text-muted-foreground mt-1">Complete sua primeira sessão</p>
+            ) : (
+              <div className="flex items-center gap-1.5 mt-1">
+                <div className="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-lime-500 transition-all"
+                    style={{ width: `${Math.min(100, (ioPhaseData.igi_current / 10) * 100)}%` }}
+                  />
+                </div>
+                <span className="text-xs text-muted-foreground tabular-nums">{ioPhaseData.igi_current.toFixed(1)}</span>
+                <span className="text-xs text-muted-foreground">·</span>
+                <Flame className="h-3 w-3 text-orange-500" />
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  {ioPhaseData.streak_current > 0 ? ioPhaseData.streak_current : '—'}
+                </span>
+              </div>
+            )}
+          </div>
+        )}
         <Separator className="mb-2" />
         
         {!collapsed && (
