@@ -63,6 +63,7 @@ const DocumentChunks = () => {
   const [loading, setLoading] = useState(true);
   const [editingChunk, setEditingChunk] = useState<Chunk | null>(null);
   const [editedTags, setEditedTags] = useState("");
+  const [reprocessing, setReprocessing] = useState(false);
 
   useEffect(() => {
     if (docId) {
