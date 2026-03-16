@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Send, Menu, ArrowLeft, Bug } from "lucide-react";
 import { useSpeechRecognition } from "@/hooks/useSpeechRecognition";
-import { usePersonalizedStarters } from "@/hooks/usePersonalizedStarters";
+import { usePersonalizedStarters, PHASE_ICEBREAKERS } from "@/hooks/usePersonalizedStarters";
 import { VoiceMicButton } from "@/components/chat/VoiceMicButton";
 import { MessageFeedback } from "@/components/chat/MessageFeedback";
 import { CrisisBanner } from "@/components/chat/CrisisBanner";
@@ -1227,7 +1227,11 @@ const Chat = () => {
                 <ConversationStarters
                   onSelect={handleStarterSelect}
                   disabled={isLoading}
-                  starters={isReturningUser ? personalizedStarters ?? undefined : undefined}
+                  starters={
+                    isIOEnabled && ioPhaseNumber
+                      ? (PHASE_ICEBREAKERS[ioPhaseNumber] || undefined)
+                      : (isReturningUser ? personalizedStarters ?? undefined : undefined)
+                  }
                 />
               )}
 
