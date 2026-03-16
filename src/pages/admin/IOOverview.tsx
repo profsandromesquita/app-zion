@@ -44,6 +44,8 @@ const IOOverview = () => {
   const [pmLoading, setPmLoading] = useState(false);
   const [overridePhase, setOverridePhase] = useState(1);
   const [showOnlyDivergent, setShowOnlyDivergent] = useState(false);
+  const [reprocessing, setReprocessing] = useState(false);
+  const [reprocessProgress, setReprocessProgress] = useState<{ current: number; total: number } | null>(null);
 
   // Main query: io_user_phase + profiles + cohorts
   const { data: users, isLoading } = useQuery({
