@@ -19,6 +19,7 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { useToast } from "@/hooks/use-toast";
+import { useFeatureFlag } from "@/hooks/useFeatureFlag";
 import SafetyExit from "@/components/SafetyExit";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -35,6 +36,7 @@ const Diary = () => {
   const navigate = useNavigate();
   const { user, loading } = useAuth();
   const { toast } = useToast();
+  const { enabled: isDiaryIOEnabled } = useFeatureFlag("io_diary_integration_enabled");
 
   const [entries, setEntries] = useState<DiaryEntry[]>([]);
   const [selectedEntry, setSelectedEntry] = useState<DiaryEntry | null>(null);
@@ -80,6 +82,33 @@ const Diary = () => {
     setIsCreating(false);
   };
 
+  const triggerIOAnalysis = async (entryId: string, entryContent: string) => {
+    if (!isDiaryIOEnabled || !user) return;
+
+    try {
+      // Fetch current IO phase
+      const { data: phaseData } = await supabase
+        .from("io_user_phase")
+        .select("current_phase")
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (phaseData?.current_phase != null) {
+        await supabase
+          .from("diary_entries")
+          .update({ io_phase_at_entry: phaseData.current_phase } as any)
+          .eq("id", entryId);
+      }
+
+      // Fire-and-forget analysis
+      supabase.functions.invoke("analyze-diary", {
+        body: { user_id: user.id, diary_entry_id: entryId, content: entryContent },
+      });
+    } catch (err) {
+      console.error("IO diary integration error (non-blocking):", err);
+    }
+  };
+
   const handleSave = async () => {
     if (!content.trim() || !user) return;
 
@@ -106,6 +135,9 @@ const Diary = () => {
           title: "Entrada salva",
           description: "Sua reflexão foi registrada com sucesso.",
         });
+
+        // IO integration (fire-and-forget)
+        triggerIOAnalysis(data.id, content.trim());
       } else if (selectedEntry) {
         const { error } = await supabase
           .from("diary_entries")
@@ -124,6 +156,9 @@ const Diary = () => {
           title: "Entrada atualizada",
           description: "Suas alterações foram salvas.",
         });
+
+        // IO integration on update too (fire-and-forget)
+        triggerIOAnalysis(selectedEntry.id, content.trim());
       }
     } catch (error) {
       console.error("Error saving entry:", error);
