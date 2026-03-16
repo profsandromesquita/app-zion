@@ -1,119 +1,55 @@
 
 
-# Plano de Correcao: Fluxo de Testemunho e Aprovacao de Soldados
+# Categorização Automática + Mapa de Temas no Diário
 
-## Diagnostico Confirmado
+## Resumo
+3 partes: (1) adicionar `primary_category` ao tool calling do analyze-diary, (2) área interativa no estado vazio do Diary.tsx com mapa de temas ou prompts temáticos, (3) filtro por categoria na sidebar.
 
-Dados reais do banco confirmam os problemas:
-- **1 candidatura travada** em `under_review` com testemunho em `processing` (nunca processado, sem transcrição nem analise)
-- **0 usuarios com role `pastor`** no sistema -- aprovacao tripla e impossivel
-- A pagina de curadoria (`TestimonyCuration`) exige role `admin` via `AdminRoute`, bloqueando `profissional` e `pastor`
-- O envio de testemunho NAO dispara `process-testimony` automaticamente
-- O card de aprovacao (`ApplicationApprovalCard`) nao mostra feedback sobre quais aprovacoes faltam quando o usuario ja aprovou
+## Parte 1: Edge Function `analyze-diary`
 
----
+**Arquivo:** `supabase/functions/analyze-diary/index.ts`
 
-## Ordem de Deploy (5 etapas)
+- Adicionar `primary_category` ao schema da tool (linha 82-106), com enum dos 9 valores e adicionar ao `required`
+- Expandir system prompt (linha 54) com instruções de categorização
 
-### Etapa 1: Migration -- Flexibilizar aprovacao tripla
+## Parte 2 + 3: `src/pages/Diary.tsx`
 
-**Problema:** Sem pastor no sistema, nenhuma candidatura pode ser aprovada.
+### Novos constants e types
+- `CATEGORY_MAP` com emoji + label para cada categoria
+- `THEME_PROMPTS` com prompts temáticos para cada categoria
+- Adicionar `primary_category?: string` ao `IOAnalysis` interface
+- State: `activeFilter: string | null`, `themePlaceholder: string | null`
 
-**Solucao:** Criar uma funcao que verifica aprovacao com logica flexivel: se nao existe usuario com role `pastor` no sistema, a aprovacao de pastor e dispensada. O trigger `check_soldado_approval_complete` sera atualizado.
+### Sidebar changes
+- Computar `filteredEntries` baseado em `activeFilter`
+- Renderizar `filteredEntries` em vez de `entries`
+- Quando filtro ativo: badge no topo com "🏠 Família (4) ✕"
+- Atualizar `SidebarCounter` para refletir filtro
+- Adicionar emoji da categoria ao lado do badge de fase nos cards
 
-```text
-Logica da nova funcao check_soldado_approval_complete:
-  - admin_approved = obrigatorio
-  - profissional_approved = obrigatorio
-  - pastor_approved = obrigatorio SE existir pelo menos 1 usuario com role 'pastor'
-  - Se nao existir pastor, aprovacao completa com admin + profissional
-```
+### Área direita (estado vazio, linhas 588-604)
+Substituir por lógica condicional:
 
-**SQL (migration):**
-- Recriar a funcao `check_soldado_approval_complete` com a logica condicional
-- Atualizar a funcao `get_application_approval_status` para refletir o campo `pastor_required`
+**Se `isDiaryIOEnabled` e >= 3 entradas com `primary_category`:** Mapa de Temas
+- Título "Suas reflexões por tema"
+- Lista de categorias com barras proporcionais e contadores
+- Cada tema clicável → `setActiveFilter(category)`
+- Botão "+ Nova Entrada" + frase inspiradora abaixo
 
----
+**Se `isDiaryIOEnabled` e < 3 entradas categorizadas:** Prompts Temáticos
+- Título "Sobre o que quer refletir?"
+- Grid 2 colunas com cards temáticos (emoji + prompt)
+- Clique → `setIsCreating(true)` + `setThemePlaceholder(prompt)`
+- Card "Livre" para escrita sem tema
+- Frase inspiradora abaixo
 
-### Etapa 2: Edge Function -- Auto-processar testemunho apos envio
+**Se `!isDiaryIOEnabled`:** Estado vazio original (logo + frase + botão)
 
-**Problema:** O testemunho e inserido com status `processing` mas a Edge Function `process-testimony` nunca e chamada automaticamente.
+### Placeholder do textarea
+- Se `themePlaceholder` está setado, usar ele; senão usar `getPlaceholder()` existente
+- Resetar `themePlaceholder` ao salvar ou selecionar entrada existente
 
-**Solucao:** Adicionar chamada a `process-testimony` no frontend imediatamente apos o INSERT do testemunho em `SoldadoTestimony.tsx`.
-
-**Arquivo:** `src/pages/SoldadoTestimony.tsx`
-- Apos o INSERT bem-sucedido na tabela `testimonies` (linha ~213), invocar:
-  ```typescript
-  supabase.functions.invoke("process-testimony", {
-    body: { testimony_id: insertedId }
-  });
-  ```
-- Sera fire-and-forget (nao bloqueia a UX de sucesso)
-- Requer retornar o `id` do INSERT (usar `.select('id').single()`)
-
----
-
-### Etapa 3: UI -- Abrir curadoria para profissional e pastor
-
-**Problema:** `TestimonyCuration.tsx` usa `AdminRoute` que bloqueia profissional e pastor.
-
-**Solucao:** Trocar `AdminRoute` por `RoleRoute` com roles permitidas.
-
-**Arquivo:** `src/pages/admin/TestimonyCuration.tsx`
-- Substituir `<AdminRoute>` por `<RoleRoute allowedRoles={["admin", "desenvolvedor", "profissional", "pastor"]}>`
-- Importar `RoleRoute` no lugar de `AdminRoute`
-
----
-
-### Etapa 4: UI -- Feedback de aprovacoes pendentes no card
-
-**Problema:** Apos o admin aprovar, o card some os botoes sem explicar o que falta.
-
-**Solucao:** Adicionar mensagem contextual em `ApplicationApprovalCard.tsx`.
-
-**Arquivo:** `src/components/soldado/ApplicationApprovalCard.tsx`
-- Quando `canApprove === false` e `status === "under_review"`:
-  - Mostrar banner informativo: "Sua aprovacao foi registrada. Aguardando: [lista de roles pendentes]"
-  - Calcular roles pendentes a partir de `application.approvals`
-
----
-
-### Etapa 5: UI -- Guardar curadoria antes de aprovacao
-
-**Problema:** O curador pode aprovar a candidatura ANTES do testemunho ser processado pela IA (status `processing`).
-
-**Solucao:** No `TestimonyCurationCard.tsx`, ja existe logica parcial (`canTakeAction` verifica `analyzed || processing`). Ajustar para:
-- Botoes de "Aprovar"/"Rejeitar" so aparecem quando `testimony.status === "analyzed"`
-- Quando `processing`, mostrar apenas botao "Processar" e mensagem de aguardo
-- Remover `processing` da condicao `canTakeAction` para acoes de curadoria
-
-**Arquivo:** `src/components/soldado/TestimonyCurationCard.tsx` (linha 331-333)
-```typescript
-// ANTES:
-const canTakeAction = approverRole !== null && 
-  (testimony.status === "analyzed" || testimony.status === "processing");
-
-// DEPOIS:
-const canTakeAction = approverRole !== null && testimony.status === "analyzed";
-```
-
----
-
-## Resumo de Arquivos Impactados
-
-| Arquivo | Tipo de Mudanca |
-|---|---|
-| Nova migration SQL | Recriar trigger de aprovacao flexivel |
-| `src/pages/SoldadoTestimony.tsx` | Chamar process-testimony apos envio |
-| `src/pages/admin/TestimonyCuration.tsx` | Trocar AdminRoute por RoleRoute |
-| `src/components/soldado/ApplicationApprovalCard.tsx` | Feedback de aprovacoes pendentes |
-| `src/components/soldado/TestimonyCurationCard.tsx` | Bloquear curadoria antes da analise |
-
-## Riscos e Mitigacoes
-
-- **Risco:** Flexibilizar pastor pode permitir aprovacao prematura.
-  **Mitigacao:** A logica so dispensa pastor se literalmente nao existe nenhum usuario com essa role no sistema. Quando um pastor for cadastrado, a exigencia volta automaticamente.
-
-- **Risco:** Chamada fire-and-forget do process-testimony pode falhar silenciosamente.
-  **Mitigacao:** O botao "Processar" na tela de curadoria ja existe como fallback manual.
+## Arquivos alterados
+- `supabase/functions/analyze-diary/index.ts` (tool schema + prompt)
+- `src/pages/Diary.tsx` (types, constants, state, sidebar filter, empty state)
 
