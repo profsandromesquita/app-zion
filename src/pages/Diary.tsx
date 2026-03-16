@@ -232,7 +232,7 @@ const Diary = () => {
 
     const { data, error } = await supabase
       .from("diary_entries")
-      .select("id, content, created_at, updated_at, io_analysis, io_phase_at_entry")
+      .select("id, content, created_at, updated_at, title, io_analysis, io_phase_at_entry")
       .eq("user_id", user.id)
       .order("created_at", { ascending: false });
 
