@@ -308,6 +308,121 @@ function evaluateRegression(
 }
 
 // ============================================================
+// OBSERVER SIGNALS
+// ============================================================
+
+interface ObserverSignals {
+  totalConversations: number;
+  shiftsDetected: number;
+  avgEmotionIntensity: number;
+  unstableCount: number;
+  avgOverallScore: number;
+  severeIssuesCount: number;
+  hasSevereBlock: boolean;
+  observerPhase: string | null;
+  recentShiftDescriptions: string[];
+}
+
+async function fetchObserverSignals(
+  supabase: any,
+  userId: string,
+  lookbackDays = 14
+): Promise<ObserverSignals> {
+  const since = new Date(Date.now() - lookbackDays * 86400000).toISOString();
+
+  // Step 1: get user's chat session IDs in the lookback window
+  const { data: sessionRows } = await supabase
+    .from("chat_sessions")
+    .select("id")
+    .eq("user_id", userId)
+    .gte("created_at", since);
+
+  const sessionIds: string[] = (sessionRows || []).map((r: { id: string }) => r.id);
+
+  if (sessionIds.length === 0) {
+    return {
+      totalConversations: 0,
+      shiftsDetected: 0,
+      avgEmotionIntensity: 0,
+      unstableCount: 0,
+      avgOverallScore: 0,
+      severeIssuesCount: 0,
+      hasSevereBlock: false,
+      observerPhase: null,
+      recentShiftDescriptions: [],
+    };
+  }
+
+  // Step 2: fetch turn_insights for those sessions
+  const { data: insights } = await supabase
+    .from("turn_insights")
+    .select(
+      "shift_detected, shift_description, emotion_intensity, emotion_stability, overall_score, phase, created_at"
+    )
+    .in("chat_session_id", sessionIds)
+    .gte("created_at", since)
+    .order("created_at", { ascending: false });
+
+  const rows = insights || [];
+  if (rows.length === 0) {
+    return {
+      totalConversations: 0,
+      shiftsDetected: 0,
+      avgEmotionIntensity: 0,
+      unstableCount: 0,
+      avgOverallScore: 0,
+      severeIssuesCount: 0,
+      hasSevereBlock: false,
+      observerPhase: null,
+      recentShiftDescriptions: [],
+    };
+  }
+
+  let shiftsDetected = 0;
+  let emotionSum = 0;
+  let emotionCount = 0;
+  let unstableCount = 0;
+  let scoreSum = 0;
+  let scoreCount = 0;
+  let severeIssuesCount = 0;
+
+  for (const r of rows) {
+    if (r.shift_detected) shiftsDetected++;
+    if (r.emotion_intensity !== null) {
+      emotionSum += r.emotion_intensity;
+      emotionCount++;
+    }
+    if (r.emotion_stability === "unstable") unstableCount++;
+    if (r.overall_score !== null) {
+      scoreSum += r.overall_score;
+      scoreCount++;
+    }
+    // Severe: intensity 3 + unstable, OR overall_score <= 1
+    const isSevere =
+      (r.emotion_intensity === 3 && r.emotion_stability === "unstable") ||
+      (r.overall_score !== null && r.overall_score <= 1);
+    if (isSevere) severeIssuesCount++;
+  }
+
+  const recentShifts = rows
+    .filter((r: any) => r.shift_detected && r.shift_description)
+    .slice(0, 3)
+    .map((r: any) => r.shift_description as string);
+
+  return {
+    totalConversations: rows.length,
+    shiftsDetected,
+    avgEmotionIntensity: emotionCount > 0 ? emotionSum / emotionCount : 0,
+    unstableCount,
+    avgOverallScore: scoreCount > 0 ? scoreSum / scoreCount : 0,
+    severeIssuesCount,
+    hasSevereBlock: severeIssuesCount > 0,
+    observerPhase: rows[0]?.phase || null,
+    recentShiftDescriptions: recentShifts,
+  };
+}
+
+// ============================================================
 // PHASE NAMES & NEXT CRITERIA DESCRIPTIONS
 // ============================================================
 
