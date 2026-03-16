@@ -1,101 +1,119 @@
 
 
-# Calibração do Prompt — io-session-feedback
+# Plano de Correcao: Fluxo de Testemunho e Aprovacao de Soldados
 
-## O que muda
+## Diagnostico Confirmado
 
-Apenas o **prompt** (linhas 53-72) e um pequeno trecho de lógica antes dele para:
-1. Detectar primeira sessão (`isFirstSession`)
-2. Buscar `registro_text` da sessão
-3. Identificar escalas críticas (≤ 2)
+Dados reais do banco confirmam os problemas:
+- **1 candidatura travada** em `under_review` com testemunho em `processing` (nunca processado, sem transcrição nem analise)
+- **0 usuarios com role `pastor`** no sistema -- aprovacao tripla e impossivel
+- A pagina de curadoria (`TestimonyCuration`) exige role `admin` via `AdminRoute`, bloqueando `profissional` e `pastor`
+- O envio de testemunho NAO dispara `process-testimony` automaticamente
+- O card de aprovacao (`ApplicationApprovalCard`) nao mostra feedback sobre quais aprovacoes faltam quando o usuario ja aprovou
 
-## Alterações em `supabase/functions/io-session-feedback/index.ts`
+---
 
-### A. Antes do prompt (após linha 51), adicionar:
+## Ordem de Deploy (5 etapas)
 
-```typescript
-const isFirstSession = !previous_scales && (streak || 0) <= 1;
+### Etapa 1: Migration -- Flexibilizar aprovacao tripla
 
-// Fetch registro_text if session_id available
-let registroContext = "";
-if (session_id) {
-  const { data: sessionData } = await supabase
-    .from("io_daily_sessions")
-    .select("registro_text")
-    .eq("id", session_id)
-    .single();
-  const rt = sessionData?.registro_text || "";
-  if (rt.length >= 15) {
-    registroContext = `\nRegistro do usuário: "${rt}"`;
-  } else {
-    registroContext = `\nNOTA: O registro do usuário foi vazio ou muito curto. Reconheça isso no feedback de forma acolhedora.`;
-  }
-}
+**Problema:** Sem pastor no sistema, nenhuma candidatura pode ser aprovada.
 
-// Detect critical scales
-const lowScales = scales
-  ? Object.entries(scales).filter(([_, v]) => v != null && (v as number) <= 2).map(([k]) => scaleNames[k] || k)
-  : [];
+**Solucao:** Criar uma funcao que verifica aprovacao com logica flexivel: se nao existe usuario com role `pastor` no sistema, a aprovacao de pastor e dispensada. O trigger `check_soldado_approval_complete` sera atualizado.
+
+```text
+Logica da nova funcao check_soldado_approval_complete:
+  - admin_approved = obrigatorio
+  - profissional_approved = obrigatorio
+  - pastor_approved = obrigatorio SE existir pelo menos 1 usuario com role 'pastor'
+  - Se nao existir pastor, aprovacao completa com admin + profissional
 ```
 
-### B. Substituir o prompt (linhas 53-72) pelo novo prompt calibrado:
+**SQL (migration):**
+- Recriar a funcao `check_soldado_approval_complete` com a logica condicional
+- Atualizar a funcao `get_application_approval_status` para refletir o campo `pastor_required`
 
+---
+
+### Etapa 2: Edge Function -- Auto-processar testemunho apos envio
+
+**Problema:** O testemunho e inserido com status `processing` mas a Edge Function `process-testimony` nunca e chamada automaticamente.
+
+**Solucao:** Adicionar chamada a `process-testimony` no frontend imediatamente apos o INSERT do testemunho em `SoldadoTestimony.tsx`.
+
+**Arquivo:** `src/pages/SoldadoTestimony.tsx`
+- Apos o INSERT bem-sucedido na tabela `testimonies` (linha ~213), invocar:
+  ```typescript
+  supabase.functions.invoke("process-testimony", {
+    body: { testimony_id: insertedId }
+  });
+  ```
+- Sera fire-and-forget (nao bloqueia a UX de sucesso)
+- Requer retornar o `id` do INSERT (usar `.select('id').single()`)
+
+---
+
+### Etapa 3: UI -- Abrir curadoria para profissional e pastor
+
+**Problema:** `TestimonyCuration.tsx` usa `AdminRoute` que bloqueia profissional e pastor.
+
+**Solucao:** Trocar `AdminRoute` por `RoleRoute` com roles permitidas.
+
+**Arquivo:** `src/pages/admin/TestimonyCuration.tsx`
+- Substituir `<AdminRoute>` por `<RoleRoute allowedRoles={["admin", "desenvolvedor", "profissional", "pastor"]}>`
+- Importar `RoleRoute` no lugar de `AdminRoute`
+
+---
+
+### Etapa 4: UI -- Feedback de aprovacoes pendentes no card
+
+**Problema:** Apos o admin aprovar, o card some os botoes sem explicar o que falta.
+
+**Solucao:** Adicionar mensagem contextual em `ApplicationApprovalCard.tsx`.
+
+**Arquivo:** `src/components/soldado/ApplicationApprovalCard.tsx`
+- Quando `canApprove === false` e `status === "under_review"`:
+  - Mostrar banner informativo: "Sua aprovacao foi registrada. Aguardando: [lista de roles pendentes]"
+  - Calcular roles pendentes a partir de `application.approvals`
+
+---
+
+### Etapa 5: UI -- Guardar curadoria antes de aprovacao
+
+**Problema:** O curador pode aprovar a candidatura ANTES do testemunho ser processado pela IA (status `processing`).
+
+**Solucao:** No `TestimonyCurationCard.tsx`, ja existe logica parcial (`canTakeAction` verifica `analyzed || processing`). Ajustar para:
+- Botoes de "Aprovar"/"Rejeitar" so aparecem quando `testimony.status === "analyzed"`
+- Quando `processing`, mostrar apenas botao "Processar" e mensagem de aguardo
+- Remover `processing` da condicao `canTakeAction` para acoes de curadoria
+
+**Arquivo:** `src/components/soldado/TestimonyCurationCard.tsx` (linha 331-333)
 ```typescript
-const prompt = `Você é Zyon, mentor espiritual. Gere um feedback breve (2-3 frases) para um usuário que acabou de completar sua sessão diária.
+// ANTES:
+const canTakeAction = approverRole !== null && 
+  (testimony.status === "analyzed" || testimony.status === "processing");
 
-Fase atual: ${phase} — ${phase_name}
-Estado emocional (check-in): ${mood}
-${mission_title ? `Missão de hoje: ${mission_title}` : ""}
-Streak: ${streak} dias consecutivos
-${isFirstSession ? "\n⚠️ PRIMEIRA SESSÃO — NÃO existe histórico. NÃO fale em crescimento, progresso ou continuidade. Reconheça que o usuário COMEÇOU." : ""}
-
-Escalas de hoje:
-${scalesText || "Nenhuma escala preenchida"}
-${lowScales.length > 0 ? `\n⚠️ Escalas críticas (≤ 2): ${lowScales.join(", ")}` : ""}
-${registroContext}
-
-REGRAS DE CALIBRAÇÃO:
-
-PRIMEIRA SESSÃO (sem previous_scales, streak ≤ 1):
-- NUNCA fale em "crescimento", "progresso" ou "continue"
-- NUNCA compare com sessões anteriores (não existem)
-- Se escalas baixas: acolha ("começar já é coragem")
-- Se escalas altas: valide sem celebrar exageradamente
-
-ESCALAS MUITO BAIXAS (≤ 2):
-- NÃO minimize ("é natural que flutue" é PROIBIDO para escala ≤ 2)
-- NÃO celebre ("vislumbre de crescimento" é PROIBIDO)
-- Acolha: reconheça que está difícil, valide a presença
-- Ex: "Clareza 1 diz que está difícil enxergar agora. Tudo bem. Você não precisa ter clareza para estar aqui."
-
-REGISTRO VAZIO OU EVASIVO:
-- Se registro é vazio, "não lembro", "nada", ou muito curto: reconheça sem julgar
-- Ex: "Às vezes 'não lembrar' é sinal de que há muita coisa acumulada."
-
-ESCALAS CAINDO (queda ≥ 3 pontos vs ontem):
-- Normalizar SEM minimizar
-- Ex: "Ontem clareza estava em 6, hoje em 3. Dias assim existem. O importante é que você está aqui."
-
-ESCALAS SUBINDO:
-- Celebrar brevemente SEM exagero
-- Ex: "Regulação subiu de 3 para 6. Algo mudou. O que será?"
-
-REGRAS GERAIS:
-- Máximo 3 frases
-- NUNCA use: "Que bom!", "Parabéns!", "É ótimo que...", "Sua jornada é notável", "cada passo é um avanço"
-- NUNCA fabrique tendência sem dados reais
-- NUNCA diagnostique ou explique por que a escala subiu/caiu
-- Se streak > 5, reconheça a constância
-- Se não há nada específico para celebrar, valide a PRESENÇA: "Você veio. Isso conta."
-- Responda APENAS com o texto do feedback, sem marcação`;
+// DEPOIS:
+const canTakeAction = approverRole !== null && testimony.status === "analyzed";
 ```
 
-### C. Nada mais muda
-- Mesma chamada LLM (model, max_tokens, temperature)
-- Mesmo fallback genérico
-- Mesmo fluxo de registro_analysis
-- Nenhuma tabela alterada
+---
 
-## Arquivo afetado
-- `supabase/functions/io-session-feedback/index.ts`
+## Resumo de Arquivos Impactados
+
+| Arquivo | Tipo de Mudanca |
+|---|---|
+| Nova migration SQL | Recriar trigger de aprovacao flexivel |
+| `src/pages/SoldadoTestimony.tsx` | Chamar process-testimony apos envio |
+| `src/pages/admin/TestimonyCuration.tsx` | Trocar AdminRoute por RoleRoute |
+| `src/components/soldado/ApplicationApprovalCard.tsx` | Feedback de aprovacoes pendentes |
+| `src/components/soldado/TestimonyCurationCard.tsx` | Bloquear curadoria antes da analise |
+
+## Riscos e Mitigacoes
+
+- **Risco:** Flexibilizar pastor pode permitir aprovacao prematura.
+  **Mitigacao:** A logica so dispensa pastor se literalmente nao existe nenhum usuario com essa role no sistema. Quando um pastor for cadastrado, a exigencia volta automaticamente.
+
+- **Risco:** Chamada fire-and-forget do process-testimony pode falhar silenciosamente.
+  **Mitigacao:** O botao "Processar" na tela de curadoria ja existe como fallback manual.
 
