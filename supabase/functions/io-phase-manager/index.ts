@@ -1224,6 +1224,14 @@ async function handleEvaluate(supabase: any, userId: string) {
     };
   }
 
+  if (registroSummary) {
+    response.registro_analysis = {
+      consulted: true,
+      ...registroSummary,
+      blocked: registroBlock,
+    };
+  }
+
   return new Response(JSON.stringify(response), {
     headers: { ...corsHeaders, "Content-Type": "application/json" },
   });
