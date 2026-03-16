@@ -1,121 +1,119 @@
 
 
-# Plano: Observer Signals no Phase Manager
+# Plano de Correcao: Fluxo de Testemunho e Aprovacao de Soldados
 
-## Resumo
+## Diagnostico Confirmado
 
-Adicionar sinais do observer (turn_insights) como apoio auxiliar na avaliação de progressão de fase, controlado pela flag `io_pm_observer_signals_enabled`. O único sinal bloqueante é `hasSevereBlock` — todos os outros são informativos.
+Dados reais do banco confirmam os problemas:
+- **1 candidatura travada** em `under_review` com testemunho em `processing` (nunca processado, sem transcrição nem analise)
+- **0 usuarios com role `pastor`** no sistema -- aprovacao tripla e impossivel
+- A pagina de curadoria (`TestimonyCuration`) exige role `admin` via `AdminRoute`, bloqueando `profissional` e `pastor`
+- O envio de testemunho NAO dispara `process-testimony` automaticamente
+- O card de aprovacao (`ApplicationApprovalCard`) nao mostra feedback sobre quais aprovacoes faltam quando o usuario ja aprovou
 
-## Alterações em `supabase/functions/io-phase-manager/index.ts`
+---
 
-### 1. Interface e função `fetchObserverSignals` (após linha 308)
+## Ordem de Deploy (5 etapas)
 
-Nova interface `ObserverSignals` e função que consulta `turn_insights` JOIN `chat_sessions` nos últimos N dias:
+### Etapa 1: Migration -- Flexibilizar aprovacao tripla
 
-```typescript
-interface ObserverSignals {
-  totalConversations: number;
-  shiftsDetected: number;
-  avgEmotionIntensity: number;
-  unstableCount: number;
-  avgOverallScore: number;
-  severeIssuesCount: number;
-  hasSevereBlock: boolean;
-  observerPhase: string | null;
-  recentShiftDescriptions: string[];
-}
+**Problema:** Sem pastor no sistema, nenhuma candidatura pode ser aprovada.
 
-async function fetchObserverSignals(
-  supabase: any, userId: string, lookbackDays = 14
-): Promise<ObserverSignals> {
-  const since = new Date(Date.now() - lookbackDays * 86400000)
-    .toISOString();
+**Solucao:** Criar uma funcao que verifica aprovacao com logica flexivel: se nao existe usuario com role `pastor` no sistema, a aprovacao de pastor e dispensada. O trigger `check_soldado_approval_complete` sera atualizado.
 
-  const { data: insights } = await supabase
-    .from('turn_insights')
-    .select(`
-      shift_detected, shift_description,
-      emotion_intensity, emotion_stability,
-      overall_score, phase, phase_confidence,
-      created_at,
-      chat_session_id
-    `)
-    .in('chat_session_id', 
-      supabase.from('chat_sessions')
-        .select('id')
-        .eq('user_id', userId)
-    )
-    .gte('created_at', since)
-    .order('created_at', { ascending: false });
-
-  const rows = insights || [];
-  // ... aggregate into ObserverSignals
-}
+```text
+Logica da nova funcao check_soldado_approval_complete:
+  - admin_approved = obrigatorio
+  - profissional_approved = obrigatorio
+  - pastor_approved = obrigatorio SE existir pelo menos 1 usuario com role 'pastor'
+  - Se nao existir pastor, aprovacao completa com admin + profissional
 ```
 
-Nota: como `.in()` com subquery não é suportado pelo SDK, usaremos duas queries sequenciais (primeiro buscar session IDs, depois filtrar turn_insights).
+**SQL (migration):**
+- Recriar a funcao `check_soldado_approval_complete` com a logica condicional
+- Atualizar a funcao `get_application_approval_status` para refletir o campo `pastor_required`
 
-### 2. Flag check em `handleEvaluate` (após Step 0, ~linha 460)
+---
 
+### Etapa 2: Edge Function -- Auto-processar testemunho apos envio
+
+**Problema:** O testemunho e inserido com status `processing` mas a Edge Function `process-testimony` nunca e chamada automaticamente.
+
+**Solucao:** Adicionar chamada a `process-testimony` no frontend imediatamente apos o INSERT do testemunho em `SoldadoTestimony.tsx`.
+
+**Arquivo:** `src/pages/SoldadoTestimony.tsx`
+- Apos o INSERT bem-sucedido na tabela `testimonies` (linha ~213), invocar:
+  ```typescript
+  supabase.functions.invoke("process-testimony", {
+    body: { testimony_id: insertedId }
+  });
+  ```
+- Sera fire-and-forget (nao bloqueia a UX de sucesso)
+- Requer retornar o `id` do INSERT (usar `.select('id').single()`)
+
+---
+
+### Etapa 3: UI -- Abrir curadoria para profissional e pastor
+
+**Problema:** `TestimonyCuration.tsx` usa `AdminRoute` que bloqueia profissional e pastor.
+
+**Solucao:** Trocar `AdminRoute` por `RoleRoute` com roles permitidas.
+
+**Arquivo:** `src/pages/admin/TestimonyCuration.tsx`
+- Substituir `<AdminRoute>` por `<RoleRoute allowedRoles={["admin", "desenvolvedor", "profissional", "pastor"]}>`
+- Importar `RoleRoute` no lugar de `AdminRoute`
+
+---
+
+### Etapa 4: UI -- Feedback de aprovacoes pendentes no card
+
+**Problema:** Apos o admin aprovar, o card some os botoes sem explicar o que falta.
+
+**Solucao:** Adicionar mensagem contextual em `ApplicationApprovalCard.tsx`.
+
+**Arquivo:** `src/components/soldado/ApplicationApprovalCard.tsx`
+- Quando `canApprove === false` e `status === "under_review"`:
+  - Mostrar banner informativo: "Sua aprovacao foi registrada. Aguardando: [lista de roles pendentes]"
+  - Calcular roles pendentes a partir de `application.approvals`
+
+---
+
+### Etapa 5: UI -- Guardar curadoria antes de aprovacao
+
+**Problema:** O curador pode aprovar a candidatura ANTES do testemunho ser processado pela IA (status `processing`).
+
+**Solucao:** No `TestimonyCurationCard.tsx`, ja existe logica parcial (`canTakeAction` verifica `analyzed || processing`). Ajustar para:
+- Botoes de "Aprovar"/"Rejeitar" so aparecem quando `testimony.status === "analyzed"`
+- Quando `processing`, mostrar apenas botao "Processar" e mensagem de aguardo
+- Remover `processing` da condicao `canTakeAction` para acoes de curadoria
+
+**Arquivo:** `src/components/soldado/TestimonyCurationCard.tsx` (linha 331-333)
 ```typescript
-const { data: observerFlagResult } = await supabase.rpc('get_feature_flag', {
-  p_flag_name: 'io_pm_observer_signals_enabled',
-  p_user_id: userId,
-});
-const isObserverSignalsEnabled = observerFlagResult === true;
+// ANTES:
+const canTakeAction = approverRole !== null && 
+  (testimony.status === "analyzed" || testimony.status === "processing");
+
+// DEPOIS:
+const canTakeAction = approverRole !== null && testimony.status === "analyzed";
 ```
 
-### 3. Fetch observer signals (após Step 3, ~linha 760)
+---
 
-```typescript
-let observerSignals: ObserverSignals | null = null;
-if (isObserverSignalsEnabled) {
-  observerSignals = await fetchObserverSignals(supabase, userId, 14);
-}
-```
+## Resumo de Arquivos Impactados
 
-### 4. Bloqueio por observer (após Step 4, ~linha 796)
+| Arquivo | Tipo de Mudanca |
+|---|---|
+| Nova migration SQL | Recriar trigger de aprovacao flexivel |
+| `src/pages/SoldadoTestimony.tsx` | Chamar process-testimony apos envio |
+| `src/pages/admin/TestimonyCuration.tsx` | Trocar AdminRoute por RoleRoute |
+| `src/components/soldado/ApplicationApprovalCard.tsx` | Feedback de aprovacoes pendentes |
+| `src/components/soldado/TestimonyCurationCard.tsx` | Bloquear curadoria antes da analise |
 
-Após calcular `criteriaResult`, se hard rules foram cumpridas mas observer detecta bloqueio severo:
+## Riscos e Mitigacoes
 
-```typescript
-let blockedByObserver = false;
-if (criteriaResult.met && observerSignals?.hasSevereBlock) {
-  criteriaResult = {
-    met: false,
-    details: criteriaResult.details + 
-      ' | BLOQUEIO: observer detectou instabilidade severa.'
-  };
-  blockedByObserver = true;
-}
-```
+- **Risco:** Flexibilizar pastor pode permitir aprovacao prematura.
+  **Mitigacao:** A logica so dispensa pastor se literalmente nao existe nenhum usuario com essa role no sistema. Quando um pastor for cadastrado, a exigencia volta automaticamente.
 
-### 5. Enrichment do criteria_snapshot (linha ~900)
-
-Adicionar `observer_signals: observerSignals || null` ao objeto `criteria_snapshot` na inserção de `io_phase_transitions`.
-
-### 6. Enrichment do observability_logs (linha ~926)
-
-Adicionar ao `event_data`:
-```typescript
-observer_signals_consulted: isObserverSignalsEnabled,
-observer_shifts: observerSignals?.shiftsDetected || 0,
-observer_severe_block: observerSignals?.hasSevereBlock || false,
-observer_recommendation: observerSignals
-  ? (observerSignals.hasSevereBlock ? 'blocked' 
-     : observerSignals.shiftsDetected > 0 ? 'positive' : 'neutral')
-  : null,
-```
-
-### 7. Enrichment da resposta (linha ~945)
-
-Adicionar `observer_signals` ao response JSON quando disponível.
-
-## Arquivo alterado
-- `supabase/functions/io-phase-manager/index.ts`
-
-## Segurança
-- Flag OFF = zero mudança no comportamento (observerSignals permanece null)
-- Hard rules permanecem obrigatórias — observer só pode bloquear, nunca promover
-- Nenhuma outra edge function é alterada
+- **Risco:** Chamada fire-and-forget do process-testimony pode falhar silenciosamente.
+  **Mitigacao:** O botao "Processar" na tela de curadoria ja existe como fallback manual.
 
