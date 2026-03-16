@@ -371,6 +371,9 @@ const IODashboard = () => {
                 </Card>
               )}
 
+              {/* Cohort Comparison */}
+              <CohortComparisonSection cutoff={cutoff} periodDays={periodDays} />
+
               {/* Quick links */}
               <div className="flex flex-wrap gap-2">
                 <Link to="/admin/io-overview"><Button variant="outline" size="sm"><ExternalLink className="mr-1 h-3 w-3" />IO Overview</Button></Link>
