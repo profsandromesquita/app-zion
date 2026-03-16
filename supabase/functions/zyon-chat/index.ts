@@ -475,6 +475,41 @@ function buildRAGPlan(intent: string): RouterResult["rag_plan"] {
   };
 }
 
+// Phase-aware RAG plan: merges IO phase domains with intent domains
+function buildIORAGPlan(
+  intent: string,
+  ioPhase: number | null
+): RouterResult["rag_plan"] {
+  if (!ioPhase) return buildRAGPlan(intent);
+
+  const phaseDomains: Record<number, string[]> = {
+    1: ['metodologia', 'modelo_humano'],
+    2: ['diagnostico', 'teologia_antropologia'],
+    3: ['diagnostico_identidade', 'perfis', 'metodologia'],
+    4: ['metodologia', 'intervencao'],
+    5: ['intervencao', 'exegese_aplicada'],
+    6: ['intervencao', 'metodologia'],
+    7: ['exegese_aplicada', 'teologia_antropologia'],
+  };
+
+  const intentPlan = buildRAGPlan(intent);
+  const phaseDomainsForUser = phaseDomains[ioPhase] || [];
+
+  const mergedDomains = [...new Set([
+    ...phaseDomainsForUser,
+    ...(intentPlan.filters.domains || []),
+  ])];
+
+  return {
+    ...intentPlan,
+    topK: Math.min(intentPlan.topK + 2, 12),
+    filters: {
+      ...intentPlan.filters,
+      domains: mergedDomains,
+    },
+  };
+}
+
 // ============================================
 // GUARDRAILS
 // ============================================
@@ -2436,7 +2471,7 @@ serve(async (req) => {
     // ========================================
     console.log("Step 2: Intent Routing + User Context + Observer Insights");
     const { intent, confidence } = classifyIntent(message);
-    const ragPlan = buildRAGPlan(intent);
+    // ragPlan will be built after ioPhaseContext is loaded (Step 2.5)
     const userContext = detectUserContext(message, history);
     const turnCount = history.filter((h: { role: string }) => h.role === 'user').length + 1;
     
@@ -2503,6 +2538,13 @@ serve(async (req) => {
         }
       }
     }
+
+    // Build RAG plan (after ioPhaseContext is available)
+    const ragPlan = (useSemanticEmbedding && ioPhaseContext?.current_phase)
+      ? buildIORAGPlan(intent, ioPhaseContext.current_phase)
+      : buildRAGPlan(intent);
+    const ragPlanType = (useSemanticEmbedding && ioPhaseContext?.current_phase) ? 'io' : 'legacy';
+    console.log(`[RAG Plan] Type: ${ragPlanType}, domains: ${ragPlan.filters.domains?.join(', ') || 'none'}, topK: ${ragPlan.topK}`);
 
     // ========================================
     // STEP 3-4: RAG RETRIEVAL (WITH ADAPTIVE THRESHOLD)
@@ -3212,11 +3254,16 @@ O objetivo é que O PRÓPRIO USUÁRIO chegue à conexão.`;
           session_id: sessionId || null,
           event_data: {
             prompt_path: isPromptAdapterEnabled ? 'io_adapter' : 'legacy',
+            rag_plan_type: ragPlanType,
+            rag_domains: ragPlan.filters.domains || [],
             io_phase: ioPhaseContext?.current_phase || null,
             io_phase_name: ioPhaseContext?.phase_name || null,
             prompt_length: systemPrompt.length,
           },
-          flags_active: { io_prompt_adapter_enabled: isPromptAdapterEnabled },
+          flags_active: {
+            io_prompt_adapter_enabled: isPromptAdapterEnabled,
+            io_rag_domains_enabled: useSemanticEmbedding,
+          },
           latency_ms: Date.now() - startTime,
         });
       } catch (obsErr) {
