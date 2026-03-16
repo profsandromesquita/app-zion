@@ -453,7 +453,7 @@ function PhaseBar({ phase, count, pct, maxCount }: { phase: number; count: numbe
 function AlertItem({ level, children }: { level: "critical" | "warning"; children: React.ReactNode }) {
   return (
     <div className={`flex items-center gap-2 rounded-md px-3 py-2 text-sm ${
-      level === "critical" ? "bg-destructive/10 text-destructive" : "bg-yellow-500/10 text-yellow-700 dark:text-yellow-400"
+      level === "critical" ? "bg-destructive/10 text-destructive" : "bg-accent text-accent-foreground"
     }`}>
       <AlertCircle className="h-4 w-4 shrink-0" />
       {children}
