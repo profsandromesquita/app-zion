@@ -332,6 +332,13 @@ const Diary = () => {
           description: "Suas alterações foram salvas.",
         });
 
+        // Always generate title (independent of IO flag)
+        supabase.functions.invoke("generate-diary-title", {
+          body: { diary_entry_id: selectedEntry.id, content: content.trim() },
+        }).catch((err) => console.warn("Diary title gen failed:", err));
+
+        setTimeout(() => loadEntries(), 3000);
+
         triggerIOAnalysis(selectedEntry.id, content.trim());
       }
     } catch (error) {
